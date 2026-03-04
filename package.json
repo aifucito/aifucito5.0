@@ -1,12 +1,5 @@
-
-{
-  "name": "aifucito_5.0",
-  "version": "1.0.0",
-  "main": "bot.js",
-  "dependencies": {
-    "telegraf": "^4.14.1"
-  },
-  "scripts": {
-    "start": "node bot.js"
-  }
+"dependencies": {
+  "telegraf": "^4.14.1",
+  "express": "^4.18.2",
+  "cors": "^2.8.5"
 }
