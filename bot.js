@@ -6,23 +6,29 @@ import { detectarCategoria } from './utils/categorias.js';
 import express from 'express';
 import cors from 'cors';
 
+// Creamos el bot con el token (cuidado: en producción usa variable de entorno)
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
 // ---------- CONFIG ----------
-const ADMIN_ID = 000000000; // ← TU ID
+// REEMPLAZÁ CON TU ID REAL
+const ADMIN_ID = 123456789;
 const FECHA_CORTE_FUNDADOR = new Date('2026-04-01');
-const CANALES = { radar: '@aifu_radar', uy: '@aifu_uy', ar: '@aifu_ar', cl: '@aifu_cl' };
+const CANALES = {
+  radar: '@aifu_radar',
+  uy: '@aifu_uy',
+  ar: '@aifu_ar',
+  cl: '@aifu_cl'
+};
 
-// ---------- EXPRESS SERVIDOR PARA RENDER ----------
+// ---------- EXPRESS SERVIDOR PARA RENDER (FORZAMOS PUERTO) ----------
 const app = express();
 app.use(cors());
 app.use(express.static('public'));
-app.get('/reportes.json', (req, res) => {
-  res.json(reportes);
-});
-app.listen(3000, () => console.log('Servidor Express activo en puerto 3000'));
+// Ruta de ejemplo para validar que el bot está activo
+app.get('/', (req, res) => res.send('AIFUCITO 5.0 activo'));
+app.listen(3000, () => console.log('Servidor Express activo en el puerto 3000'));
 
-// ---------- DATA ----------
+// ---------- DATA (USUARIOS, REPORTES) ----------
 const dataDir = path.join('./data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir);
 const usuariosFile = path.join(dataDir, 'usuarios.json');
@@ -43,23 +49,34 @@ function esVIP(userId) {
   if (!usuarios[userId] || !usuarios[userId].vip) return false;
   const hoy = new Date();
   const vence = new Date(usuarios[userId].fechaRenovacion);
-  if (hoy > vence) { usuarios[userId].vip = false; guardarDatos(); return false; }
+  if (hoy > vence) {
+    usuarios[userId].vip = false;
+    guardarDatos();
+    return false;
+  }
   return true;
 }
 function activarVIP(userId, metodo) {
   const hoy = new Date();
-  const vence = new Date(); vence.setMonth(vence.getMonth() + 1);
+  const vence = new Date();
+  vence.setMonth(vence.getMonth() + 1);
   const { plan, precio } = determinarPlan();
   usuarios[userId] = { vip: true, plan, precio, metodoPago: metodo, fechaInicio: hoy.toISOString(), fechaRenovacion: vence.toISOString() };
   guardarDatos();
 }
 
-// ---------- MENÚ ----------
+// ---------- MENÚ PRINCIPAL ----------
 bot.start(ctx => {
   ctx.reply(
-`👽 AIFUCITO 5.0
-Sistema Oficial RED AIFU`,
-  Markup.keyboard([['Reportar'],['Mi estado'],['Hazte VIP'],['Red AIFU']]).resize());
+    `👽 AIFUCITO 5.0
+    Sistema Oficial RED AIFU`,
+    Markup.keyboard([
+      ['Reportar'],
+      ['Mi estado'],
+      ['Hazte VIP'],
+      ['Red AIFU']
+    ]).resize()
+  );
 });
 
 // ---------- RED AIFU ----------
@@ -76,70 +93,4 @@ bot.hears('Red AIFU', ctx => {
 // ---------- ESTADO ----------
 bot.hears('Mi estado', ctx => {
   const id = ctx.from.id;
-  if (esVIP(id)) ctx.reply(`⭐ VIP activo.\nRenovación: ${usuarios[id].fechaRenovacion}`);
-  else ctx.reply("Cuenta estándar activa.");
-});
-
-// ---------- INFO VIP ----------
-bot.hears('Hazte VIP', ctx => {
-  const { plan, precio } = determinarPlan();
-  ctx.reply(
-`⭐ Membresía VIP AIFU
-Plan: ${plan.toUpperCase()}
-Precio mensual: USD ${precio}
-Beneficios: Acceso completo, multimedia, radar prioritario, alertas avanzadas
-Métodos: PayPal, Mercado Pago, Prex, MiDinero
-Envía comprobante y espera activación.`);
-});
-
-// ---------- REPORTE ----------
-let sesiones = {};
-bot.hears('Reportar', ctx => {
-  sesiones[ctx.from.id] = { estado: 'pais' };
-  ctx.reply("Indica tu país:");
-});
-bot.on('text', async ctx => {
-  const id = ctx.from.id;
-  if (!sesiones[id]) return;
-  const sesion = sesiones[id];
-
-  if (sesion.estado === 'pais') { sesion.pais = ctx.message.text; sesion.estado = 'ciudad'; ctx.reply("Indica la ciudad:"); return; }
-  if (sesion.estado === 'ciudad') { sesion.ciudad = ctx.message.text; sesion.estado = 'barrio'; ctx.reply("Indica barrio/localidad/comuna o zona:"); return; }
-  if (sesion.estado === 'barrio') { sesion.barrio = ctx.message.text; sesion.estado = 'referencia'; ctx.reply("Agrega referencia (opcional):"); return; }
-  if (sesion.estado === 'referencia') { sesion.referencia = ctx.message.text; sesion.estado = 'descripcion'; ctx.reply("Describe el fenómeno:"); return; }
-  if (sesion.estado === 'descripcion') {
-    const categoria = detectarCategoria(ctx.message.text);
-    const coords = await obtenerCoordenadas(`${sesion.pais}, ${sesion.ciudad}, ${sesion.barrio}, ${sesion.referencia}`);
-    const nuevoReporte = {
-      id: Date.now(), usuario: id, fecha: new Date().toISOString(),
-      pais: sesion.pais, ciudad: sesion.ciudad, barrio: sesion.barrio, referencia: sesion.referencia,
-      mensaje: ctx.message.text, categoria, lat: coords?.lat || null, lng: coords?.lng || null,
-      multimedia: [], vip: esVIP(id)
-    };
-    reportes.push(nuevoReporte); guardarDatos(); publicarReporte(nuevoReporte);
-    delete sesiones[id]; ctx.reply("Reporte registrado correctamente.");
-  }
-});
-
-// ---------- PUBLICACIÓN ----------
-function publicarReporte(reporte) {
-  let texto = `📡 Nuevo reporte\nUbicación: ${reporte.pais}, ${reporte.ciudad}, ${reporte.barrio}\nFecha: ${reporte.fecha}\nCategoría: ${reporte.categoria}`;
-  if (reporte.vip) texto += "\n⭐ Usuario VIP";
-  bot.telegram.sendMessage(CANALES.radar, texto);
-}
-
-// ---------- ADMIN ----------
-bot.command('activarvip', ctx => {
-  if (ctx.from.id !== ADMIN_ID) return;
-  const [_, userId, metodo] = ctx.message.text.split(' ');
-  activarVIP(userId, metodo || 'manual');
-  ctx.reply("VIP activado correctamente.");
-});
-bot.command('panel', ctx => {
-  if (ctx.from.id !== ADMIN_ID) return;
-  ctx.reply(`Panel Admin:\nUsuarios: ${Object.keys(usuarios).length}\nReportes totales: ${reportes.length}`);
-});
-
-// ---------- LANZAMIENTO ----------
-bot.launch();
-console.log("AIFUCITO 5.0 activo");
+ 
