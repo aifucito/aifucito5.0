@@ -8,87 +8,56 @@ import { obtenerCoordenadas } from './utils/ubicacion.js';
 import { detectarCategoria } from './utils/categorias.js';
 
 // ---------- CONFIG ----------
-// Puedes poner tu token directamente aquí:
-// const BOT_TOKEN = '8701174108:AAFgEE-uSZlDvrTNm_QIeDIINqmnCzQIOCM';
 const BOT_TOKEN = process.env.BOT_TOKEN || '8701174108:AAFgEE-uSZlDvrTNm_QIeDIINqmnCzQIOCM';
-const ADMIN_ID = 123456789; // ← TU ID TELEGRAM (sin ceros iniciales)
+const ADMIN_ID = 123456789; 
 const CANALES = { radar: '@aifu_radar', uy: '@aifu_uy', ar: '@aifu_ar', cl: '@aifu_cl' };
+const URL_MAPA = 'https://tu-servidor.com/mapa'; // cambia por la URL de tu mapa con Leaflet
 
 // ---------- EXPRESS SERVIDOR PARA RENDER ----------
 const app = express();
 app.use(cors());
 app.use(express.static('public'));
-
-// Endpoint para exponer reportes como JSON
 let reportes = [];
 app.get('/reportes.json', (req, res) => res.json(reportes));
-
-// Levanta el servidor en el puerto que Render asigna
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Servidor Express activo en puerto ${PORT}`));
 
 // ---------- DATA ----------
 const dataDir = path.join('./data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir);
-
 const usuariosFile = path.join(dataDir, 'usuarios.json');
 const reportesFile = path.join(dataDir, 'reportes.json');
-
 let usuarios = fs.existsSync(usuariosFile) ? JSON.parse(fs.readFileSync(usuariosFile)) : [];
 reportes = fs.existsSync(reportesFile) ? JSON.parse(fs.readFileSync(reportesFile)) : [];
-
 function guardarDatos() {
   fs.writeFileSync(usuariosFile, JSON.stringify(usuarios, null, 2));
   fs.writeFileSync(reportesFile, JSON.stringify(reportes, null, 2));
 }
 
 // ---------- VIP ----------
-const MES_PROMOCION = new Date().getMonth(); // este mes
+const MES_PROMOCION = new Date().getMonth();
 const ANIO_PROMOCION = new Date().getFullYear();
-const FECHA_LIMITE_VIP_PRUEBA = new Date('2026-03-06'); // Lunes habilitación modo VIP
-
+const FECHA_LIMITE_VIP_PRUEBA = new Date('2026-03-06');
 function determinarPlan() {
   const hoy = new Date();
-
-  // Modo VIP de prueba hasta el lunes
-  if (hoy < FECHA_LIMITE_VIP_PRUEBA) {
-    return { plan: 'fundador-prueba', precio: 0, vipTemporal: true };
-  }
-
-  // Promoción del mes: todos los que se hagan VIP este mes pagan 1.50 USD de por vida
-  if (hoy.getMonth() === MES_PROMOCION && hoy.getFullYear() === ANIO_PROMOCION) {
-    return { plan: 'promocion', precio: 1.50, vipDePorVida: true };
-  }
-
-  // VIP estándar a partir del próximo mes
+  if (hoy < FECHA_LIMITE_VIP_PRUEBA) return { plan: 'fundador-prueba', precio: 0, vipTemporal: true };
+  if (hoy.getMonth() === MES_PROMOCION && hoy.getFullYear() === ANIO_PROMOCION) return { plan: 'promocion', precio: 1.50, vipDePorVida: true };
   return { plan: 'estandar', precio: 3 };
 }
-
 function esVIP(userId) {
   const user = usuarios.find(u => u.id === userId);
   if (!user || !user.vip) return false;
-
   const hoy = new Date();
   const vence = new Date(user.fechaRenovacion);
-  if (hoy > vence) {
-    user.vip = false;
-    guardarDatos();
-    return false;
-  }
+  if (hoy > vence) { user.vip = false; guardarDatos(); return false; }
   return true;
 }
-
 function activarVIP(userId, metodo = 'manual') {
   const hoy = new Date();
   const { plan, precio, vipDePorVida, vipTemporal } = determinarPlan();
-  
   const vence = new Date();
-  if (vipDePorVida || vipTemporal) {
-    vence.setFullYear(2099); // VIP de por vida o temporal
-  } else {
-    vence.setMonth(vence.getMonth() + 1);
-  }
-
+  if (vipDePorVida || vipTemporal) vence.setFullYear(2099); 
+  else vence.setMonth(vence.getMonth() + 1);
   const usuarioExistente = usuarios.find(u => u.id === userId);
   if (usuarioExistente) {
     usuarioExistente.vip = true;
@@ -98,33 +67,25 @@ function activarVIP(userId, metodo = 'manual') {
     usuarioExistente.fechaInicio = hoy.toISOString();
     usuarioExistente.fechaRenovacion = vence.toISOString();
   } else {
-    usuarios.push({
-      id: userId,
-      vip: true,
-      plan,
-      precio,
-      metodoPago: metodo,
-      fechaInicio: hoy.toISOString(),
-      fechaRenovacion: vence.toISOString()
-    });
+    usuarios.push({ id: userId, vip: true, plan, precio, metodoPago: metodo, fechaInicio: hoy.toISOString(), fechaRenovacion: vence.toISOString() });
   }
-
   guardarDatos();
 }
 
-// ---------- MENÚ ----------
+// ---------- BOT ----------
 const bot = new Telegraf(BOT_TOKEN);
 
+// MENÚ PRINCIPAL Y BIENVENIDA
 bot.start(ctx => {
   ctx.reply(
-`👽 AIFUCITO 5.0
-Sistema Oficial RED AIFU`,
-  Markup.keyboard([['Reportar'], ['Mi estado'], ['Hazte VIP'], ['Red AIFU']]).resize()
+`👽 ¡Bienvenido a tu asistente virtual AIFUCITO!
+Tu acceso a la RED AIFU y reportes de fenómenos.`,
+  Markup.keyboard([['Reportar'], ['Mi estado'], ['Hazte VIP'], ['Ver Mapa'], ['Red AIFU']]).resize()
   );
 });
 
-// ---------- RED AIFU ----------
-bot.hears('Red AIFU', ctx => {
+// RED AIFU / CANALES
+function mostrarCanales(ctx) {
   ctx.reply("Canales oficiales:", Markup.inlineKeyboard([
     [Markup.button.url("Radar Cono Sur", "https://t.me/+YqA6d3VpKv9mZjU5")],
     [Markup.button.url("AIFU Uruguay", "https://t.me/+nCVD4NsOihIyNGFh")],
@@ -132,16 +93,22 @@ bot.hears('Red AIFU', ctx => {
     [Markup.button.url("AIFU Chile", "https://t.me/+VP2T47eLvIowNmYx")],
     [Markup.button.url("AIFU Global", "https://t.me/+r5XfcJma3g03MWZh")]
   ]));
+}
+bot.hears('Red AIFU', mostrarCanales);
+
+// VER MAPA
+bot.hears('Ver Mapa', ctx => {
+  ctx.reply(`🌍 Ver el mapa interactivo aquí: ${URL_MAPA}`);
 });
 
-// ---------- ESTADO ----------
+// ESTADO
 bot.hears('Mi estado', ctx => {
   const id = ctx.from.id;
   if (esVIP(id)) ctx.reply(`⭐ VIP activo.\nRenovación: ${usuarios.find(u => u.id === id).fechaRenovacion}`);
   else ctx.reply("Cuenta estándar activa.");
 });
 
-// ---------- INFO VIP ----------
+// INFO VIP
 bot.hears('Hazte VIP', ctx => {
   const { plan, precio } = determinarPlan();
   ctx.reply(
@@ -154,13 +121,12 @@ Envía comprobante y espera activación.`
   );
 });
 
-// ---------- REPORTE ----------
+// REPORTE
 let sesiones = {};
 bot.hears('Reportar', ctx => {
   sesiones[ctx.from.id] = { estado: 'pais' };
   ctx.reply("Indica tu país:");
 });
-
 bot.on('text', async ctx => {
   const id = ctx.from.id;
   if (!sesiones[id]) return;
@@ -174,7 +140,6 @@ bot.on('text', async ctx => {
   if (sesion.estado === 'descripcion') {
     const categoria = detectarCategoria(ctx.message.text);
     const coords = await obtenerCoordenadas(`${sesion.pais}, ${sesion.ciudad}, ${sesion.barrio}, ${sesion.referencia}`);
-    
     const nuevoReporte = {
       id: Date.now(),
       usuario: id,
@@ -190,36 +155,37 @@ bot.on('text', async ctx => {
       multimedia: [],
       vip: esVIP(id)
     };
-
     reportes.push(nuevoReporte);
     guardarDatos();
     publicarReporte(nuevoReporte);
     delete sesiones[id];
-    ctx.reply("Reporte registrado correctamente.");
+
+    let confirmMsg = `✅ Tu reporte fue registrado correctamente.`;
+    if (esVIP(id)) confirmMsg += "\n⭐ Eres usuario VIP";
+    ctx.reply(confirmMsg, Markup.keyboard([['Ver Mapa'], ['Red AIFU'], ['Reportar']]).resize());
   }
 });
 
-// ---------- PUBLICACIÓN ----------
+// PUBLICACIÓN
 function publicarReporte(reporte) {
   let texto = `📡 Nuevo reporte\nUbicación: ${reporte.pais}, ${reporte.ciudad}, ${reporte.barrio}\nFecha: ${reporte.fecha}\nCategoría: ${reporte.categoria}`;
   if (reporte.vip) texto += "\n⭐ Usuario VIP";
   bot.telegram.sendMessage(CANALES.radar, texto).catch(console.error);
 }
 
-// ---------- ADMIN ----------
+// ADMIN
 bot.command('activarvip', ctx => {
   if (ctx.from.id !== ADMIN_ID) return;
   const [_, userId, metodo] = ctx.message.text.split(' ');
   activarVIP(parseInt(userId), metodo);
   ctx.reply("VIP activado correctamente.");
 });
-
 bot.command('panel', ctx => {
   if (ctx.from.id !== ADMIN_ID) return;
   ctx.reply(`Panel Admin:\nUsuarios: ${usuarios.length}\nReportes totales: ${reportes.length}`);
 });
 
-// ---------- LANZAMIENTO ----------
+// LANZAMIENTO
 bot.launch().then(() => console.log("AIFUCITO 5.0 activo"));
 
 // Manejo de errores global
