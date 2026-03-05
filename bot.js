@@ -37,7 +37,7 @@ function guardarDatos() {
 // ---------- VIP ----------
 const MES_PROMOCION = new Date().getMonth();
 const ANIO_PROMOCION = new Date().getFullYear();
-const FECHA_LIMITE_VIP_PRUEBA = new Date('2026-03-06'); // hasta miércoles, modo prueba
+const FECHA_LIMITE_VIP_PRUEBA = new Date('2026-03-06'); 
 function determinarPlan() {
   const hoy = new Date();
   if (hoy < FECHA_LIMITE_VIP_PRUEBA) return { plan: 'fundador-prueba', precio: 0, vipTemporal: true };
@@ -139,7 +139,10 @@ bot.hears('Reportar', ctx => {
   sesiones[ctx.from.id] = { estado: 'inicio' };
   ctx.reply(
 `📍 Para empezar tu reporte, envía tu ubicación GPS para mayor exactitud o toca "No tengo GPS" para ingresar manualmente:`,
-    Markup.keyboard([['Enviar ubicación GPS'], ['No tengo GPS']]).resize()
+    Markup.keyboard([
+      Markup.button.locationRequest('Enviar ubicación GPS'),
+      ['No tengo GPS']
+    ]).resize()
   );
 });
 
@@ -152,7 +155,7 @@ bot.on('location', ctx => {
     sesion.lat = ctx.message.location.latitude;
     sesion.lng = ctx.message.location.longitude;
     sesion.estado = 'pais';
-    ctx.reply("📌 Ubicación recibida. Ahora, indica tu país:", Markup.keyboard([['Uruguay'], ['Argentina'], ['Chile'], ['Otro']]).resize());
+    ctx.reply("📌 Ubicación recibida. Ahora, indica tu país:");
   }
 });
 
@@ -166,7 +169,7 @@ bot.on('text', async ctx => {
   // Si usuario no envía GPS
   if (sesion.estado === 'inicio' && texto === 'No tengo GPS') {
     sesion.estado = 'pais';
-    ctx.reply("Indica tu país:", Markup.keyboard([['Uruguay'], ['Argentina'], ['Chile'], ['Otro']]).resize());
+    ctx.reply("Indica tu país:");
     return;
   }
 
@@ -176,12 +179,13 @@ bot.on('text', async ctx => {
   if (sesion.estado === 'barrio') { sesion.barrio = texto; sesion.estado = 'referencia'; ctx.reply("Agrega referencia (opcional):"); return; }
   if (sesion.estado === 'referencia') { sesion.referencia = texto; sesion.estado = 'descripcion'; ctx.reply("Describe el fenómeno:"); return; }
 
+  // Descripción
   if (sesion.estado === 'descripcion') {
-    // Detectar categoría
+    sesion.mensaje = texto;
     let categoria = detectarCategoria(texto);
     if (categoria === 'Otro') {
       ctx.reply("No se detectó categoría clara. Selecciona otra categoría:", Markup.keyboard([['OVNI'], ['Fenómeno Luminoso'], ['Fenómeno Sonoro'], ['Otra categoría']]).resize());
-      sesiones[id].estado = 'categoria'; 
+      sesiones[id].estado = 'categoria';
       return;
     } else {
       sesiones[id].categoria = categoria;
@@ -191,6 +195,7 @@ bot.on('text', async ctx => {
     }
   }
 
+  // Categoría manual
   if (sesion.estado === 'categoria') {
     sesiones[id].categoria = texto;
     sesiones[id].estado = 'multimedia';
@@ -198,34 +203,69 @@ bot.on('text', async ctx => {
     return;
   }
 
+  // Selección multimedia
   if (sesion.estado === 'multimedia') {
-    const coords = sesiones[id].lat && sesiones[id].lng ? { lat: sesiones[id].lat, lng: sesiones[id].lng } : await obtenerCoordenadas(`${sesion.pais}, ${sesion.ciudad}, ${sesion.barrio}, ${sesion.referencia}`);
-    const nuevoReporte = {
-      id: Date.now(),
-      usuario: id,
-      fecha: new Date().toISOString(),
-      pais: sesion.pais,
-      ciudad: sesion.ciudad,
-      barrio: sesion.barrio,
-      referencia: sesion.referencia,
-      mensaje: texto,
-      categoria: sesiones[id].categoria,
-      lat: coords.lat || null,
-      lng: coords.lng || null,
-      multimedia: [], // Aquí se podría agregar la ruta de archivos si suben
-      vip: esVIP(id)
-    };
-    reportes.push(nuevoReporte);
-    guardarDatos();
-    publicarReporte(nuevoReporte);
-    delete sesiones[id];
-
-    let confirmMsg = `✅ Tu reporte fue registrado correctamente.\nGracias por participar en la Red AIFU.`;
-    if (esVIP(id)) confirmMsg += "\n⭐ Eres usuario VIP";
-    ctx.reply(confirmMsg, menuPrincipal());
-    return;
+    if (texto === 'Foto') { sesiones[id].estado = 'esperandoFoto'; ctx.reply('📷 Envía la foto ahora:'); return; }
+    if (texto === 'Video') { sesiones[id].estado = 'esperandoVideo'; ctx.reply('🎥 Envía el video ahora:'); return; }
+    if (texto === 'Ninguno') { await finalizarReporte(ctx, sesiones[id]); delete sesiones[id]; return; }
   }
 });
+
+// Recepción de foto
+bot.on('photo', async ctx => {
+  const id = ctx.from.id;
+  if (!sesiones[id]) return;
+  const sesion = sesiones[id];
+  if (sesion.estado !== 'esperandoFoto') return;
+
+  sesion.multimedia = sesion.multimedia || [];
+  sesion.multimedia.push({ tipo: 'foto', file_id: ctx.message.photo[ctx.message.photo.length-1].file_id });
+  await finalizarReporte(ctx, sesion);
+  delete sesiones[id];
+});
+
+// Recepción de video
+bot.on('video', async ctx => {
+  const id = ctx.from.id;
+  if (!sesiones[id]) return;
+  const sesion = sesiones[id];
+  if (sesion.estado !== 'esperandoVideo') return;
+
+  sesion.multimedia = sesion.multimedia || [];
+  sesion.multimedia.push({ tipo: 'video', file_id: ctx.message.video.file_id });
+  await finalizarReporte(ctx, sesion);
+  delete sesiones[id];
+});
+
+// Función para finalizar reporte
+async function finalizarReporte(ctx, sesion) {
+  const id = ctx.from.id;
+  const coords = sesion.lat && sesion.lng ? { lat: sesion.lat, lng: sesion.lng } :
+    await obtenerCoordenadas(`${sesion.pais}, ${sesion.ciudad}, ${sesion.barrio}, ${sesion.referencia}`);
+
+  const nuevoReporte = {
+    id: Date.now(),
+    usuario: id,
+    fecha: new Date().toISOString(),
+    pais: sesion.pais,
+    ciudad: sesion.ciudad,
+    barrio: sesion.barrio,
+    referencia: sesion.referencia,
+    mensaje: sesion.mensaje || '',
+    categoria: sesion.categoria,
+    lat: coords.lat || null,
+    lng: coords.lng || null,
+    multimedia: sesion.multimedia || [],
+    vip: esVIP(id)
+  };
+  reportes.push(nuevoReporte);
+  guardarDatos();
+  publicarReporte(nuevoReporte);
+
+  let confirmMsg = `✅ Tu reporte fue registrado correctamente.\nGracias por participar en la Red AIFU.`;
+  if (esVIP(id)) confirmMsg += "\n⭐ Eres usuario VIP";
+  ctx.reply(confirmMsg, menuPrincipal());
+}
 
 // PUBLICACIÓN
 function publicarReporte(reporte) {
