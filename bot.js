@@ -11,7 +11,7 @@ import { detectarCategoria } from './utils/categorias.js';
 const BOT_TOKEN = process.env.BOT_TOKEN || '8701174108:AAFgEE-uSZlDvrTNm_QIeDIINqmnCzQIOCM';
 const ADMIN_ID = 123456789;
 const CANALES = { radar: '@aifu_radar', uy: '@aifu_uy', ar: '@aifu_ar', cl: '@aifu_cl' };
-const URL_MAPA = 'https://aifucito5-0.onrender.com/mapa/index.html'; // apunta al mapa real en Render
+const URL_MAPA = 'https://aifucito5-0.onrender.com/index.html'; // apunta al mapa real en Render
 
 // ---------- EXPRESS SERVIDOR PARA RENDER ----------
 const app = express();
