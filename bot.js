@@ -85,8 +85,8 @@ function menuPrincipal() {
 }
 bot.start(ctx => {
   ctx.reply(
-`👽 ¡Hola, humano explorador! Soy Fucito, tu asistente AIFU con energía cósmica 🚀
-Listo para ayudarte a reportar fenómenos y descubrir misterios.
+`👽 ¡Hola, explorador del cosmos! Soy Aifucito, tu asistente AIFU 🤖✨
+Listo para ayudarte a reportar fenómenos y descubrir misterios del universo.
 Selecciona una opción:`,
     menuPrincipal()
   );
@@ -112,12 +112,12 @@ bot.hears('Ver Mapa', ctx => {
 bot.hears('Mi estado', ctx => {
   const id = ctx.from.id;
   if (esVIP(id)) ctx.reply(`⭐ ¡Genial! Tienes VIP activo 🚀\nRenovación: ${usuarios.find(u => u.id === id).fechaRenovacion}`);
-  else ctx.reply("Cuenta estándar activa. ¡Pronto podrías ser VIP y desbloquear sorpresas! 😎");
+  else ctx.reply("Cuenta estándar activa. ¡Pronto podrías ser VIP y desbloquear sorpresas cósmicas! 😎");
 });
 
 // QUIÉNES SOMOS
 bot.hears('Quiénes somos', ctx => {
-  ctx.reply("👽 AIFU: Avistamiento e Investigación de Fenómenos Uruguayos\nObjetivo: registrar, analizar y compartir fenómenos anómalos en tiempo real.\n¡Únete a la aventura del misterio!");
+  ctx.reply("👽 AIFU = Avistamiento e Investigación de Fenómenos Uruguayos\nObjetivo: registrar, analizar y compartir fenómenos anómalos en tiempo real.\n¡Únete a la aventura del misterio!");
 });
 
 // INFO VIP
@@ -213,10 +213,15 @@ bot.on('photo', async ctx => {
   const sesion = sesiones[id];
   if (sesion.estado !== 'esperandoFoto') return;
 
-  sesion.multimedia = sesion.multimedia || [];
-  sesion.multimedia.push({ tipo: 'foto', file_id: ctx.message.photo[ctx.message.photo.length-1].file_id });
-  await finalizarReporte(ctx, sesion);
-  delete sesiones[id];
+  try {
+    sesion.multimedia = sesion.multimedia || [];
+    sesion.multimedia.push({ tipo: 'foto', file_id: ctx.message.photo[ctx.message.photo.length-1].file_id });
+    await finalizarReporte(ctx, sesion);
+    delete sesiones[id];
+  } catch (err) {
+    console.error('Error finalizando reporte con foto:', err);
+    ctx.reply("⚠️ Hubo un error al guardar tu foto. Intenta de nuevo.");
+  }
 });
 
 // Recepción de video
@@ -226,10 +231,15 @@ bot.on('video', async ctx => {
   const sesion = sesiones[id];
   if (sesion.estado !== 'esperandoVideo') return;
 
-  sesion.multimedia = sesion.multimedia || [];
-  sesion.multimedia.push({ tipo: 'video', file_id: ctx.message.video.file_id });
-  await finalizarReporte(ctx, sesion);
-  delete sesiones[id];
+  try {
+    sesion.multimedia = sesion.multimedia || [];
+    sesion.multimedia.push({ tipo: 'video', file_id: ctx.message.video.file_id });
+    await finalizarReporte(ctx, sesion);
+    delete sesiones[id];
+  } catch (err) {
+    console.error('Error finalizando reporte con video:', err);
+    ctx.reply("⚠️ Hubo un error al guardar tu video. Intenta de nuevo.");
+  }
 });
 
 // Función para finalizar reporte
@@ -255,7 +265,7 @@ async function finalizarReporte(ctx, sesion) {
   };
   reportes.push(nuevoReporte);
   guardarDatos();
-  publicarReporte(nuevoReporte);
+  await publicarReporte(nuevoReporte);
 
   let confirmMsg = `✅ ¡Reporte enviado con éxito! Fucito lo ha registrado con estilo 👽`;
   if (esVIP(id)) confirmMsg += "\n⭐ ¡Eres un súper usuario VIP! 🚀";
@@ -268,22 +278,18 @@ async function publicarReporte(reporte) {
   let texto = `📡 ¡Alerta desde AIFUCITO! 😎\nUbicación: ${reporte.pais}, ${reporte.ciudad}, ${reporte.barrio}\nFecha: ${reporte.fecha}\nCategoría: ${reporte.categoria}`;
   if (reporte.vip) texto += "\n⭐ ¡Usuario VIP con súper poderes de reporte!";
 
-  // Enviamos primero el mensaje
   try {
     await bot.telegram.sendMessage(chatId, texto);
   } catch (err) {
     console.error('Error enviando mensaje principal:', err);
   }
 
-  // Luego enviamos multimedia si existe
+  // Multimedia
   if (reporte.multimedia && reporte.multimedia.length > 0) {
     for (const m of reporte.multimedia) {
       try {
-        if (m.tipo === 'foto') {
-          await bot.telegram.sendPhoto(chatId, m.file_id, { caption: '📷 ¡Foto recibida! Fucito la comparte con todos 😃' });
-        } else if (m.tipo === 'video') {
-          await bot.telegram.sendVideo(chatId, m.file_id, { caption: '🎥 ¡Video reportado! Fucito lo sube al radar 😎' });
-        }
+        if (m.tipo === 'foto') await bot.telegram.sendPhoto(chatId, m.file_id, { caption: '📷 ¡Foto recibida! Fucito la comparte con todos 😃' });
+        else if (m.tipo === 'video') await bot.telegram.sendVideo(chatId, m.file_id, { caption: '🎥 ¡Video reportado! Fucito lo sube al radar 😎' });
       } catch (err) {
         console.error('Error enviando multimedia:', err);
       }
