@@ -10,10 +10,7 @@ import { detectarCategoria } from './utils/categorias.js';
 // ---------- CONFIG ----------
 const BOT_TOKEN = process.env.BOT_TOKEN; // Asegúrate de configurar tu token en Render
 const ADMIN_ID = 123456789; // ← TU ID TELEGRAM (sin ceros iniciales)
-const FECHA_CORTE_FUNDADOR = new Date('2026-04-01');
 const CANALES = { radar: '@aifu_radar', uy: '@aifu_uy', ar: '@aifu_ar', cl: '@aifu_cl' };
-
-const bot = new Telegraf(BOT_TOKEN);
 
 // ---------- EXPRESS SERVIDOR PARA RENDER ----------
 const app = express();
@@ -44,8 +41,24 @@ function guardarDatos() {
 }
 
 // ---------- VIP ----------
+const MES_PROMOCION = new Date().getMonth(); // este mes
+const ANIO_PROMOCION = new Date().getFullYear();
+const FECHA_LIMITE_VIP_PRUEBA = new Date('2026-03-06'); // Lunes habilitación modo VIP
+
 function determinarPlan() {
-  if (new Date() < FECHA_CORTE_FUNDADOR) return { plan: 'fundador', precio: 1.5 };
+  const hoy = new Date();
+
+  // Modo VIP de prueba hasta el lunes
+  if (hoy < FECHA_LIMITE_VIP_PRUEBA) {
+    return { plan: 'fundador-prueba', precio: 0, vipTemporal: true };
+  }
+
+  // Promoción del mes: todos los que se hagan VIP este mes pagan 1.50 USD de por vida
+  if (hoy.getMonth() === MES_PROMOCION && hoy.getFullYear() === ANIO_PROMOCION) {
+    return { plan: 'promocion', precio: 1.50, vipDePorVida: true };
+  }
+
+  // VIP estándar a partir del próximo mes
   return { plan: 'estandar', precio: 3 };
 }
 
@@ -65,9 +78,14 @@ function esVIP(userId) {
 
 function activarVIP(userId, metodo = 'manual') {
   const hoy = new Date();
+  const { plan, precio, vipDePorVida, vipTemporal } = determinarPlan();
+  
   const vence = new Date();
-  vence.setMonth(vence.getMonth() + 1);
-  const { plan, precio } = determinarPlan();
+  if (vipDePorVida || vipTemporal) {
+    vence.setFullYear(2099); // VIP de por vida o temporal
+  } else {
+    vence.setMonth(vence.getMonth() + 1);
+  }
 
   const usuarioExistente = usuarios.find(u => u.id === userId);
   if (usuarioExistente) {
@@ -93,6 +111,8 @@ function activarVIP(userId, metodo = 'manual') {
 }
 
 // ---------- MENÚ ----------
+const bot = new Telegraf(BOT_TOKEN);
+
 bot.start(ctx => {
   ctx.reply(
 `👽 AIFUCITO 5.0
