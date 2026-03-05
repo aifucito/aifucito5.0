@@ -8,7 +8,9 @@ import { obtenerCoordenadas } from './utils/ubicacion.js';
 import { detectarCategoria } from './utils/categorias.js';
 
 // ---------- CONFIG ----------
-const BOT_TOKEN = process.env.BOT_TOKEN; // Asegúrate de configurar tu token en Render
+// Puedes poner tu token directamente aquí:
+// const BOT_TOKEN = '8701174108:AAFgEE-uSZlDvrTNm_QIeDIINqmnCzQIOCM';
+const BOT_TOKEN = process.env.BOT_TOKEN || '8701174108:AAFgEE-uSZlDvrTNm_QIeDIINqmnCzQIOCM';
 const ADMIN_ID = 123456789; // ← TU ID TELEGRAM (sin ceros iniciales)
 const CANALES = { radar: '@aifu_radar', uy: '@aifu_uy', ar: '@aifu_ar', cl: '@aifu_cl' };
 
@@ -21,7 +23,7 @@ app.use(express.static('public'));
 let reportes = [];
 app.get('/reportes.json', (req, res) => res.json(reportes));
 
-// Levanta el servidor en el puerto de Render
+// Levanta el servidor en el puerto que Render asigna
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Servidor Express activo en puerto ${PORT}`));
 
