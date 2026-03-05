@@ -75,24 +75,25 @@ function activarVIP(userId, metodo = 'manual') {
 // ---------- BOT ----------
 const bot = new Telegraf(BOT_TOKEN);
 
-// MENÚ PRINCIPAL Y BIENVENIDA
+// ---------- MENÚ PRINCIPAL ----------
 function menuPrincipal() {
   return Markup.keyboard([
     ['Reportar', 'Ver Mapa'],
     ['Red AIFU', 'Mi estado'],
-    ['Quiénes somos']
+    ['Quiénes somos'],
+    ['Charlar con AIFUCITO']
   ]).resize();
 }
 bot.start(ctx => {
   ctx.reply(
-`👽 ¡Hola, explorador del cosmos! Soy Aifucito, tu asistente AIFU 🤖✨
+`👽 ¡Hola, explorador del cosmos! Soy AIFUCITO, tu asistente AIFU 🤖✨
 Listo para ayudarte a reportar fenómenos y descubrir misterios del universo.
 Selecciona una opción:`,
     menuPrincipal()
   );
 });
 
-// RED AIFU / CANALES
+// ---------- RED AIFU ----------
 bot.hears('Red AIFU', ctx => {
   ctx.reply("🌟 Canales oficiales de la Red AIFU:", Markup.inlineKeyboard([
     [Markup.button.url("Radar Cono Sur", "https://t.me/+YqA6d3VpKv9mZjU5")],
@@ -103,24 +104,25 @@ bot.hears('Red AIFU', ctx => {
   ]));
 });
 
-// VER MAPA
+// ---------- MAPA ----------
 bot.hears('Ver Mapa', ctx => {
   ctx.reply(`🌍 ¡Explora el mapa interactivo de fenómenos! Aquí lo tienes: ${URL_MAPA}`);
 });
 
-// ESTADO
+// ---------- ESTADO ----------
 bot.hears('Mi estado', ctx => {
   const id = ctx.from.id;
-  if (esVIP(id)) ctx.reply(`⭐ ¡Genial! Tienes VIP activo 🚀\nRenovación: ${usuarios.find(u => u.id === id).fechaRenovacion}`);
+  const user = usuarios.find(u => u.id === id);
+  if (user && user.vip) ctx.reply(`⭐ ¡Genial! Tienes VIP activo 🚀\nRenovación: ${user.fechaRenovacion}`);
   else ctx.reply("Cuenta estándar activa. ¡Pronto podrías ser VIP y desbloquear sorpresas cósmicas! 😎");
 });
 
-// QUIÉNES SOMOS
+// ---------- QUIÉNES SOMOS ----------
 bot.hears('Quiénes somos', ctx => {
   ctx.reply("👽 AIFU = Avistamiento e Investigación de Fenómenos Uruguayos\nObjetivo: registrar, analizar y compartir fenómenos anómalos en tiempo real.\n¡Únete a la aventura del misterio!");
 });
 
-// INFO VIP
+// ---------- INFO VIP ----------
 bot.hears('Hazte VIP', ctx => {
   const { plan, precio } = determinarPlan();
   ctx.reply(
@@ -133,7 +135,7 @@ Envía comprobante y espera activación.\n¡Fucito te espera con sorpresas cósm
   );
 });
 
-// ---------- REPORTE CON BOTONES ----------
+// ---------- REPORTE ----------
 let sesiones = {};
 bot.hears('Reportar', ctx => {
   sesiones[ctx.from.id] = { estado: 'inicio' };
@@ -146,7 +148,7 @@ bot.hears('Reportar', ctx => {
   );
 });
 
-// Manejo de ubicación
+// Ubicación
 bot.on('location', ctx => {
   const id = ctx.from.id;
   if (!sesiones[id]) return;
@@ -159,9 +161,28 @@ bot.on('location', ctx => {
   }
 });
 
-// Manejo de texto en flujo de reporte
+// Texto en reporte
 bot.on('text', async ctx => {
   const id = ctx.from.id;
+
+  // -------- CHARLA CON AIFUCITO ----------
+  if (sesionesChat[id] && sesionesChat[id].activa) {
+    const mensaje = ctx.message.text;
+    const thinkingMsg = await ctx.reply('👽🤔 Fucito está pensando...');
+    const respuestasFucito = [
+      `¡Wow! Interesante lo que dices sobre "${mensaje}" 😃`,
+      `¡Oh, eso suena como un misterio cósmico! 👽`,
+      `🚀 ¡Fucito está intrigado por eso!`,
+      `😎 ¡Buen punto, humano! La exploración continúa…`,
+      `✨ ¡Ja! Nunca había pensado en "${mensaje}" así.`
+    ];
+    const respuesta = respuestasFucito[Math.floor(Math.random() * respuestasFucito.length)];
+    await ctx.telegram.deleteMessage(ctx.chat.id, thinkingMsg.message_id);
+    ctx.reply(respuesta, Markup.keyboard([['Terminar charla'], ['Menú principal']]).resize());
+    return;
+  }
+
+  // -------- FLUJO DE REPORTE EXISTENTE ----------
   if (!sesiones[id]) return;
   const sesion = sesiones[id];
   const texto = ctx.message.text;
@@ -171,12 +192,10 @@ bot.on('text', async ctx => {
     ctx.reply("Indica tu país:");
     return;
   }
-
   if (sesion.estado === 'pais') { sesion.pais = texto; sesion.estado = 'ciudad'; ctx.reply("Indica la ciudad:"); return; }
   if (sesion.estado === 'ciudad') { sesion.ciudad = texto; sesion.estado = 'barrio'; ctx.reply("Indica barrio/localidad/comuna o zona:"); return; }
   if (sesion.estado === 'barrio') { sesion.barrio = texto; sesion.estado = 'referencia'; ctx.reply("Agrega referencia (opcional):"); return; }
   if (sesion.estado === 'referencia') { sesion.referencia = texto; sesion.estado = 'descripcion'; ctx.reply("Describe el fenómeno:"); return; }
-
   if (sesion.estado === 'descripcion') {
     sesion.mensaje = texto;
     let categoria = detectarCategoria(texto);
@@ -191,14 +210,12 @@ bot.on('text', async ctx => {
       return;
     }
   }
-
   if (sesion.estado === 'categoria') {
     sesiones[id].categoria = texto;
     sesiones[id].estado = 'multimedia';
     ctx.reply(`Categoría registrada: ${texto}\n¿Deseas agregar multimedia?`, Markup.keyboard([['Foto'], ['Video'], ['Ninguno']]).resize());
     return;
   }
-
   if (sesion.estado === 'multimedia') {
     if (texto === 'Foto') { sesiones[id].estado = 'esperandoFoto'; ctx.reply('📷 ¡Perfecto! Envía la foto ahora:'); return; }
     if (texto === 'Video') { sesiones[id].estado = 'esperandoVideo'; ctx.reply('🎥 ¡Genial! Envía el video ahora:'); return; }
@@ -206,43 +223,29 @@ bot.on('text', async ctx => {
   }
 });
 
-// Recepción de foto
+// Recepción multimedia
 bot.on('photo', async ctx => {
   const id = ctx.from.id;
   if (!sesiones[id]) return;
   const sesion = sesiones[id];
   if (sesion.estado !== 'esperandoFoto') return;
-
-  try {
-    sesion.multimedia = sesion.multimedia || [];
-    sesion.multimedia.push({ tipo: 'foto', file_id: ctx.message.photo[ctx.message.photo.length-1].file_id });
-    await finalizarReporte(ctx, sesion);
-    delete sesiones[id];
-  } catch (err) {
-    console.error('Error finalizando reporte con foto:', err);
-    ctx.reply("⚠️ Hubo un error al guardar tu foto. Intenta de nuevo.");
-  }
+  sesion.multimedia = sesion.multimedia || [];
+  sesion.multimedia.push({ tipo: 'foto', file_id: ctx.message.photo[ctx.message.photo.length-1].file_id });
+  await finalizarReporte(ctx, sesion);
+  delete sesiones[id];
 });
-
-// Recepción de video
 bot.on('video', async ctx => {
   const id = ctx.from.id;
   if (!sesiones[id]) return;
   const sesion = sesiones[id];
   if (sesion.estado !== 'esperandoVideo') return;
-
-  try {
-    sesion.multimedia = sesion.multimedia || [];
-    sesion.multimedia.push({ tipo: 'video', file_id: ctx.message.video.file_id });
-    await finalizarReporte(ctx, sesion);
-    delete sesiones[id];
-  } catch (err) {
-    console.error('Error finalizando reporte con video:', err);
-    ctx.reply("⚠️ Hubo un error al guardar tu video. Intenta de nuevo.");
-  }
+  sesion.multimedia = sesion.multimedia || [];
+  sesion.multimedia.push({ tipo: 'video', file_id: ctx.message.video.file_id });
+  await finalizarReporte(ctx, sesion);
+  delete sesiones[id];
 });
 
-// Función para finalizar reporte
+// Finalizar reporte
 async function finalizarReporte(ctx, sesion) {
   const id = ctx.from.id;
   const coords = sesion.lat && sesion.lng ? { lat: sesion.lat, lng: sesion.lng } :
@@ -267,37 +270,44 @@ async function finalizarReporte(ctx, sesion) {
   guardarDatos();
   await publicarReporte(nuevoReporte);
 
-  let confirmMsg = `✅ ¡Reporte enviado con éxito! Fucito lo ha registrado con estilo 👽`;
-  if (esVIP(id)) confirmMsg += "\n⭐ ¡Eres un súper usuario VIP! 🚀";
-  ctx.reply(confirmMsg, menuPrincipal());
+  ctx.reply(`✅ ¡Reporte enviado con éxito! Fucito lo ha registrado con estilo 👽${esVIP(id) ? "\n⭐ ¡Eres un súper usuario VIP! 🚀" : ""}`, menuPrincipal());
 }
 
-// ---------- PUBLICACIÓN CON PERSONALIDAD FUCITO ----------
+// Publicación
 async function publicarReporte(reporte) {
-  const chatId = CANALES.radar; // canal principal
+  const chatId = CANALES.radar;
   let texto = `📡 ¡Alerta desde AIFUCITO! 😎\nUbicación: ${reporte.pais}, ${reporte.ciudad}, ${reporte.barrio}\nFecha: ${reporte.fecha}\nCategoría: ${reporte.categoria}`;
   if (reporte.vip) texto += "\n⭐ ¡Usuario VIP con súper poderes de reporte!";
 
-  try {
-    await bot.telegram.sendMessage(chatId, texto);
-  } catch (err) {
-    console.error('Error enviando mensaje principal:', err);
-  }
+  try { await bot.telegram.sendMessage(chatId, texto); } 
+  catch (err) { console.error('Error enviando mensaje principal:', err); }
 
-  // Multimedia
   if (reporte.multimedia && reporte.multimedia.length > 0) {
     for (const m of reporte.multimedia) {
       try {
         if (m.tipo === 'foto') await bot.telegram.sendPhoto(chatId, m.file_id, { caption: '📷 ¡Foto recibida! Fucito la comparte con todos 😃' });
         else if (m.tipo === 'video') await bot.telegram.sendVideo(chatId, m.file_id, { caption: '🎥 ¡Video reportado! Fucito lo sube al radar 😎' });
-      } catch (err) {
-        console.error('Error enviando multimedia:', err);
-      }
+      } catch (err) { console.error('Error enviando multimedia:', err); }
     }
   }
 }
 
-// ADMIN
+// ---------- CHARLA CON AIFUCITO ----------
+let sesionesChat = {};
+bot.hears('Charlar con AIFUCITO', ctx => {
+  const id = ctx.from.id;
+  sesionesChat[id] = { activa: true };
+  ctx.reply('👽 ¡Hola, humano! Soy AIFUCITO y estoy listo para charlar contigo 😃\nPuedes enviarme cualquier mensaje sobre OVNIs, aliens, duendes, fantasmas…',
+    Markup.keyboard([['Terminar charla'], ['Menú principal']]).resize()
+  );
+});
+bot.hears('Terminar charla', ctx => {
+  const id = ctx.from.id;
+  if (sesionesChat[id]) delete sesionesChat[id];
+  ctx.reply('👋 ¡Hasta luego! Fucito vuelve a sus investigaciones cósmicas 🚀', menuPrincipal());
+});
+
+// ---------- ADMIN ----------
 bot.command('activarvip', ctx => {
   if (ctx.from.id !== ADMIN_ID) return;
   const [_, userId, metodo] = ctx.message.text.split(' ');
@@ -309,10 +319,10 @@ bot.command('panel', ctx => {
   ctx.reply(`Panel Admin:\nUsuarios: ${usuarios.length}\nReportes totales: ${reportes.length}`);
 });
 
-// LANZAMIENTO
+// ---------- LANZAMIENTO ----------
 bot.launch().then(() => console.log("AIFUCITO 5.0 activo"));
 
-// Manejo de errores global
+// ---------- MANEJO ERRORES ----------
 bot.catch(err => console.error('Error en bot:', err));
 process.on('unhandledRejection', console.error);
 process.on('uncaughtException', console.error);
