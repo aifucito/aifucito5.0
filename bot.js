@@ -9,9 +9,9 @@ import { detectarCategoria } from './utils/categorias.js';
 
 // ---------- CONFIG ----------
 const BOT_TOKEN = process.env.BOT_TOKEN || '8701174108:AAFgEE-uSZlDvrTNm_QIeDIINqmnCzQIOCM';
-const ADMIN_ID = 123456789; 
+const ADMIN_ID = 123456789;
 const CANALES = { radar: '@aifu_radar', uy: '@aifu_uy', ar: '@aifu_ar', cl: '@aifu_cl' };
-const URL_MAPA = 'https://tu-servidor.com/mapa'; // cambia por la URL de tu mapa con Leaflet
+const URL_MAPA = 'https://tuservidor-render.com/mapa/index.html'; // apunta al mapa real en Render
 
 // ---------- EXPRESS SERVIDOR PARA RENDER ----------
 const app = express();
@@ -37,7 +37,7 @@ function guardarDatos() {
 // ---------- VIP ----------
 const MES_PROMOCION = new Date().getMonth();
 const ANIO_PROMOCION = new Date().getFullYear();
-const FECHA_LIMITE_VIP_PRUEBA = new Date('2026-03-06');
+const FECHA_LIMITE_VIP_PRUEBA = new Date('2026-03-06'); // hasta miércoles, modo prueba
 function determinarPlan() {
   const hoy = new Date();
   if (hoy < FECHA_LIMITE_VIP_PRUEBA) return { plan: 'fundador-prueba', precio: 0, vipTemporal: true };
@@ -56,7 +56,7 @@ function activarVIP(userId, metodo = 'manual') {
   const hoy = new Date();
   const { plan, precio, vipDePorVida, vipTemporal } = determinarPlan();
   const vence = new Date();
-  if (vipDePorVida || vipTemporal) vence.setFullYear(2099); 
+  if (vipDePorVida || vipTemporal) vence.setFullYear(2099);
   else vence.setMonth(vence.getMonth() + 1);
   const usuarioExistente = usuarios.find(u => u.id === userId);
   if (usuarioExistente) {
@@ -76,16 +76,24 @@ function activarVIP(userId, metodo = 'manual') {
 const bot = new Telegraf(BOT_TOKEN);
 
 // MENÚ PRINCIPAL Y BIENVENIDA
+function menuPrincipal() {
+  return Markup.keyboard([
+    ['Reportar', 'Ver Mapa'],
+    ['Red AIFU', 'Mi estado'],
+    ['Quiénes somos']
+  ]).resize();
+}
 bot.start(ctx => {
   ctx.reply(
 `👽 ¡Bienvenido a tu asistente virtual AIFUCITO!
-Tu acceso a la RED AIFU y reportes de fenómenos.`,
-  Markup.keyboard([['Reportar'], ['Mi estado'], ['Hazte VIP'], ['Ver Mapa'], ['Red AIFU']]).resize()
+Tu acceso a la RED AIFU y reportes de fenómenos.
+Selecciona una opción:`,
+    menuPrincipal()
   );
 });
 
 // RED AIFU / CANALES
-function mostrarCanales(ctx) {
+bot.hears('Red AIFU', ctx => {
   ctx.reply("Canales oficiales:", Markup.inlineKeyboard([
     [Markup.button.url("Radar Cono Sur", "https://t.me/+YqA6d3VpKv9mZjU5")],
     [Markup.button.url("AIFU Uruguay", "https://t.me/+nCVD4NsOihIyNGFh")],
@@ -93,8 +101,7 @@ function mostrarCanales(ctx) {
     [Markup.button.url("AIFU Chile", "https://t.me/+VP2T47eLvIowNmYx")],
     [Markup.button.url("AIFU Global", "https://t.me/+r5XfcJma3g03MWZh")]
   ]));
-}
-bot.hears('Red AIFU', mostrarCanales);
+});
 
 // VER MAPA
 bot.hears('Ver Mapa', ctx => {
@@ -106,6 +113,11 @@ bot.hears('Mi estado', ctx => {
   const id = ctx.from.id;
   if (esVIP(id)) ctx.reply(`⭐ VIP activo.\nRenovación: ${usuarios.find(u => u.id === id).fechaRenovacion}`);
   else ctx.reply("Cuenta estándar activa.");
+});
+
+// QUIÉNES SOMOS
+bot.hears('Quiénes somos', ctx => {
+  ctx.reply("AIFU: Avistamiento e Investigación de Fenómenos Uruguayos.\nObjetivo: registrar, analizar y compartir fenómenos anómalos en tiempo real.");
 });
 
 // INFO VIP
@@ -121,25 +133,73 @@ Envía comprobante y espera activación.`
   );
 });
 
-// REPORTE
+// ---------- REPORTE CON BOTONES ----------
 let sesiones = {};
 bot.hears('Reportar', ctx => {
-  sesiones[ctx.from.id] = { estado: 'pais' };
-  ctx.reply("Indica tu país:");
+  sesiones[ctx.from.id] = { estado: 'inicio' };
+  ctx.reply(
+`📍 Para empezar tu reporte, envía tu ubicación GPS para mayor exactitud o toca "No tengo GPS" para ingresar manualmente:`,
+    Markup.keyboard([['Enviar ubicación GPS'], ['No tengo GPS']]).resize()
+  );
 });
+
+// Manejo de ubicación
+bot.on('location', ctx => {
+  const id = ctx.from.id;
+  if (!sesiones[id]) return;
+  const sesion = sesiones[id];
+  if (sesion.estado === 'inicio') {
+    sesion.lat = ctx.message.location.latitude;
+    sesion.lng = ctx.message.location.longitude;
+    sesion.estado = 'pais';
+    ctx.reply("📌 Ubicación recibida. Ahora, indica tu país:", Markup.keyboard([['Uruguay'], ['Argentina'], ['Chile'], ['Otro']]).resize());
+  }
+});
+
+// Manejo de texto en flujo de reporte
 bot.on('text', async ctx => {
   const id = ctx.from.id;
   if (!sesiones[id]) return;
   const sesion = sesiones[id];
+  const texto = ctx.message.text;
 
-  if (sesion.estado === 'pais') { sesion.pais = ctx.message.text; sesion.estado = 'ciudad'; ctx.reply("Indica la ciudad:"); return; }
-  if (sesion.estado === 'ciudad') { sesion.ciudad = ctx.message.text; sesion.estado = 'barrio'; ctx.reply("Indica barrio/localidad/comuna o zona:"); return; }
-  if (sesion.estado === 'barrio') { sesion.barrio = ctx.message.text; sesion.estado = 'referencia'; ctx.reply("Agrega referencia (opcional):"); return; }
-  if (sesion.estado === 'referencia') { sesion.referencia = ctx.message.text; sesion.estado = 'descripcion'; ctx.reply("Describe el fenómeno:"); return; }
+  // Si usuario no envía GPS
+  if (sesion.estado === 'inicio' && texto === 'No tengo GPS') {
+    sesion.estado = 'pais';
+    ctx.reply("Indica tu país:", Markup.keyboard([['Uruguay'], ['Argentina'], ['Chile'], ['Otro']]).resize());
+    return;
+  }
+
+  // Flujo de ubicación manual
+  if (sesion.estado === 'pais') { sesion.pais = texto; sesion.estado = 'ciudad'; ctx.reply("Indica la ciudad:"); return; }
+  if (sesion.estado === 'ciudad') { sesion.ciudad = texto; sesion.estado = 'barrio'; ctx.reply("Indica barrio/localidad/comuna o zona:"); return; }
+  if (sesion.estado === 'barrio') { sesion.barrio = texto; sesion.estado = 'referencia'; ctx.reply("Agrega referencia (opcional):"); return; }
+  if (sesion.estado === 'referencia') { sesion.referencia = texto; sesion.estado = 'descripcion'; ctx.reply("Describe el fenómeno:"); return; }
 
   if (sesion.estado === 'descripcion') {
-    const categoria = detectarCategoria(ctx.message.text);
-    const coords = await obtenerCoordenadas(`${sesion.pais}, ${sesion.ciudad}, ${sesion.barrio}, ${sesion.referencia}`);
+    // Detectar categoría
+    let categoria = detectarCategoria(texto);
+    if (categoria === 'Otro') {
+      ctx.reply("No se detectó categoría clara. Selecciona otra categoría:", Markup.keyboard([['OVNI'], ['Fenómeno Luminoso'], ['Fenómeno Sonoro'], ['Otra categoría']]).resize());
+      sesiones[id].estado = 'categoria'; 
+      return;
+    } else {
+      sesiones[id].categoria = categoria;
+      sesiones[id].estado = 'multimedia';
+      ctx.reply(`Categoría detectada: ${categoria}\n¿Deseas agregar multimedia?`, Markup.keyboard([['Foto'], ['Video'], ['Ninguno']]).resize());
+      return;
+    }
+  }
+
+  if (sesion.estado === 'categoria') {
+    sesiones[id].categoria = texto;
+    sesiones[id].estado = 'multimedia';
+    ctx.reply(`Categoría registrada: ${texto}\n¿Deseas agregar multimedia?`, Markup.keyboard([['Foto'], ['Video'], ['Ninguno']]).resize());
+    return;
+  }
+
+  if (sesion.estado === 'multimedia') {
+    const coords = sesiones[id].lat && sesiones[id].lng ? { lat: sesiones[id].lat, lng: sesiones[id].lng } : await obtenerCoordenadas(`${sesion.pais}, ${sesion.ciudad}, ${sesion.barrio}, ${sesion.referencia}`);
     const nuevoReporte = {
       id: Date.now(),
       usuario: id,
@@ -148,11 +208,11 @@ bot.on('text', async ctx => {
       ciudad: sesion.ciudad,
       barrio: sesion.barrio,
       referencia: sesion.referencia,
-      mensaje: ctx.message.text,
-      categoria,
-      lat: coords?.lat || null,
-      lng: coords?.lng || null,
-      multimedia: [],
+      mensaje: texto,
+      categoria: sesiones[id].categoria,
+      lat: coords.lat || null,
+      lng: coords.lng || null,
+      multimedia: [], // Aquí se podría agregar la ruta de archivos si suben
       vip: esVIP(id)
     };
     reportes.push(nuevoReporte);
@@ -160,9 +220,10 @@ bot.on('text', async ctx => {
     publicarReporte(nuevoReporte);
     delete sesiones[id];
 
-    let confirmMsg = `✅ Tu reporte fue registrado correctamente.`;
+    let confirmMsg = `✅ Tu reporte fue registrado correctamente.\nGracias por participar en la Red AIFU.`;
     if (esVIP(id)) confirmMsg += "\n⭐ Eres usuario VIP";
-    ctx.reply(confirmMsg, Markup.keyboard([['Ver Mapa'], ['Red AIFU'], ['Reportar']]).resize());
+    ctx.reply(confirmMsg, menuPrincipal());
+    return;
   }
 });
 
