@@ -11,9 +11,9 @@ import { detectarCategoria } from './utils/categorias.js';
 const BOT_TOKEN = process.env.BOT_TOKEN || '8701174108:AAFgEE-uSZlDvrTNm_QIeDIINqmnCzQIOCM';
 const ADMIN_ID = 123456789;
 const CANALES = { radar: '@aifu_radar', uy: '@aifu_uy', ar: '@aifu_ar', cl: '@aifu_cl' };
-const URL_MAPA = 'https://aifucito5-0.onrender.com/index.html'; // apunta al mapa real en Render
+const URL_MAPA = 'https://aifucito5-0.onrender.com/index.html'; 
 
-// ---------- EXPRESS SERVIDOR PARA RENDER ----------
+// ---------- EXPRESS SERVIDOR ----------
 const app = express();
 app.use(cors());
 app.use(express.static('public'));
@@ -37,7 +37,7 @@ function guardarDatos() {
 // ---------- VIP ----------
 const MES_PROMOCION = new Date().getMonth();
 const ANIO_PROMOCION = new Date().getFullYear();
-const FECHA_LIMITE_VIP_PRUEBA = new Date('2026-03-06'); 
+const FECHA_LIMITE_VIP_PRUEBA = new Date('2026-03-06');
 function determinarPlan() {
   const hoy = new Date();
   if (hoy < FECHA_LIMITE_VIP_PRUEBA) return { plan: 'fundador-prueba', precio: 0, vipTemporal: true };
@@ -140,7 +140,7 @@ bot.hears('Reportar', ctx => {
   ctx.reply(
 `📍 Para empezar tu reporte, envía tu ubicación GPS para mayor exactitud o toca "No tengo GPS" para ingresar manualmente:`,
     Markup.keyboard([
-      Markup.button.locationRequest('Enviar ubicación GPS'),
+      [Markup.button.locationRequest('Enviar ubicación GPS')],
       ['No tengo GPS']
     ]).resize()
   );
