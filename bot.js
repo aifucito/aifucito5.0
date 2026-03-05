@@ -85,8 +85,8 @@ function menuPrincipal() {
 }
 bot.start(ctx => {
   ctx.reply(
-`👽 ¡Bienvenido a tu asistente virtual AIFUCITO!
-Tu acceso a la RED AIFU y reportes de fenómenos.
+`👽 ¡Hola, humano explorador! Soy Fucito, tu asistente AIFU con energía cósmica 🚀
+Listo para ayudarte a reportar fenómenos y descubrir misterios.
 Selecciona una opción:`,
     menuPrincipal()
   );
@@ -94,7 +94,7 @@ Selecciona una opción:`,
 
 // RED AIFU / CANALES
 bot.hears('Red AIFU', ctx => {
-  ctx.reply("Canales oficiales:", Markup.inlineKeyboard([
+  ctx.reply("🌟 Canales oficiales de la Red AIFU:", Markup.inlineKeyboard([
     [Markup.button.url("Radar Cono Sur", "https://t.me/+YqA6d3VpKv9mZjU5")],
     [Markup.button.url("AIFU Uruguay", "https://t.me/+nCVD4NsOihIyNGFh")],
     [Markup.button.url("AIFU Argentina", "https://t.me/+QpErPk26SY05OGIx")],
@@ -105,19 +105,19 @@ bot.hears('Red AIFU', ctx => {
 
 // VER MAPA
 bot.hears('Ver Mapa', ctx => {
-  ctx.reply(`🌍 Ver el mapa interactivo aquí: ${URL_MAPA}`);
+  ctx.reply(`🌍 ¡Explora el mapa interactivo de fenómenos! Aquí lo tienes: ${URL_MAPA}`);
 });
 
 // ESTADO
 bot.hears('Mi estado', ctx => {
   const id = ctx.from.id;
-  if (esVIP(id)) ctx.reply(`⭐ VIP activo.\nRenovación: ${usuarios.find(u => u.id === id).fechaRenovacion}`);
-  else ctx.reply("Cuenta estándar activa.");
+  if (esVIP(id)) ctx.reply(`⭐ ¡Genial! Tienes VIP activo 🚀\nRenovación: ${usuarios.find(u => u.id === id).fechaRenovacion}`);
+  else ctx.reply("Cuenta estándar activa. ¡Pronto podrías ser VIP y desbloquear sorpresas! 😎");
 });
 
 // QUIÉNES SOMOS
 bot.hears('Quiénes somos', ctx => {
-  ctx.reply("AIFU: Avistamiento e Investigación de Fenómenos Uruguayos.\nObjetivo: registrar, analizar y compartir fenómenos anómalos en tiempo real.");
+  ctx.reply("👽 AIFU: Avistamiento e Investigación de Fenómenos Uruguayos\nObjetivo: registrar, analizar y compartir fenómenos anómalos en tiempo real.\n¡Únete a la aventura del misterio!");
 });
 
 // INFO VIP
@@ -129,7 +129,7 @@ Plan: ${plan.toUpperCase()}
 Precio mensual: USD ${precio}
 Beneficios: Acceso completo, multimedia, radar prioritario, alertas avanzadas
 Métodos: PayPal, Mercado Pago, Prex, MiDinero
-Envía comprobante y espera activación.`
+Envía comprobante y espera activación.\n¡Fucito te espera con sorpresas cósmicas! 🚀`
   );
 });
 
@@ -138,7 +138,7 @@ let sesiones = {};
 bot.hears('Reportar', ctx => {
   sesiones[ctx.from.id] = { estado: 'inicio' };
   ctx.reply(
-`📍 Para empezar tu reporte, envía tu ubicación GPS para mayor exactitud o toca "No tengo GPS" para ingresar manualmente:`,
+`📍 ¡Hora de reportar un fenómeno! Envíame tu ubicación GPS o toca "No tengo GPS" para ingresar manualmente:`,
     Markup.keyboard([
       [Markup.button.locationRequest('Enviar ubicación GPS')],
       ['No tengo GPS']
@@ -166,20 +166,17 @@ bot.on('text', async ctx => {
   const sesion = sesiones[id];
   const texto = ctx.message.text;
 
-  // Si usuario no envía GPS
   if (sesion.estado === 'inicio' && texto === 'No tengo GPS') {
     sesion.estado = 'pais';
     ctx.reply("Indica tu país:");
     return;
   }
 
-  // Flujo de ubicación manual
   if (sesion.estado === 'pais') { sesion.pais = texto; sesion.estado = 'ciudad'; ctx.reply("Indica la ciudad:"); return; }
   if (sesion.estado === 'ciudad') { sesion.ciudad = texto; sesion.estado = 'barrio'; ctx.reply("Indica barrio/localidad/comuna o zona:"); return; }
   if (sesion.estado === 'barrio') { sesion.barrio = texto; sesion.estado = 'referencia'; ctx.reply("Agrega referencia (opcional):"); return; }
   if (sesion.estado === 'referencia') { sesion.referencia = texto; sesion.estado = 'descripcion'; ctx.reply("Describe el fenómeno:"); return; }
 
-  // Descripción
   if (sesion.estado === 'descripcion') {
     sesion.mensaje = texto;
     let categoria = detectarCategoria(texto);
@@ -195,7 +192,6 @@ bot.on('text', async ctx => {
     }
   }
 
-  // Categoría manual
   if (sesion.estado === 'categoria') {
     sesiones[id].categoria = texto;
     sesiones[id].estado = 'multimedia';
@@ -203,10 +199,9 @@ bot.on('text', async ctx => {
     return;
   }
 
-  // Selección multimedia
   if (sesion.estado === 'multimedia') {
-    if (texto === 'Foto') { sesiones[id].estado = 'esperandoFoto'; ctx.reply('📷 Envía la foto ahora:'); return; }
-    if (texto === 'Video') { sesiones[id].estado = 'esperandoVideo'; ctx.reply('🎥 Envía el video ahora:'); return; }
+    if (texto === 'Foto') { sesiones[id].estado = 'esperandoFoto'; ctx.reply('📷 ¡Perfecto! Envía la foto ahora:'); return; }
+    if (texto === 'Video') { sesiones[id].estado = 'esperandoVideo'; ctx.reply('🎥 ¡Genial! Envía el video ahora:'); return; }
     if (texto === 'Ninguno') { await finalizarReporte(ctx, sesiones[id]); delete sesiones[id]; return; }
   }
 });
@@ -262,16 +257,38 @@ async function finalizarReporte(ctx, sesion) {
   guardarDatos();
   publicarReporte(nuevoReporte);
 
-  let confirmMsg = `✅ Tu reporte fue registrado correctamente.\nGracias por participar en la Red AIFU.`;
-  if (esVIP(id)) confirmMsg += "\n⭐ Eres usuario VIP";
+  let confirmMsg = `✅ ¡Reporte enviado con éxito! Fucito lo ha registrado con estilo 👽`;
+  if (esVIP(id)) confirmMsg += "\n⭐ ¡Eres un súper usuario VIP! 🚀";
   ctx.reply(confirmMsg, menuPrincipal());
 }
 
-// PUBLICACIÓN
-function publicarReporte(reporte) {
-  let texto = `📡 Nuevo reporte\nUbicación: ${reporte.pais}, ${reporte.ciudad}, ${reporte.barrio}\nFecha: ${reporte.fecha}\nCategoría: ${reporte.categoria}`;
-  if (reporte.vip) texto += "\n⭐ Usuario VIP";
-  bot.telegram.sendMessage(CANALES.radar, texto).catch(console.error);
+// ---------- PUBLICACIÓN CON PERSONALIDAD FUCITO ----------
+async function publicarReporte(reporte) {
+  const chatId = CANALES.radar; // canal principal
+  let texto = `📡 ¡Alerta desde AIFUCITO! 😎\nUbicación: ${reporte.pais}, ${reporte.ciudad}, ${reporte.barrio}\nFecha: ${reporte.fecha}\nCategoría: ${reporte.categoria}`;
+  if (reporte.vip) texto += "\n⭐ ¡Usuario VIP con súper poderes de reporte!";
+
+  // Enviamos primero el mensaje
+  try {
+    await bot.telegram.sendMessage(chatId, texto);
+  } catch (err) {
+    console.error('Error enviando mensaje principal:', err);
+  }
+
+  // Luego enviamos multimedia si existe
+  if (reporte.multimedia && reporte.multimedia.length > 0) {
+    for (const m of reporte.multimedia) {
+      try {
+        if (m.tipo === 'foto') {
+          await bot.telegram.sendPhoto(chatId, m.file_id, { caption: '📷 ¡Foto recibida! Fucito la comparte con todos 😃' });
+        } else if (m.tipo === 'video') {
+          await bot.telegram.sendVideo(chatId, m.file_id, { caption: '🎥 ¡Video reportado! Fucito lo sube al radar 😎' });
+        }
+      } catch (err) {
+        console.error('Error enviando multimedia:', err);
+      }
+    }
+  }
 }
 
 // ADMIN
