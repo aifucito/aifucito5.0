@@ -2,62 +2,77 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>AIFUCITO - Mapa de Calor</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>AIFUCITO OMEGA - Radar Táctico</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
     <style>
-        body, html { margin:0; padding:0; height:100%; width:100%; }
-        #map { height:100%; width:100%; }
+        body, html { margin:0; padding:0; height:100%; width:100%; background: #0b0d10; }
+        #map { height:100vh; width:100vw; }
+        /* Estilo táctico para el popup */
+        .leaflet-popup-content-wrapper { background: #1a1c20; color: #00ff00; border: 1px solid #00ff00; }
+        .leaflet-popup-tip { background: #1a1c20; }
     </style>
 </head>
 <body>
 <div id="map"></div>
 
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/heatmapjs@2.0.5/heatmap.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/leaflet-heatmap/leaflet-heatmap.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://leaflet.github.io/Leaflet.heat/dist/leaflet-heat.js"></script>
 
 <script>
-    // Configurar mapa
-    var map = L.map('map').setView([-32.5, -55.9], 6);
+    // 1. Inicializar Mapa (Centrado en el Cono Sur)
+    var map = L.map('map', { zoomControl: false }).setView([-34.6, -58.4], 5);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors'
+    // 2. Capa de Mapa Oscura (Estética Conspiranoica)
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: 'AIFUCITO OMEGA v5.0'
     }).addTo(map);
 
-    // Configuración del heatmap
-    var cfg = {
+    // Capa para el mapa de calor
+    var heatLayer = L.heatLayer([], {
         radius: 25,
-        maxOpacity: 0.8,
-        scaleRadius: true,
-        useLocalExtrema: false,
-        latField: 'lat',
-        lngField: 'lng',
-        valueField: 'count'
-    };
+        blur: 15,
+        maxZoom: 10,
+        gradient: {0.2: 'blue', 0.4: 'cyan', 0.6: 'lime', 0.8: 'yellow', 1.0: 'red'}
+    }).addTo(map);
 
-    var heatmapLayer = new HeatmapOverlay(cfg);
-    heatmapLayer.addTo(map);
-
-    // Función para cargar reportes desde el servidor
+    // 3. Función para cargar reportes
     async function cargarDatos() {
         try {
-            // Cambiado a la ruta que sí existe en tu bot
+            // Buscamos el JSON generado por el bot
             const response = await fetch('/reportes.json');
             const data = await response.json();
-            const puntos = data.map(d => ({
-                lat: d.lat || -32.5,
-                lng: d.lng || -55.9,
-                count: 1
-            }));
-            heatmapLayer.setData({ max: 10, data: puntos });
+            
+            // Convertimos datos a formato [lat, lng, intensidad]
+            const puntosHeat = data
+                .filter(d => d.lat && d.lng)
+                .map(d => [d.lat, d.lng, 0.5]);
+            
+            // Actualizar capa de calor
+            heatLayer.setLatLngs(puntosHeat);
+
+            // Opcional: Agregar marcadores individuales
+            data.forEach(d => {
+                if(d.lat && d.lng) {
+                    L.circleMarker([d.lat, d.lng], {
+                        radius: 5,
+                        color: '#00ff00',
+                        fillOpacity: 0.8
+                    }).addTo(map).bindPopup(`<b>Avistamiento:</b><br>${d.desc || 'Sin descripción'}`);
+                }
+            });
+
         } catch (e) {
-            console.error("Error cargando datos del heatmap:", e);
+            console.error("Error en radar:", e);
         }
     }
 
-    // Primera carga y actualización cada 15 segundos
+    // Auto-ubicación del agente al abrir
+    map.locate({setView: true, maxZoom: 8});
+
+    // Carga inicial y bucle
     cargarDatos();
-    setInterval(cargarDatos, 15000);
+    setInterval(cargarDatos, 20000); // Actualiza cada 20 segundos
 </script>
 </body>
 </html>
