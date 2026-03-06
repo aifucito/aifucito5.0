@@ -1,417 +1,290 @@
-// bot.js
-import { Telegraf, Markup } from 'telegraf'
-import fs from 'fs'
-import path from 'path'
-import express from 'express'
-import cors from 'cors'
-import { obtenerCoordenadas } from './utils/ubicacion.js'
-import { detectarCategoria } from './utils/categorias.js'
+// ---------- AIFUCITO BOT 5.0 COMPLETO Y EXTENDIDO ----------
+import { Telegraf, Markup } from 'telegraf';
+import fs from 'fs';
+import path from 'path';
+import express from 'express';
+import cors from 'cors';
+import { obtenerCoordenadas } from './utils/ubicacion.js';
+import { detectarCategoria } from './utils/categorias.js';
 
 // ---------- CONFIG ----------
-const BOT_TOKEN = process.env.BOT_TOKEN || '8701174108:AAFgEE-uSZlDvrTNm_QIeDIINqmnCzQIOCM'
-const ADMIN_ID = 123456789
-const CANALES = { radar: '@aifu_radar', uy: '@aifu_uy', ar: '@aifu_ar', cl: '@aifu_cl' }
-const URL_MAPA = 'https://aifucito5-0.onrender.com/index.html'
+const BOT_TOKEN = process.env.BOT_TOKEN || 'TU_BOT_TOKEN_AQUI';
+const ADMIN_ID = 123456789;
+const CANALES = {
+  radar: '@aifu_radar',
+  uy: '@aifu_uy',
+  ar: '@aifu_ar',
+  cl: '@aifu_cl',
+  global: '@aifu_global'
+};
+const HISTORIAS_VIP_FILE = './data/historias_vip.json';
+const FIN_PRUEBA_VIP = new Date('2026-03-11T23:59:59'); // Todos VIP hasta el miércoles 11
 
-// ---------- EXPRESS ----------
-const app = express()
-app.use(cors())
-app.use(express.static('public'))
+// ---------- EXPRESS SERVIDOR ----------
+const app = express();
+app.use(cors());
+app.use(express.static('public'));
 
-let reportes = []
-let usuarios = []
-
-app.get('/reportes.json', (req, res) => res.json(reportes))
-app.get('/usuarios.json', (req, res) => res.json(usuarios))
-
-// mapa filtrado por usuario
-app.get('/mapa-data', (req, res) => {
-  const userId = parseInt(req.query.user)
-
-  const user = usuarios.find(u => u.id === userId)
-
-  if (!user) return res.json([])
-
-  if (user.vip) {
-    return res.json(reportes)
-  }
-
-  const propios = reportes.filter(r => r.usuario === userId)
-  res.json(propios)
-})
-
-const PORT = process.env.PORT || 3000
-app.listen(PORT, () => console.log(`Servidor Express activo en puerto ${PORT}`))
+let reportes = [];
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Servidor Express activo en puerto ${PORT}`));
 
 // ---------- DATA ----------
-const dataDir = path.join('./data')
-if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir)
+const dataDir = './data';
+if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir);
 
-const usuariosFile = path.join(dataDir, 'usuarios.json')
-const reportesFile = path.join(dataDir, 'reportes.json')
+const usuariosFile = path.join(dataDir, 'usuarios.json');
+const reportesFile = path.join(dataDir, 'reportes.json');
 
-if (fs.existsSync(usuariosFile)) {
-  usuarios = JSON.parse(fs.readFileSync(usuariosFile))
-}
-
-if (fs.existsSync(reportesFile)) {
-  reportes = JSON.parse(fs.readFileSync(reportesFile))
-}
+let usuarios = fs.existsSync(usuariosFile) ? JSON.parse(fs.readFileSync(usuariosFile)) : [];
+reportes = fs.existsSync(reportesFile) ? JSON.parse(fs.readFileSync(reportesFile)) : [];
+let historiasVIP = fs.existsSync(HISTORIAS_VIP_FILE) ? JSON.parse(fs.readFileSync(HISTORIAS_VIP_FILE)) : [];
 
 function guardarDatos() {
-  fs.writeFileSync(usuariosFile, JSON.stringify(usuarios, null, 2))
-  fs.writeFileSync(reportesFile, JSON.stringify(reportes, null, 2))
-}
-
-// ---------- REGISTRO AUTOMÁTICO ----------
-function registrarUsuario(id) {
-
-  let u = usuarios.find(x => x.id === id)
-
-  if (!u) {
-
-    const ahora = new Date()
-
-    const esVIPTemporal = ahora < FECHA_LIMITE_VIP_PRUEBA
-
-    usuarios.push({
-      id: id,
-      vip: esVIPTemporal,
-      fechaRegistro: ahora.toISOString(),
-      fechaInicio: ahora.toISOString(),
-      fechaRenovacion: esVIPTemporal ? "2099-01-01" : null
-    })
-
-    guardarDatos()
-  }
+  fs.writeFileSync(usuariosFile, JSON.stringify(usuarios, null, 2));
+  fs.writeFileSync(reportesFile, JSON.stringify(reportes, null, 2));
+  fs.writeFileSync(HISTORIAS_VIP_FILE, JSON.stringify(historiasVIP, null, 2));
 }
 
 // ---------- VIP ----------
-const FECHA_LIMITE_VIP_PRUEBA = new Date('2026-03-11T18:00:00')
-
 function esVIP(userId) {
-
-  const user = usuarios.find(u => u.id === userId)
-
-  if (!user) return false
-
-  if (!user.vip) return false
-
-  if (!user.fechaRenovacion) return false
-
-  const hoy = new Date()
-  const vence = new Date(user.fechaRenovacion)
-
-  if (hoy > vence) {
-    user.vip = false
-    guardarDatos()
-    return false
-  }
-
-  return true
+  const user = usuarios.find(u => u.id === userId);
+  if (!user) return false;
+  const ahora = new Date();
+  // Todos son VIP hasta la fecha de prueba
+  if (ahora <= FIN_PRUEBA_VIP) return true;
+  // Después, solo si tienen vip real
+  return user.vip === true;
 }
 
-function activarVIP(userId, metodo = 'manual') {
-
-  const hoy = new Date()
-
-  const vence = new Date()
-  vence.setMonth(vence.getMonth() + 1)
-
-  let user = usuarios.find(u => u.id === userId)
-
-  if (!user) {
-    user = { id: userId }
-    usuarios.push(user)
-  }
-
-  user.vip = true
-  user.metodoPago = metodo
-  user.fechaInicio = hoy.toISOString()
-  user.fechaRenovacion = vence.toISOString()
-
-  guardarDatos()
-}
+// ---------- TOKENS TEMPORALES PARA MAPA ----------
+let tokensMapa = {}; // { userId: { token, expiracion } }
 
 // ---------- BOT ----------
-const bot = new Telegraf(BOT_TOKEN)
+const bot = new Telegraf(BOT_TOKEN);
 
-// ---------- MENÚ ----------
+// ---------- MENÚ PRINCIPAL ----------
 function menuPrincipal() {
   return Markup.keyboard([
     ['Reportar', 'Ver Mapa'],
     ['Red AIFU', 'Mi estado'],
-    ['Quiénes somos'],
-    ['Charlar con AIFUCITO']
-  ]).resize()
+    ['Quiénes somos', 'Charlar con AIFUCITO'],
+    ['Historias VIP']
+  ]).resize();
 }
 
+// ---------- INICIO ----------
 bot.start(ctx => {
-
-  registrarUsuario(ctx.from.id)
-
   ctx.reply(
-`👽 ¡Hola explorador! Soy AIFUCITO 🤖
-Tu asistente de la red AIFU.
-
-Estoy listo para registrar fenómenos y misterios.
-
+`👽 ¡Hola! Soy AIFUCITO, tu investigador del misterio 😎✨
+Listo para ayudarte a reportar fenómenos y descubrir misterios del universo.
 Selecciona una opción:`,
     menuPrincipal()
-  )
-})
+  );
+});
 
 // ---------- RED AIFU ----------
 bot.hears('Red AIFU', ctx => {
+  ctx.reply("🌟 Canales oficiales de la Red AIFU:", Markup.inlineKeyboard([
+    [Markup.button.url("Radar Cono Sur", "https://t.me/+YqA6d3VpKv9mZjU5")],
+    [Markup.button.url("AIFU Uruguay", "https://t.me/+nCVD4NsOihIyNGFh")],
+    [Markup.button.url("AIFU Argentina", "https://t.me/+QpErPk26SY05OGIx")],
+    [Markup.button.url("AIFU Chile", "https://t.me/+VP2T47eLvIowNmYx")],
+    [Markup.button.url("AIFU Global", "https://t.me/+r5XfcJma3g03MWZh")]
+  ]));
+});
 
-  ctx.reply(
-"🌎 Canales oficiales de la red AIFU",
-    Markup.inlineKeyboard([
-      [Markup.button.url("Radar Cono Sur", "https://t.me/+YqA6d3VpKv9mZjU5")],
-      [Markup.button.url("AIFU Uruguay", "https://t.me/+nCVD4NsOihIyNGFh")],
-      [Markup.button.url("AIFU Argentina", "https://t.me/+QpErPk26SY05OGIx")],
-      [Markup.button.url("AIFU Chile", "https://t.me/+VP2T47eLvIowNmYx")],
-      [Markup.button.url("AIFU Global", "https://t.me/+r5XfcJma3g03MWZh")]
-    ])
-  )
-
-})
-
-// ---------- MAPA ----------
+// ---------- VER MAPA ----------
 bot.hears('Ver Mapa', ctx => {
+  const id = ctx.from.id;
+  if (!esVIP(id)) {
+    ctx.reply("🌍 Acceso limitado al mapa. Hazte VIP para ver todo.");
+    return;
+  }
+  // Crear token temporal
+  const token = Math.random().toString(36).substring(2, 12);
+  tokensMapa[id] = { token, expiracion: Date.now() + 5 * 60 * 1000 }; // 5 minutos
+  ctx.reply(`🌍 Accede al mapa aquí: https://tu-servidor.com/mapa?user=${id}&token=${token}`);
+});
 
-  const id = ctx.from.id
-
-  ctx.reply(`🌍 Mapa interactivo AIFU
-
-${URL_MAPA}?user=${id}`)
-
-})
+// ---------- SERVIR MAPA CON TOKEN ----------
+app.get('/mapa', (req, res) => {
+  const { user, token } = req.query;
+  if (!tokensMapa[user] || tokensMapa[user].token !== token || Date.now() > tokensMapa[user].expiracion) {
+    return res.status(403).send('Acceso denegado. Ingresa desde Telegram.');
+  }
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 // ---------- ESTADO ----------
 bot.hears('Mi estado', ctx => {
+  const id = ctx.from.id;
+  if (esVIP(id)) ctx.reply(`⭐ ¡Genial! Tienes VIP activo 🚀\nDisfruta de todos los reportes, mapa completo y multimedia.`);
+  else ctx.reply(`Cuenta estándar activa. ✨ Hazte VIP para disfrutar de todas las sorpresas de AIFUCITO!`);
+});
 
-  const id = ctx.from.id
-  const user = usuarios.find(u => u.id === id)
-
-  if (user && user.vip) {
-    ctx.reply(`⭐ VIP activo
-
-Renovación: ${user.fechaRenovacion}`)
-  } else {
-    ctx.reply("Cuenta estándar activa.")
-  }
-
-})
-
-// ---------- QUIENES SOMOS ----------
+// ---------- QUIÉNES SOMOS ----------
 bot.hears('Quiénes somos', ctx => {
+  ctx.reply("👽 AIFU = Avistamiento e Investigación de Fenómenos Uruguayos\nObjetivo: registrar, analizar y compartir fenómenos anómalos en tiempo real.");
+});
 
-  ctx.reply(`👽 AIFU
-
-Avistamiento e Investigación de Fenómenos Uruguayos
-
-Red dedicada a registrar fenómenos anómalos y actividad aérea inexplicada.`)
-
-})
+// ---------- HISTORIAS VIP ----------
+bot.hears('Historias VIP', ctx => {
+  const id = ctx.from.id;
+  if (!esVIP(id)) { ctx.reply("🌟 Historias VIP solo para usuarios VIP."); return; }
+  if (historiasVIP.length === 0) ctx.reply("No hay historias registradas aún. Sé el primero!");
+  else {
+    const historiasTexto = historiasVIP.map((h,i) => `📖 Historia #${i+1}:\n${h.historia}`).join('\n\n');
+    ctx.reply(historiasTexto);
+  }
+});
 
 // ---------- REPORTE ----------
-let sesiones = {}
-
+let sesiones = {};
 bot.hears('Reportar', ctx => {
-
-  registrarUsuario(ctx.from.id)
-
-  sesiones[ctx.from.id] = { estado: 'inicio' }
-
-  ctx.reply(
-`📍 Envíame tu ubicación GPS o selecciona "No tengo GPS"`,
+  const id = ctx.from.id;
+  if (!usuarios.find(u=>u.id===id)) { 
+    usuarios.push({id, vipTemporal:true, fecha:new Date().toISOString()}); 
+    guardarDatos(); 
+  }
+  sesiones[id] = { estado: 'inicio' };
+  ctx.reply('📍 ¡Hora de reportar un fenómeno! Envía tu ubicación GPS o selecciona "No tengo GPS":',
     Markup.keyboard([
       [Markup.button.locationRequest('Enviar ubicación GPS')],
       ['No tengo GPS']
     ]).resize()
-  )
+  );
+});
 
-})
-
-// ubicación
+// ---------- UBICACIÓN ----------
 bot.on('location', ctx => {
+  const id = ctx.from.id;
+  if (!sesiones[id]) return;
+  sesiones[id] = {...sesiones[id], estado:'descripcion', lat: ctx.message.location.latitude, lng: ctx.message.location.longitude};
+  ctx.reply("📌 Ubicación recibida. Describe el fenómeno observado:");
+});
 
-  const id = ctx.from.id
-
-  if (!sesiones[id]) return
-
-  const sesion = sesiones[id]
-
-  if (sesion.estado === 'inicio') {
-
-    sesion.lat = ctx.message.location.latitude
-    sesion.lng = ctx.message.location.longitude
-    sesion.estado = 'pais'
-
-    ctx.reply("Indica tu país")
-
-  }
-
-})
-
-// ---------- TEXTO ----------
+// ---------- FLUJO TEXTO REPORTE Y CHARLA ----------
+let sesionesChat = {};
 bot.on('text', async ctx => {
+  const id = ctx.from.id;
+  const texto = ctx.message.text;
 
-  const id = ctx.from.id
-  const texto = ctx.message.text
-
-  if (!sesiones[id]) return
-
-  const sesion = sesiones[id]
-
-  if (sesion.estado === 'inicio' && texto === 'No tengo GPS') {
-
-    sesion.estado = 'pais'
-    ctx.reply("Indica tu país")
-    return
+  // Charla con AIFUCITO
+  if (sesiones[id]?.chatActiva || sesionesChat[id]?.activa) {
+    const respuestas = [
+      `👽 Hmm… interesante sobre "${texto}". Analizando…`,
+      `🚀 ¡Vaya! Esto parece un misterio cósmico: "${texto}"`,
+      `✨ ¡Genial! "${texto}" será estudiado por AIFUCITO`,
+      `😎 ¡Wow! Nunca había visto algo así: "${texto}"`,
+      `🛸 Esto podría estar relacionado con fenómenos recientes en tu zona.`
+    ];
+    const respuesta = respuestas[Math.floor(Math.random()*respuestas.length)];
+    ctx.reply(respuesta, Markup.keyboard([['Terminar charla'], ['Menú principal']]).resize());
+    return;
   }
 
-  if (sesion.estado === 'pais') {
-    sesion.pais = texto
-    sesion.estado = 'ciudad'
-    ctx.reply("Ciudad")
-    return
+  // Historias VIP
+  if (sesiones[id]?.estado==='historia') {
+    historiasVIP.push({ usuario:id, historia:texto });
+    guardarDatos();
+    ctx.reply('✅ Historia registrada en VIP con éxito!', menuPrincipal());
+    delete sesiones[id];
+    return;
   }
 
-  if (sesion.estado === 'ciudad') {
-    sesion.ciudad = texto
-    sesion.estado = 'barrio'
-    ctx.reply("Barrio o zona")
-    return
+  // Flujo de reporte
+  if (!sesiones[id]) return;
+  const sesion = sesiones[id];
+  if (sesion.estado==='inicio' && texto==='No tengo GPS') { sesion.estado='descripcion'; ctx.reply("Indica ubicación aproximada y describe el fenómeno:"); return; }
+  if (sesion.estado==='descripcion') { 
+    sesion.mensaje = texto; 
+    sesion.categoria = detectarCategoria(texto)||'Indefinido'; 
+    sesion.estado = 'multimedia'; 
+    ctx.reply('¿Deseas agregar multimedia?', Markup.keyboard([['Foto'], ['Video'], ['Ninguno']]).resize()); 
+    return; 
   }
-
-  if (sesion.estado === 'barrio') {
-    sesion.barrio = texto
-    sesion.estado = 'descripcion'
-    ctx.reply("Describe el fenómeno")
-    return
+  if (sesion.estado==='multimedia') {
+    if(texto==='Foto') { sesion.estado='esperandoFoto'; ctx.reply('📷 Envía la foto ahora:'); return; }
+    if(texto==='Video') { sesion.estado='esperandoVideo'; ctx.reply('🎥 Envía el video ahora:'); return; }
+    if(texto==='Ninguno') { await finalizarReporte(ctx,sesion); delete sesiones[id]; return; }
   }
+});
 
-  if (sesion.estado === 'descripcion') {
+// ---------- MULTIMEDIA ----------
+bot.on('photo', async ctx => {
+  const id = ctx.from.id;
+  if(!sesiones[id] || sesiones[id].estado!=='esperandoFoto') return;
+  sesiones[id].multimedia = sesiones[id].multimedia||[];
+  sesiones[id].multimedia.push({tipo:'foto', file_id: ctx.message.photo.pop().file_id});
+  await finalizarReporte(ctx, sesiones[id]);
+  delete sesiones[id];
+});
+bot.on('video', async ctx => {
+  const id = ctx.from.id;
+  if(!sesiones[id] || sesiones[id].estado!=='esperandoVideo') return;
+  sesiones[id].multimedia = sesiones[id].multimedia||[];
+  sesiones[id].multimedia.push({tipo:'video', file_id: ctx.message.video.file_id});
+  await finalizarReporte(ctx, sesiones[id]);
+  delete sesiones[id];
+});
 
-    sesion.mensaje = texto
-    sesion.categoria = detectarCategoria(texto)
-
-    await finalizarReporte(ctx, sesion)
-
-    delete sesiones[id]
-
-  }
-
-})
-
-// ---------- FINALIZAR ----------
-async function finalizarReporte(ctx, sesion) {
-
-  const id = ctx.from.id
-
-  const coords = sesion.lat && sesion.lng
-    ? { lat: sesion.lat, lng: sesion.lng }
-    : await obtenerCoordenadas(`${sesion.pais}, ${sesion.ciudad}, ${sesion.barrio}`)
-
-  const nuevoReporte = {
-
-    id: Date.now(),
-    usuario: id,
-    fecha: new Date().toISOString(),
-    pais: sesion.pais,
-    ciudad: sesion.ciudad,
-    barrio: sesion.barrio,
-    mensaje: sesion.mensaje,
-    categoria: sesion.categoria,
-    lat: coords?.lat || null,
-    lng: coords?.lng || null,
-    multimedia: [],
-    vip: esVIP(id)
-
-  }
-
-  reportes.push(nuevoReporte)
-
-  guardarDatos()
-
-  await publicarReporte(nuevoReporte)
-
-  ctx.reply("✅ Reporte registrado por AIFUCITO", menuPrincipal())
-
+// ---------- FINALIZAR REPORTE ----------
+async function finalizarReporte(ctx, sesion){
+  const id = ctx.from.id;
+  const coords = sesion.lat && sesion.lng ? { lat: sesion.lat, lng: sesion.lng } : await obtenerCoordenadas(sesion.mensaje);
+  const nuevoReporte = { 
+    id: Date.now(), 
+    usuario: id, 
+    fecha: new Date().toISOString(), 
+    mensaje: sesion.mensaje, 
+    categoria: sesion.categoria, 
+    lat: coords.lat||null, 
+    lng: coords.lng||null, 
+    multimedia: sesion.multimedia||[], 
+    vip: esVIP(id) 
+  };
+  reportes.push(nuevoReporte);
+  guardarDatos();
+  await publicarReporte(nuevoReporte);
+  ctx.reply(`✅ Reporte enviado con éxito! ${esVIP(id)?'⭐ Eres VIP 🚀':''}`, menuPrincipal());
 }
 
-// ---------- PUBLICAR ----------
-async function publicarReporte(reporte) {
-
-  let texto = `📡 REPORTE AIFU
-
-${reporte.pais} - ${reporte.ciudad}
-
-Categoría: ${reporte.categoria}
-
-${reporte.mensaje}`
-
-  try {
-    await bot.telegram.sendMessage(CANALES.radar, texto)
-  } catch (e) {
-    console.error(e)
+// ---------- PUBLICAR REPORTES ----------
+async function publicarReporte(reporte){
+  const chatId = CANALES.radar;
+  let texto = `📡 ¡Reporte AIFUCITO!\nCategoría: ${reporte.categoria}\nFecha: ${reporte.fecha}`;
+  try{ await bot.telegram.sendMessage(chatId, texto); } catch(err){ console.error(err); }
+  if(reporte.multimedia){
+    for(const m of reporte.multimedia){
+      try{
+        if(m.tipo==='foto') await bot.telegram.sendPhoto(chatId,m.file_id,{caption:'📷 Foto compartida'});
+        if(m.tipo==='video') await bot.telegram.sendVideo(chatId,m.file_id,{caption:'🎥 Video compartido'});
+      }catch(err){console.error(err);}
+    }
   }
-
 }
 
-// ---------- CHAT AIFUCITO ----------
-let sesionesChat = {}
-
+// ---------- CHARLA AIFUCITO ----------
 bot.hears('Charlar con AIFUCITO', ctx => {
-
-  sesionesChat[ctx.from.id] = { activa: true }
-
-  ctx.reply(
-"👽 Soy AIFUCITO.\nPuedes hablar conmigo sobre fenómenos extraños.",
-    Markup.keyboard([
-      ['Terminar charla'],
-      ['Menú principal']
-    ]).resize()
-  )
-
-})
-
+  sesionesChat[ctx.from.id] = { activa:true };
+  ctx.reply('👽 ¡Hola! Soy AIFUCITO, listo para charlar sobre OVNIs, fenómenos paranormales y más.', Markup.keyboard([['Terminar charla'], ['Menú principal']]).resize());
+});
 bot.hears('Terminar charla', ctx => {
-
-  delete sesionesChat[ctx.from.id]
-
-  ctx.reply("AIFUCITO vuelve al radar.", menuPrincipal())
-
-})
+  delete sesionesChat[ctx.from.id];
+  ctx.reply('👋 Fucito vuelve a sus investigaciones cósmicas.', menuPrincipal());
+});
 
 // ---------- ADMIN ----------
-bot.command('activarvip', ctx => {
-
-  if (ctx.from.id !== ADMIN_ID) return
-
-  const [cmd, id] = ctx.message.text.split(' ')
-
-  activarVIP(parseInt(id))
-
-  ctx.reply("VIP activado")
-
-})
-
 bot.command('panel', ctx => {
+  if(ctx.from.id!==ADMIN_ID) return;
+  ctx.reply(`Panel Admin:\nUsuarios: ${usuarios.length}\nReportes: ${reportes.length}`);
+});
 
-  if (ctx.from.id !== ADMIN_ID) return
-
-  ctx.reply(`Usuarios: ${usuarios.length}
-Reportes: ${reportes.length}`)
-
-})
-
-// ---------- START ----------
-bot.launch().then(() => console.log("AIFUCITO 5.0 activo"))
+// ---------- LANZAR BOT ----------
+bot.launch().then(()=>console.log('AIFUCITO activo'));
 
 // ---------- ERRORES ----------
-bot.catch(err => console.error(err))
-process.on('unhandledRejection', console.error)
-process.on('uncaughtException', console.error)
+bot.catch(console.error);
+process.on('unhandledRejection', console.error);
+process.on('uncaughtException', console.error);
