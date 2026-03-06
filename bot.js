@@ -179,7 +179,7 @@ bot.hears("🛸 REPORTAR AVISTAMIENTO", (ctx) => {
 
 bot.hears("🌍 MAPA GLOBAL", (ctx) => {
 
-    ctx.reply(`${PUBLIC_URL}/radar`);
+    ctx.reply(`${PUBLIC_URL}/mapa`);
 
 });
 
@@ -296,7 +296,7 @@ bot.on("text", async (ctx) => {
 
             ctx.session.reporte.paso = "ubicacion";
 
-            ctx.reply("Indica ubicación:");
+            ctx.reply("Indica ubicación o envía GPS:");
 
             return;
 
@@ -304,12 +304,14 @@ bot.on("text", async (ctx) => {
 
         if (ctx.session.reporte.paso === "ubicacion") {
 
+            const tipoReporteSeguro = ctx.session.reporte.tipo;
+
             const id = crypto.randomBytes(3).toString("hex");
 
             DB.reportes.push({
                 id,
                 agente: ctx.from.first_name,
-                tipo: ctx.session.reporte.tipo,
+                tipo: tipoReporteSeguro,
                 ubicacion: ctx.message.text,
                 fecha: new Date().toLocaleString()
             });
@@ -331,7 +333,7 @@ bot.on("text", async (ctx) => {
                     CANAL_CENTRAL,
                     `REPORTE OVNI
 Agente: ${ctx.from.first_name}
-Tipo: ${ctx.session?.reporte?.tipo}
+Tipo: ${tipoReporteSeguro}
 Ubicación: ${ctx.message.text}`
                 );
 
@@ -366,6 +368,63 @@ Ubicación: ${ctx.message.text}`
 });
 
 /* =================================================================================
+RECEPCIÓN DE UBICACIÓN GPS
+================================================================================= */
+
+bot.on("location", async (ctx) => {
+
+    if (!ctx.session) return;
+
+    if (!ctx.session.reporte) return;
+
+    if (ctx.session.reporte.paso !== "ubicacion") return;
+
+    const lat = ctx.message.location.latitude;
+    const lon = ctx.message.location.longitude;
+
+    const tipoReporteSeguro = ctx.session.reporte.tipo;
+
+    const id = crypto.randomBytes(3).toString("hex");
+
+    DB.reportes.push({
+        id,
+        agente: ctx.from.first_name,
+        tipo: tipoReporteSeguro,
+        ubicacion: { lat: lat, lon: lon },
+        fecha: new Date().toLocaleString()
+    });
+
+    const uid = ctx.from.id;
+
+    if (DB.agentes[uid]) {
+
+        DB.agentes[uid].reportes_totales++;
+        DB.agentes[uid].xp += 50;
+
+    }
+
+    ctx.session.reporte = null;
+
+    await guardarTodo();
+
+    try {
+
+        await ctx.telegram.sendMessage(
+            CANAL_CENTRAL,
+            `REPORTE OVNI
+Agente: ${ctx.from.first_name}
+Tipo: ${tipoReporteSeguro}
+Ubicación GPS:
+https://maps.google.com/?q=${lat},${lon}`
+        );
+
+    } catch {}
+
+    ctx.reply("Reporte registrado correctamente.", menuPrincipal());
+
+});
+
+/* =================================================================================
 SERVIDOR WEB
 ================================================================================= */
 
@@ -380,6 +439,56 @@ app.get("/", (req, res) => {
 app.get("/radar", (req, res) => {
 
     res.json(DB.reportes);
+
+});
+
+/* =================================================================================
+MAPA VISUAL
+================================================================================= */
+
+app.get("/mapa", (req, res) => {
+
+    const puntos = DB.reportes
+        .filter(r => r.ubicacion && r.ubicacion.lat)
+        .map(r => `[${r.ubicacion.lat}, ${r.ubicacion.lon}]`)
+        .join(",");
+
+    res.send(`
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<style>
+body{margin:0}
+#map{height:100vh}
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script>
+
+const map = L.map('map').setView([-34.9,-56.2],5);
+
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
+maxZoom:18
+}).addTo(map);
+
+const puntos=[${puntos}];
+
+puntos.forEach(p=>{
+L.marker(p).addTo(map);
+});
+
+</script>
+
+</body>
+</html>
+`);
 
 });
 
