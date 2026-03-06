@@ -18,14 +18,14 @@
 
 <script>
     // Configurar mapa
-    const map = L.map('map').setView([-32.5, -55.9], 6);
+    var map = L.map('map').setView([-32.5, -55.9], 6);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
     // Configuración del heatmap
-    const cfg = {
+    var cfg = {
         radius: 25,
         maxOpacity: 0.8,
         scaleRadius: true,
@@ -35,23 +35,20 @@
         valueField: 'count'
     };
 
-    const heatmapLayer = new HeatmapOverlay(cfg);
+    var heatmapLayer = new HeatmapOverlay(cfg);
     heatmapLayer.addTo(map);
 
     // Función para cargar reportes desde el servidor
     async function cargarDatos() {
         try {
-            const response = await fetch('/reportes.json'); // ruta que sirve tu bot
+            // Cambiado a la ruta que sí existe en tu bot
+            const response = await fetch('/reportes.json');
             const data = await response.json();
-
-            const puntos = data
-                .filter(d => d.lat && d.lng) // solo puntos válidos
-                .map(d => ({
-                    lat: d.lat,
-                    lng: d.lng,
-                    count: 1
-                }));
-
+            const puntos = data.map(d => ({
+                lat: d.lat || -32.5,
+                lng: d.lng || -55.9,
+                count: 1
+            }));
             heatmapLayer.setData({ max: 10, data: puntos });
         } catch (e) {
             console.error("Error cargando datos del heatmap:", e);
