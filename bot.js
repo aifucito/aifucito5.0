@@ -8,7 +8,7 @@ import { obtenerCoordenadas } from './utils/ubicacion.js';
 import { detectarCategoria } from './utils/categorias.js';
 
 // ---------- CONFIG ----------
-const BOT_TOKEN = process.env.BOT_TOKEN || 'TU_BOT_TOKEN_AQUI';
+const BOT_TOKEN = process.env.BOT_TOKEN || '8701174108:AAFgEE-uSZlDvrTNm_QIeDIINqmnCzQIOCM';
 const ADMIN_ID = 123456789;
 const CANALES = {
   radar: '@aifu_radar',
