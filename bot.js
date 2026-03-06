@@ -1,29 +1,18 @@
 /**
  * ==================================================================================
- * 🛰️ AIFUCITO OMEGA v5.0 FREE - SISTEMA DE INTELIGENCIA LOCAL
- * TODO INCLUIDO: RANGOS + MULTIMEDIA + RADAR + IA LOCAL (SIN COSTO)
+ * 🛰️ AIFUCITO OMEGA CORE v6.3 - INTELIGENCIA GEOGRÁFICA
+ * Fusión: GPS Automático + Geocodificación Manual Real + Multimedia + Canales
  * ==================================================================================
  */
 
-import { Telegraf, Markup, session } from 'telegraf';
-import express from 'express';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import crypto from 'crypto';
+import { Telegraf, Markup, session } from "telegraf";
+import express from "express";
+import fs from "fs";
+import path from "path";
+import crypto from "crypto";
+import fetch from "node-fetch"; // Para buscar coordenadas de texto
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_PATH = path.join(__dirname, 'aifucito_db.json');
-const TOKEN = process.env.BOT_TOKEN || "8701174108:AAFgEE-uSZlDvrTNm_QIeDIINqmnCzQIOCM";
-const PORT = process.env.PORT || 3000;
-const PUBLIC_URL = "https://aifucito5-0.onrender.com";
-
-/**
- * ==================================================================================
- * CANALES
- * ==================================================================================
- */
-
+// --- CONFIGURACIÓN ---
 const CANALES = {
     GLOBAL: "-1002388657640",
     URUGUAY: "-1002347230353",
@@ -31,511 +20,210 @@ const CANALES = {
     CHILE: "-1002283925519"
 };
 
-/**
- * ==================================================================================
- * RANGOS
- * ==================================================================================
- */
+const TOKEN = process.env.BOT_TOKEN || "8701174108:AAFgEE-uSZlDvrTNm_QIeDIINqmnCzQIOCM";
+const PORT = process.env.PORT || 10000;
+const PUBLIC_URL = "https://aifucito.onrender.com";
 
+// --- BASE DE DATOS ---
+const DB_PATH = "./aifucito_db.json";
+let DB = { agentes: {}, reportes: [] };
+
+if (fs.existsSync(DB_PATH)) {
+    DB = JSON.parse(fs.readFileSync(DB_PATH));
+}
+const guardarDB = () => fs.writeFileSync(DB_PATH, JSON.stringify(DB, null, 2));
+
+// --- RANGOS ---
 const RANGOS = [
-    { xp: 0, etiqueta: "Cadete 👶", desc: "Aún crees en globos meteorológicos." },
-    { xp: 1500, etiqueta: "Vigía Nocturno 🔭", desc: "Detectas anomalías térmicas." },
-    { xp: 5000, etiqueta: "Investigador 📡", desc: "Los Hombres de Negro te vigilan." },
-    { xp: 12000, etiqueta: "Coronel del Cosmos 🎖️", desc: "Acceso a frecuencias prohibidas." },
-    { xp: 30000, etiqueta: "Maestro de la Verdad 👽", desc: "La verdad te pide permiso." }
+    { nombre: "Iniciado Estelar 🛸", xp: 0 },
+    { nombre: "Vigía de la Red 📡", xp: 1500 },
+    { nombre: "Cazador de Anomalías 🔭", xp: 5000 },
+    { nombre: "Maestro de la Verdad 👽", xp: 15000 }
 ];
-
 const calcularRango = (xp) => [...RANGOS].reverse().find(r => xp >= r.xp);
 
-/**
- * ==================================================================================
- * SISTEMA DE PERSISTENCIA JSON
- * ==================================================================================
- */
-
-class Persistence {
-
-    constructor() {
-        this.db = this.init();
-        this.tokens = new Map();
-    }
-
-    init() {
-
-        if (!fs.existsSync(DB_PATH)) {
-
-            return {
-                agentes: {},
-                reportes: [],
-                aprendizaje: {},
-                config: { alerta:false }
-            };
-        }
-
-        try {
-
-            return JSON.parse(fs.readFileSync(DB_PATH,'utf8'));
-
-        } catch {
-
-            return {
-                agentes: {},
-                reportes: [],
-                aprendizaje: {},
-                config: { alerta:false }
-            };
-
-        }
-
-    }
-
-    async sync(){
-
-        await fs.promises.writeFile(
-            DB_PATH,
-            JSON.stringify(this.db,null,2)
-        );
-
-    }
-
-}
-
-const Core = new Persistence();
-
-/**
- * ==================================================================================
- * IA LOCAL CONSPIRANOICA
- * ==================================================================================
- */
-
-class AifucitoAI {
-
-    constructor(){
-
-        this.memoria = {};
-        this.base = this.cargarBase();
-
-    }
-
-    cargarBase(){
-
-        return {
-
-            nasa:[
-                "La NASA afirma que todo está bajo control.",
-                "Archivos desclasificados muestran eventos no explicados.",
-                "Muchos creen que parte de la información sigue clasificada."
-            ],
-
-            luna:[
-                "El alunizaje fue un logro histórico.",
-                "Sin embargo existen teorías sobre estructuras detectadas.",
-                "Algunas transmisiones nunca fueron difundidas."
-            ],
-
-            ovnis:[
-                "Los OVNIs se reportan desde hace siglos.",
-                "Pilotos militares describen objetos imposibles.",
-                "Muchos casos siguen sin explicación."
-            ],
-
-            area51:[
-                "Area 51 es una base militar secreta.",
-                "Oficialmente es para pruebas aéreas.",
-                "Algunos creen que estudian tecnología no humana."
-            ],
-
-            gobierno:[
-                "Gobiernos investigan OVNIs desde hace décadas.",
-                "Muchos documentos fueron desclasificados.",
-                "Otros siguen ocultos."
-            ]
-
-        }
-
-    }
-
-    detectarTema(texto){
-
-        texto = texto.toLowerCase();
-
-        if(texto.includes("nasa")) return "nasa";
-        if(texto.includes("luna")) return "luna";
-        if(texto.includes("ovni")) return "ovnis";
-        if(texto.includes("area 51")) return "area51";
-        if(texto.includes("gobierno")) return "gobierno";
-
-        return null;
-
-    }
-
-    responder(uid,texto){
-
-        if(!this.memoria[uid]){
-
-            this.memoria[uid] = {
-                historial:[],
-                temas:[]
-            };
-
-        }
-
-        const user = this.memoria[uid];
-
-        user.historial.push(texto);
-
-        if(user.historial.length > 10){
-            user.historial.shift();
-        }
-
-        const tema = this.detectarTema(texto);
-
-        if(tema && this.base[tema]){
-
-            const respuestas = this.base[tema];
-
-            return respuestas[
-                Math.floor(Math.random()*respuestas.length)
-            ];
-
-        }
-
-        if(texto.toLowerCase().includes("hola")){
-            return "Saludos agente. Los sensores observan el cielo.";
-        }
-
-        if(texto.toLowerCase().includes("quien eres")){
-            return "Soy AIFUCITO. Nodo de análisis de anomalías.";
-        }
-
-        if(texto.toLowerCase().includes("verdad")){
-            return "La verdad rara vez coincide con la versión oficial.";
-        }
-
-        return "Analizando señal... reformula tu pregunta.";
-
-    }
-
-}
-
-const IA = new AifucitoAI();
-
-/**
- * ==================================================================================
- * SERVIDOR WEB RADAR
- * ==================================================================================
- */
-
-const app = express();
-
-app.get('/radar/:token',(req,res)=>{
-
-    const session = Core.tokens.get(req.params.token);
-
-    if(!session || session.exp < Date.now())
-        return res.status(403).send("ACCESO EXPIRADO");
-
-    const heatData = Core.db.reportes
-    .filter(r => r.lat != null && r.lng != null)
-    .map(r => [r.lat,r.lng,0.8]);
-
-    res.send(`
-    <html>
-    <head>
-        <title>RADAR AIFU</title>
-        <link rel="stylesheet"
-        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-        <style>
-        body{margin:0;background:#000}
-        #map{height:100vh}
-        </style>
-    </head>
-
-    <body>
-
-    <div id="map"></div>
-
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://leaflet.github.io/Leaflet.heat/dist/leaflet-heat.js"></script>
-
-    <script>
-
-    const map = L.map('map').setView([-34.6,-58.4],5);
-
-    L.tileLayer(
-    'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-    ).addTo(map);
-
-    map.locate({setView:true});
-
-    map.on('locationfound',e=>{
-        L.marker(e.latlng).addTo(map)
-        .bindPopup("Estás aquí").openPopup();
-    });
-
-    const data = ${JSON.stringify(heatData)};
-
-    L.heatLayer(data,{radius:25,blur:15}).addTo(map);
-
-    </script>
-
-    </body>
-    </html>
-    `);
-
-});
-
-app.get('/',(req,res)=>{
-
-    res.send("AIFUCITO ONLINE");
-
-});
-
-/**
- * ==================================================================================
- * BOT TELEGRAM
- * ==================================================================================
- */
-
-const bot = new Telegraf(TOKEN);
-
-bot.use(session());
-
-const UI = {
-
-    main:(user)=>
-
-    Markup.keyboard([
-        ['🛸 REPORTAR AVISTAMIENTO','🌍 VER RADAR VIVO'],
-        ['🤖 HABLAR CON AIFUCITO','⭐ MI EXPEDIENTE']
-    ]).resize(),
-
-    geo:
-
-    Markup.keyboard([
-        [Markup.button.locationRequest('📍 ENVIAR GPS')],
-        ['❌ CANCELAR']
-    ]).resize(),
-
-    media:
-
-    Markup.keyboard([
-        ['✅ FINALIZAR REPORTE','❌ CANCELAR']
-    ]).resize()
-
+// --- IA LOCAL ---
+const IA_Responder = (texto) => {
+    const t = texto.toLowerCase();
+    if (t.includes("hola")) return "Sistema AIFUCITO activo. Esperando órdenes.";
+    if (t.includes("ovni")) return "Fenómeno no identificado. No responde a transpondedores civiles.";
+    if (t.includes("nasa")) return "La NASA desvía la atención. La verdad ocurre en las estaciones privadas.";
+    return "Analizando datos... la señal es difusa. Sé más específico.";
 };
 
-/**
- * ==================================================================================
- * MIDDLEWARE USUARIO
- * ==================================================================================
- */
-
-bot.use(async(ctx,next)=>{
-
-    if(!ctx.from) return;
-
-    const uid = ctx.from.id;
-
-    if(!Core.db.agentes[uid]){
-
-        Core.db.agentes[uid] = {
-            id:uid,
-            nombre:ctx.from.first_name,
-            xp:0,
-            reportes:0,
-            rango:"Cadete 👶"
-        };
-
-        await Core.sync();
-
+// --- FUNCIÓN DE GEOCODIFICACIÓN (TEXTO -> COORDENADAS) ---
+async function buscarCoordenadas(lugar) {
+    try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(lugar)}&limit=1`);
+        const data = await response.json();
+        if (data && data.length > 0) {
+            return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+        }
+        return null; // Si no encuentra nada
+    } catch (e) {
+        console.error("Error Geocoder:", e);
+        return null;
     }
+}
 
-    const user = Core.db.agentes[uid];
+const bot = new Telegraf(TOKEN);
+bot.use(session());
 
-    const rangoCalc = calcularRango(user.xp).etiqueta;
+const mainMenu = () => Markup.keyboard([
+    ["🛸 REPORTAR AVISTAMIENTO", "🌍 RADAR GLOBAL"],
+    ["🤖 IA", "⭐ MI PERFIL"]
+]).resize();
 
-    if(user.rango !== rangoCalc){
-
-        user.rango = rangoCalc;
-
-        await ctx.reply(
-        `ASCENSO DE RANGO\nNuevo rango: ${user.rango}`
-        );
-
-        await Core.sync();
-
+// --- INICIO ---
+bot.start(ctx => {
+    const id = ctx.from.id;
+    if (!DB.agentes[id]) {
+        DB.agentes[id] = { id, nombre: ctx.from.first_name, xp: 0, reportes: 0, rango: "Iniciado Estelar 🛸" };
+        guardarDB();
     }
-
-    ctx.state.user = user;
-
-    return next();
-
+    ctx.reply("🛰️ NODO AIFUCITO OMEGA v6.3 ONLINE.", mainMenu());
 });
 
-/**
- * ==================================================================================
- * COMANDOS
- * ==================================================================================
- */
-
-bot.start((ctx)=>{
-
-    ctx.reply(
-    `NODO AIFU ACTIVO\nAgente ${ctx.from.first_name}`,
-    UI.main(ctx.state.user)
-    );
-
+bot.hears("⭐ MI PERFIL", ctx => {
+    const ag = DB.agentes[ctx.from.id];
+    ctx.reply(`🕵️ EXPEDIENTE:\n\nAgente: ${ag.nombre}\nRango: ${ag.rango}\nXP: ${ag.xp}\nReportes: ${ag.reportes}`);
 });
 
-bot.hears('🌍 VER RADAR VIVO',(ctx)=>{
-
-    const token = crypto.randomBytes(12).toString('hex');
-
-    Core.tokens.set(token,{
-        exp:Date.now()+600000
-    });
-
-    ctx.reply(
-    `${PUBLIC_URL}/radar/${token}`
-    );
-
+bot.hears("🤖 IA", ctx => {
+    ctx.session.ia = true;
+    ctx.reply("📡 CANAL IA ABIERTO. Escribe tu duda o 'SALIR'.");
 });
 
-bot.hears('🛸 REPORTAR AVISTAMIENTO',(ctx)=>{
-
-    ctx.session = {step:'LOC'};
-
-    ctx.reply(
-    "Envía tu ubicación GPS.",
-    UI.geo
-    );
-
+// --- REPORTE ---
+bot.hears("🛸 REPORTAR AVISTAMIENTO", ctx => {
+    ctx.session.reporte = { step: "tipo" };
+    ctx.reply("Tipo de fenómeno:", Markup.keyboard([["OVNI", "Luz extraña"], ["Entidad", "Otro"], ["❌ CANCELAR"]]).resize());
 });
 
-/**
- * ==================================================================================
- * RECEPCIÓN GPS
- * ==================================================================================
- */
-
-bot.on('location',async(ctx)=>{
-
-    if(ctx.session?.step !== 'LOC') return;
-
-    ctx.session.lat = ctx.message.location.latitude;
-    ctx.session.lng = ctx.message.location.longitude;
-
-    ctx.session.step = 'DESC';
-
-    ctx.reply(
-    "Describe lo que viste."
-    );
-
+bot.hears(["OVNI", "Luz extraña", "Entidad", "Otro"], ctx => {
+    if (!ctx.session?.reporte) return;
+    ctx.session.reporte.tipo = ctx.message.text;
+    ctx.session.reporte.step = "ubicacion";
+    ctx.reply("Indica ubicación:", Markup.keyboard([[Markup.button.locationRequest("📍 Enviar GPS")], ["✍️ Ubicación manual"], ["❌ CANCELAR"]]).resize());
 });
 
-/**
- * ==================================================================================
- * TEXTO
- * ==================================================================================
- */
+bot.on("location", ctx => {
+    if (ctx.session?.reporte?.step !== "ubicacion") return;
+    ctx.session.reporte.lat = ctx.message.location.latitude;
+    ctx.session.reporte.lng = ctx.message.location.longitude;
+    ctx.session.reporte.lugar = "GPS Automático";
+    ctx.session.reporte.step = "descripcion";
+    ctx.reply("📍 GPS Registrado. Describe el fenómeno:");
+});
 
-bot.on('text',async(ctx)=>{
+bot.hears("✍️ Ubicación manual", ctx => {
+    if (!ctx.session?.reporte) return;
+    ctx.session.reporte.step = "manual_input";
+    ctx.reply("Ingresa: País, Ciudad, Barrio y Referencia (opcional).");
+});
 
+// --- MANEJADOR DE TEXTO (IA + MANUAL + DESC) ---
+bot.on("text", async (ctx) => {
     const text = ctx.message.text;
-    const user = ctx.state.user;
+    if (text === "❌ CANCELAR") { ctx.session = null; return ctx.reply("Abortado.", mainMenu()); }
 
-    if(text === '❌ CANCELAR'){
-
-        ctx.session = null;
-
-        return ctx.reply(
-        "Operación cancelada.",
-        UI.main(user)
-        );
-
+    if (ctx.session?.ia) {
+        if (text.toUpperCase() === "SALIR") { ctx.session.ia = false; return ctx.reply("IA Offline.", mainMenu()); }
+        return ctx.reply("🤖 AIFUCITO: " + IA_Responder(text));
     }
 
-    if(text === '🤖 HABLAR CON AIFUCITO'){
+    if (!ctx.session?.reporte) return;
 
-        ctx.session.chatAI = true;
-
-        return ctx.reply(
-        "Conexión con AIFUCITO establecida."
-        );
-
+    // Paso Manual: Buscar coordenadas reales del texto ingresado
+    if (ctx.session.reporte.step === "manual_input") {
+        ctx.reply("🔍 Buscando coordenadas del sector...");
+        const coords = await buscarCoordenadas(text);
+        
+        if (coords) {
+            ctx.session.reporte.lat = coords.lat;
+            ctx.session.reporte.lng = coords.lng;
+            ctx.session.reporte.lugar = text;
+            ctx.session.reporte.step = "descripcion";
+            return ctx.reply(`✅ Ubicación detectada (${coords.lat}, ${coords.lng}).\nDescribe el fenómeno:`);
+        } else {
+            return ctx.reply("❌ No pude localizar ese punto. Intenta ser más específico (País, Ciudad, Barrio):");
+        }
     }
 
-    if(text === '⭐ MI EXPEDIENTE'){
-
-        return ctx.reply(
-        `AGENTE: ${user.nombre}
-RANGO: ${user.rango}
-XP: ${user.xp}
-REPORTES: ${user.reportes}`
-        );
-
+    // Descripción
+    if (ctx.session.reporte.step === "descripcion") {
+        ctx.session.reporte.descripcion = text;
+        ctx.session.reporte.step = "media";
+        return ctx.reply("📸 Envía foto/video o escribe 'FIN'.", Markup.keyboard([["FIN"], ["❌ CANCELAR"]]).resize());
     }
 
-    if(ctx.session?.step === 'DESC'){
-
-        const reporte = {
-
-            id:Date.now(),
-            uid:user.id,
-            lat:ctx.session.lat,
-            lng:ctx.session.lng,
-            desc:text,
-            fecha:new Date().toLocaleString()
-
-        };
-
-        Core.db.reportes.push(reporte);
-
-        user.xp += 300;
-        user.reportes++;
-
-        await Core.sync();
-
-        const msg =
-`ALERTA OVNI
-${text}
-Agente:${user.nombre}`;
-
-        Object.values(CANALES)
-        .forEach(c=>bot.telegram.sendMessage(c,msg).catch(()=>{}));
-
-        ctx.reply(
-        "Reporte archivado.",
-        UI.main(user)
-        );
-
-        ctx.session = null;
-
-        return;
-
+    if (text.toUpperCase() === "FIN" && ctx.session.reporte.step === "media") {
+        return finalizarReporte(ctx);
     }
-
-    if(ctx.session?.chatAI){
-
-        const r = IA.responder(ctx.from.id,text);
-
-        return ctx.reply("AIFUCITO: "+r);
-
-    }
-
 });
 
-/**
- * ==================================================================================
- * LANZAMIENTO
- * ==================================================================================
- */
+// --- MULTIMEDIA ---
+bot.on(["photo", "video"], async (ctx) => {
+    if (ctx.session?.reporte?.step !== "media") return;
+    ctx.session.reporte.media = ctx.message.photo ? ctx.message.photo.pop().file_id : ctx.message.video.file_id;
+    ctx.session.reporte.mediaType = ctx.message.photo ? "photo" : "video";
+    return finalizarReporte(ctx);
+});
 
-app.listen(PORT,'0.0.0.0',()=>{
+// --- CIERRE ---
+async function finalizarReporte(ctx) {
+    const r = ctx.session.reporte;
+    const ag = DB.agentes[ctx.from.id];
 
-    console.log("Servidor online "+PORT);
+    const reporteFinal = {
+        id: crypto.randomBytes(3).toString("hex"),
+        tipo: r.tipo,
+        descripcion: r.descripcion,
+        lat: r.lat,
+        lng: r.lng,
+        lugar: r.lugar,
+        media: r.media || null,
+        mediaType: r.mediaType || null,
+        agente: ag.nombre
+    };
 
+    DB.reportes.push(reporteFinal);
+    ag.xp += 500;
+    ag.reportes++;
+    ag.rango = calcularRango(ag.xp).nombre;
+    guardarDB();
+
+    const alerta = `🚨 ALERTA AIFU\n\nTipo: ${r.tipo}\nLugar: ${r.lugar}\nAgente: ${ag.nombre}\nDetalle: ${r.descripcion}`;
+    
+    for (const c of Object.values(CANALES)) {
+        try {
+            if (reporteFinal.media) {
+                if (reporteFinal.mediaType === "photo") await bot.telegram.sendPhoto(c, reporteFinal.media, { caption: alerta });
+                else await bot.telegram.sendVideo(c, reporteFinal.media, { caption: alerta });
+            } else await bot.telegram.sendMessage(c, alerta);
+        } catch (e) {}
+    }
+
+    ctx.session = null;
+    ctx.reply("✅ REPORTE ENVIADO AL RADAR.", mainMenu());
+}
+
+bot.hears("🌍 RADAR GLOBAL", ctx => {
+    const t = crypto.randomBytes(8).toString("hex");
+    ctx.reply(`🛰️ RADAR VIVO:\n${PUBLIC_URL}/radar?token=${t}`);
+});
+
+// --- WEB ---
+const app = express();
+app.get("/radar", (req, res) => {
+    res.send(`<html><head><link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/><style>#map{height:100vh;width:100vw;margin:0}</style></head>
+    <body style="margin:0"><div id="map"></div><script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script>var map=L.map('map').setView([-34.6,-58.4],5);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    const data=${JSON.stringify(DB.reportes)}; data.forEach(r=>{if(r.lat&&r.lng)L.marker([r.lat,r.lng]).addTo(map).bindPopup("<b>"+r.tipo+"</b><br>"+r.descripcion);});</script>
+    </body></html>`);
+});
+
+app.listen(PORT, "0.0.0.0", () => {
+    console.log("Servidor Online");
     bot.launch();
-
 });
