@@ -23,7 +23,7 @@ const CANALES_REGIONALES = {
     OTROS_PAISES: "-1002414775486"
 };
 
-const TOKEN = process.env.BOT_TOKEN || "TU_TOKEN";
+const TOKEN = process.env.BOT_TOKEN || "8701174108:AAFgEE-uSZlDvrTNm_QIeDIINqmnCzQIOCM";
 const PORT = process.env.PORT || 10000;
 const PUBLIC_URL = "https://aifucito5-0.onrender.com";
 
