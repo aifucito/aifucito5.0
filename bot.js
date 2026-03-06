@@ -1,430 +1,413 @@
 /**
  * ==================================================================================
- * 🛰️ AIFUCITO 5.0 - NODO CENTRAL ESTABLE
- * ==================================================================================
- * BOT TELEGRAM + SERVIDOR WEB RADAR
- * Compatible con Render
+ * 🛰️ AIFUCITO 5.0 - NODO CENTRAL DEFINITIVO
+ * SISTEMA DE INVESTIGACIÓN DE FENÓMENOS AÉREOS
  * ==================================================================================
  */
 
-import { Telegraf, Markup, session } from "telegraf"
-import express from "express"
-import fs from "fs"
-import crypto from "crypto"
+import { Telegraf, Markup, session } from "telegraf";
+import express from "express";
+import fs from "fs";
+import crypto from "crypto";
 
-const fsPromises = fs.promises
+const fsPromises = fs.promises;
 
-// ==================================================================================
-// CONFIG
-// ==================================================================================
+/* =================================================================================
+CONFIGURACIÓN
+================================================================================= */
 
-const TOKEN = process.env.BOT_TOKEN
-const PORT = process.env.PORT || 10000
+const TOKEN = process.env.BOT_TOKEN || "8701174108:AAFgEE-uSZlDvrTNm_QIeDIINqmnCzQIOCM";
+const PORT = process.env.PORT || 10000;
 
-const PUBLIC_URL = "https://aifucito5-0.onrender.com"
+const CANAL_CENTRAL = "-1002388657640";
+const PUBLIC_URL = "https://aifucito5-0.onrender.com";
 
-const CANAL_CENTRAL = "-1002388657640"
+const DB_PATH = "./aifucito_db.json";
+const BRAIN_PATH = "./brain.json";
+const LOG_PATH = "./aifucito_logs.txt";
 
-const CANALES_REGIONALES = {
-    URUGUAY: "-1002347230353",
-    ARGENTINA: "-1002410312674",
-    CHILE: "-1002283925519",
-    OTROS: "-1002414775486"
-}
-
-// ==================================================================================
-// BASE DE DATOS
-// ==================================================================================
-
-const DB_PATH = "./aifucito_db.json"
-const BRAIN_PATH = "./brain.json"
+/* =================================================================================
+BASE DE DATOS
+================================================================================= */
 
 let DB = {
     agentes: {},
     reportes: [],
     historias: [],
-    admins: [742615432]
-}
+    admins_centrales: [742615432]
+};
 
 let BRAIN = {
     vocabulario: {
-        hola: "Saludos agente. Sistema AIFUCITO operativo.",
-        ovni: "Los OVNIs (UAP) son objetos aéreos no identificados con maniobras imposibles.",
-        nasa: "La NASA es la agencia espacial civil de Estados Unidos.",
-        luna: "La Luna presenta anomalías geológicas y resonancia inusual.",
-        area51: "Área 51 es una instalación militar en Nevada.",
-        roswell: "Roswell 1947 es el caso OVNI más famoso del siglo XX.",
-        grises: "Los grises son entidades reportadas en múltiples encuentros cercanos."
+        hola: "Nodo AIFUCITO activo. ¿Qué fenómeno deseas analizar?",
+        ovni: "Los OVNI o UAP son fenómenos aéreos no identificados reportados globalmente.",
+        luna: "La Luna presenta anomalías gravitacionales detectadas por misiones Apollo.",
+        nasa: "La NASA ha publicado reportes oficiales sobre UAP desde 2023.",
+        roswell: "Incidente ocurrido en 1947 en Nuevo México.",
+        radar: "El radar global registra reportes enviados por los agentes.",
+        biblioteca: "Las historias VIP guardan testimonios de agentes del sistema."
     }
+};
+
+/* =================================================================================
+LOGS
+================================================================================= */
+
+function registrarLog(msg) {
+
+    const log = `[${new Date().toLocaleString()}] ${msg}\n`;
+
+    try {
+        fs.appendFileSync(LOG_PATH, log);
+    } catch {}
 }
 
-// ==================================================================================
-// SISTEMA ARCHIVOS
-// ==================================================================================
+/* =================================================================================
+PERSISTENCIA
+================================================================================= */
 
-function log(msg){
+function inicializarBases() {
 
-    const texto = `[${new Date().toLocaleString()}] ${msg}\n`
+    try {
 
-    fs.appendFileSync("logs.txt",texto)
-
-    console.log(texto)
-
-}
-
-function cargarBases(){
-
-    try{
-
-        if(fs.existsSync(DB_PATH)){
-
-            DB = JSON.parse(fs.readFileSync(DB_PATH,"utf8"))
-
+        if (fs.existsSync(DB_PATH)) {
+            DB = JSON.parse(fs.readFileSync(DB_PATH));
         }
 
-        if(fs.existsSync(BRAIN_PATH)){
-
-            BRAIN = JSON.parse(fs.readFileSync(BRAIN_PATH,"utf8"))
-
+        if (fs.existsSync(BRAIN_PATH)) {
+            BRAIN = JSON.parse(fs.readFileSync(BRAIN_PATH));
         }
 
-        log("BASES CARGADAS")
+        registrarLog("BASES CARGADAS");
 
-    }catch(e){
+    } catch (e) {
 
-        log("ERROR CARGANDO BASES")
-
-    }
-
-}
-
-async function guardarTodo(){
-
-    try{
-
-        await fsPromises.writeFile(DB_PATH,JSON.stringify(DB,null,4))
-
-        await fsPromises.writeFile(BRAIN_PATH,JSON.stringify(BRAIN,null,4))
-
-    }catch(e){
-
-        log("ERROR GUARDANDO")
+        registrarLog("ERROR AL CARGAR BASES");
 
     }
 
 }
 
-cargarBases()
+async function guardarTodo() {
 
-// ==================================================================================
-// BOT
-// ==================================================================================
+    try {
 
-const bot = new Telegraf(TOKEN)
+        await fsPromises.writeFile(DB_PATH, JSON.stringify(DB, null, 2));
+        await fsPromises.writeFile(BRAIN_PATH, JSON.stringify(BRAIN, null, 2));
 
-bot.use(session())
+    } catch {
 
-bot.use((ctx,next)=>{
+        registrarLog("ERROR AL GUARDAR BASES");
 
-    if(!ctx.session) ctx.session = {}
+    }
 
-    if(ctx.session.reporte === undefined) ctx.session.reporte = null
+}
 
-    if(ctx.session.chat === undefined) ctx.session.chat = false
+inicializarBases();
 
-    if(ctx.session.historia === undefined) ctx.session.historia = false
+/* =================================================================================
+BOT TELEGRAM
+================================================================================= */
 
-    return next()
+const bot = new Telegraf(TOKEN);
 
-})
+bot.use(session());
 
-// ==================================================================================
-// MENU
-// ==================================================================================
+bot.use((ctx, next) => {
 
-function menuPrincipal(){
+    if (!ctx.session) {
+        ctx.session = {};
+    }
+
+    return next();
+
+});
+
+/* =================================================================================
+MENÚ PRINCIPAL
+================================================================================= */
+
+function menuPrincipal() {
 
     return Markup.keyboard([
-        ["🛸 REPORTAR AVISTAMIENTO","🌍 MAPA GLOBAL"],
-        ["🤖 CHARLAR CON AIFUCITO","⭐ MI PERFIL"],
-        ["📚 HISTORIAS"]
-    ]).resize()
+        ["🛸 REPORTAR AVISTAMIENTO", "🌍 MAPA GLOBAL"],
+        ["🤖 CHARLAR CON AIFUCITO", "⭐ MI PERFIL"],
+        ["📚 HISTORIAS VIP"]
+    ]).resize();
 
 }
 
-// ==================================================================================
-// START
-// ==================================================================================
+/* =================================================================================
+COMANDO START
+================================================================================= */
 
-bot.start(async ctx=>{
+bot.start(async (ctx) => {
 
-    const id = ctx.from.id
+    const id = ctx.from.id;
 
-    if(!DB.agentes[id]){
+    if (!DB.agentes[id]) {
 
         DB.agentes[id] = {
+            id,
+            nombre: ctx.from.first_name,
+            xp: 100,
+            reportes_totales: 0
+        };
 
-            id:id,
-            nombre:ctx.from.first_name,
-            xp:100,
-            reportes:0,
-            fecha:new Date().toISOString()
-
-        }
-
-        await guardarTodo()
+        await guardarTodo();
 
     }
 
     ctx.reply(
-        "🛰️ SISTEMA AIFUCITO 5.0 ONLINE\n\nRed global de investigación OVNI activa.",
+        "🛰️ NODO AIFUCITO 5.0 OPERATIVO\nAcceso del agente verificado.",
         menuPrincipal()
-    )
+    );
 
-})
+});
 
-// ==================================================================================
-// TEXTO
-// ==================================================================================
+/* =================================================================================
+BOTONES
+================================================================================= */
 
-bot.on("text",async ctx=>{
+bot.hears("🛸 REPORTAR AVISTAMIENTO", (ctx) => {
 
-    const txt = ctx.message.text
+    ctx.session.reporte = { paso: "tipo" };
 
-    const id = ctx.from.id
+    ctx.reply("Describe el tipo de objeto observado:");
 
-// SALIR
+});
 
-    if(txt === "SALIR"){
+bot.hears("🌍 MAPA GLOBAL", (ctx) => {
 
-        ctx.session.reporte = null
-        ctx.session.chat = false
-        ctx.session.historia = false
+    ctx.reply(`${PUBLIC_URL}/radar`);
 
-        return ctx.reply("Volviendo al menú",menuPrincipal())
+});
+
+bot.hears("🤖 CHARLAR CON AIFUCITO", (ctx) => {
+
+    ctx.session.chat = true;
+
+    ctx.reply("Modo conversación activado. Escribe SALIR para terminar.");
+
+});
+
+bot.hears("⭐ MI PERFIL", (ctx) => {
+
+    const user = DB.agentes[ctx.from.id];
+
+    if (!user) return;
+
+    ctx.reply(
+        `AGENTE: ${user.nombre}
+XP: ${user.xp}
+REPORTES: ${user.reportes_totales}`
+    );
+
+});
+
+bot.hears("📚 HISTORIAS VIP", (ctx) => {
+
+    ctx.reply(
+        "Biblioteca de testimonios",
+        Markup.inlineKeyboard([
+            [Markup.button.callback("Leer historias", "ver_hist")],
+            [Markup.button.callback("Escribir historia", "escribir_hist")]
+        ])
+    );
+
+});
+
+/* =================================================================================
+ACCIONES INLINE
+================================================================================= */
+
+bot.action("ver_hist", (ctx) => {
+
+    if (DB.historias.length === 0) {
+
+        ctx.reply("No hay historias registradas.");
+
+        return;
+    }
+
+    let texto = "ULTIMAS HISTORIAS\n\n";
+
+    DB.historias.slice(-5).forEach((h) => {
+
+        texto += `"${h.texto}"\nAutor: ${h.autor}\n\n`;
+
+    });
+
+    ctx.reply(texto);
+
+});
+
+bot.action("escribir_hist", (ctx) => {
+
+    ctx.session.escribiendo_historia = true;
+
+    ctx.reply("Escribe tu historia:");
+
+});
+
+/* =================================================================================
+MENSAJES DE TEXTO
+================================================================================= */
+
+bot.on("text", async (ctx) => {
+
+    const texto = ctx.message.text.toLowerCase();
+
+    const uid = ctx.from.id;
+
+    if (texto === "salir") {
+
+        ctx.session = {};
+
+        ctx.reply("Sesión cerrada.", menuPrincipal());
+
+        return;
 
     }
 
-// REPORTE
+    if (ctx.session.escribiendo_historia) {
 
-    if(ctx.session.reporte){
+        DB.historias.push({
+            autor: ctx.from.first_name,
+            texto: ctx.message.text,
+            fecha: new Date().toLocaleDateString()
+        });
 
-        if(ctx.session.reporte.paso === "tipo"){
+        ctx.session.escribiendo_historia = false;
 
-            ctx.session.reporte.tipo = txt
+        await guardarTodo();
 
-            ctx.session.reporte.paso = "ubicacion"
+        ctx.reply("Historia guardada.", menuPrincipal());
 
-            return ctx.reply("Indica ciudad o ubicación")
+        return;
+
+    }
+
+    if (ctx.session.reporte) {
+
+        if (ctx.session.reporte.paso === "tipo") {
+
+            ctx.session.reporte.tipo = ctx.message.text;
+
+            ctx.session.reporte.paso = "ubicacion";
+
+            ctx.reply("Indica ubicación:");
+
+            return;
 
         }
 
-        if(ctx.session.reporte.paso === "ubicacion"){
+        if (ctx.session.reporte.paso === "ubicacion") {
 
-            const idr = crypto.randomBytes(3).toString("hex")
+            const id = crypto.randomBytes(3).toString("hex");
 
-            const rep = {
+            DB.reportes.push({
+                id,
+                agente: ctx.from.first_name,
+                tipo: ctx.session.reporte.tipo,
+                ubicacion: ctx.message.text,
+                fecha: new Date().toLocaleString()
+            });
 
-                id:idr,
-                agente:ctx.from.first_name,
-                tipo:ctx.session.reporte.tipo,
-                ubicacion:txt,
-                fecha:new Date().toLocaleString()
+            if (DB.agentes[uid]) {
+
+                DB.agentes[uid].reportes_totales++;
+                DB.agentes[uid].xp += 50;
 
             }
 
-            DB.reportes.push(rep)
+            ctx.session.reporte = null;
 
-            DB.agentes[id].reportes++
+            await guardarTodo();
 
-            DB.agentes[id].xp += 50
-
-            await guardarTodo()
-
-            ctx.session.reporte = null
-
-            try{
+            try {
 
                 await ctx.telegram.sendMessage(
                     CANAL_CENTRAL,
-                    `🛸 NUEVO REPORTE\n\nAgente: ${rep.agente}\nTipo:${rep.tipo}\nUbicación:${rep.ubicacion}`
-                )
+                    `REPORTE OVNI
+Agente: ${ctx.from.first_name}
+Tipo: ${ctx.session?.reporte?.tipo}
+Ubicación: ${ctx.message.text}`
+                );
 
-            }catch(e){
+            } catch {}
 
-                log("Error enviando reporte")
+            ctx.reply("Reporte guardado.", menuPrincipal());
 
-            }
-
-            return ctx.reply(`Reporte guardado ID:${idr}`,menuPrincipal())
+            return;
 
         }
 
     }
 
-// HISTORIAS
+    if (ctx.session.chat) {
 
-    if(ctx.session.historia){
+        for (const palabra in BRAIN.vocabulario) {
 
-        DB.historias.push({
+            if (texto.includes(palabra)) {
 
-            autor:ctx.from.first_name,
-            texto:txt,
-            fecha:new Date().toLocaleDateString()
+                ctx.reply(BRAIN.vocabulario[palabra]);
 
-        })
-
-        await guardarTodo()
-
-        ctx.session.historia = false
-
-        return ctx.reply("Historia guardada",menuPrincipal())
-
-    }
-
-// CHAT IA
-
-    if(ctx.session.chat){
-
-        const m = txt.toLowerCase()
-
-        for(const clave in BRAIN.vocabulario){
-
-            if(m.includes(clave)){
-
-                return ctx.reply(BRAIN.vocabulario[clave])
+                return;
 
             }
 
         }
 
-        return ctx.reply("No tengo información sobre eso.")
+        ctx.reply("No hay datos sobre eso.");
 
     }
 
-})
+});
 
-// ==================================================================================
-// BOTONES
-// ==================================================================================
+/* =================================================================================
+SERVIDOR WEB
+================================================================================= */
 
-bot.hears("🛸 REPORTAR AVISTAMIENTO",ctx=>{
+const app = express();
 
-    ctx.session.reporte = { paso:"tipo" }
+app.get("/", (req, res) => {
 
-    ctx.reply("Describe el objeto observado")
+    res.send("AIFUCITO ONLINE");
 
-})
+});
 
-bot.hears("🌍 MAPA GLOBAL",ctx=>{
+app.get("/radar", (req, res) => {
 
-    ctx.reply(`${PUBLIC_URL}/radar`)
+    res.json(DB.reportes);
 
-})
+});
 
-bot.hears("⭐ MI PERFIL",ctx=>{
-
-    const u = DB.agentes[ctx.from.id]
-
-    ctx.reply(
-
-`AGENTE
-
-Nombre: ${u.nombre}
-Reportes: ${u.reportes}
-XP: ${u.xp}`
-
-)
-
-})
-
-bot.hears("🤖 CHARLAR CON AIFUCITO",ctx=>{
-
-    ctx.session.chat = true
-
-    ctx.reply("Modo conversación activo.")
-
-})
-
-bot.hears("📚 HISTORIAS",ctx=>{
-
-    ctx.reply(
-
-        "Biblioteca",
-
-        Markup.inlineKeyboard([
-            [Markup.button.callback("Leer","leer")],
-            [Markup.button.callback("Escribir","escribir")]
-        ])
-
-    )
-
-})
-
-// ==================================================================================
-// ACCIONES
-// ==================================================================================
-
-bot.action("leer",ctx=>{
-
-    if(DB.historias.length === 0){
-
-        return ctx.reply("No hay historias")
-
-    }
-
-    let t = "Historias recientes\n\n"
-
-    DB.historias.slice(-5).forEach(h=>{
-
-        t += `"${h.texto}"\nAutor:${h.autor}\n\n`
-
-    })
-
-    ctx.reply(t)
-
-})
-
-bot.action("escribir",ctx=>{
-
-    ctx.session.historia = true
-
-    ctx.reply("Escribe tu historia")
-
-})
-
-// ==================================================================================
-// SERVIDOR WEB
-// ==================================================================================
-
-const app = express()
-
-app.get("/",(req,res)=>{
-
-    res.send("AIFUCITO ONLINE")
-
-})
-
-app.get("/radar",(req,res)=>{
-
-    res.json(DB.reportes)
-
-})
-
-// ==================================================================================
-// LANZAMIENTO
-// ==================================================================================
+/* =================================================================================
+ARRANQUE
+================================================================================= */
 
 bot.launch()
+.then(() => {
 
-app.listen(PORT,()=>{
-
-    log("Servidor iniciado")
-
-})
-
-process.on("unhandledRejection",err=>{
-
-    log("ERROR:"+err)
+    console.log("BOT TELEGRAM CONECTADO");
 
 })
+.catch((err) => {
+
+    console.log("ERROR BOT:", err);
+
+});
+
+app.listen(PORT, () => {
+
+    console.log("SERVIDOR WEB ACTIVO");
+
+});
+
+/* =================================================================================
+SEGURIDAD DE CIERRE
+================================================================================= */
+
+process.once("SIGINT", () => bot.stop("SIGINT"));
+process.once("SIGTERM", () => bot.stop("SIGTERM"));
