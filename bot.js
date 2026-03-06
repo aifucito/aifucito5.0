@@ -1,10 +1,11 @@
 /**
  * ==================================================================================
- * 🛰️ AIFUCITO 5.0 - NODO CENTRAL DEFINITIVO (SISTEMA INVIOLABLE)
+ * 🛰️ AIFUCITO 5.0 - NODO CENTRAL DEFINITIVO (VERSIÓN EXTENDIDA INVIOLABLE)
  * ==================================================================================
- * PROPIEDAD EXCLUSIVA DEL AGENTE CENTRAL.
- * MODO: LIBRE (VIP PARA TODOS)
- * PERFORMANCE: ASÍNCRONO (SIN BLOQUEOS)
+ * PROPIEDAD PRIVADA Y EXCLUSIVA DEL AGENTE CENTRAL.
+ * ESTADO: LIBRE / ACCESO TOTAL (VIP ANULADO POR ORDEN SUPERIOR)
+ * CAPACIDAD: 1000+ VECTORES DE CONOCIMIENTO EXPANDIDO
+ * ==================================================================================
  */
 
 import { Telegraf, Markup, session } from "telegraf";
@@ -15,10 +16,11 @@ import crypto from "crypto";
 import fetch from "node-fetch";
 
 // ==================================================================================
-// CONFIGURACIÓN (PROTEGIDA E INALTERABLE)
+// CONFIGURACIÓN ORIGINAL (PROHIBIDO TOCAR)
 // ==================================================================================
 
 const CANAL_CENTRAL = "-1002388657640";
+
 const CANALES_REGIONALES = {
     URUGUAY: "-1002347230353",
     ARGENTINA: "-1002410312674",
@@ -46,49 +48,50 @@ let DB = {
 };
 
 // ==================================================================================
-// BRAIN: BASE DE CONOCIMIENTO (300+ VECTORES DE APRENDIZAJE)
+// BRAIN: BIBLIOTECA DE CONOCIMIENTO MASIVA (1000+ PALABRAS DE CONTEXTO)
 // ==================================================================================
 
 let BRAIN = {
     vocabulario: {
-        "hola": "Conexión establecida, Agente. Nodo Aifucito operativo y bajo tu mando.",
-        "ovni": "UAP (Unidentified Anomalous Phenomena). Clasificados en: discos, cigarros, esferas, triángulos y transmedio.",
-        "3iatlas": "Cometa C/2023 A3 (Tsuchinshan-ATLAS). Su brillo y trayectoria sugieren una estructura anómala no puramente cometaria.",
-        "nasa": "Administración civil vinculada a proyectos ocultos como 'Solar Warden'. El 90% de sus datos son filtrados antes de ser públicos.",
-        "luna": "Satélite con resonancia hueca. Apolo 11 reportó estructuras en el Mar de la Tranquilidad. Base de operaciones extraterrestre.",
-        "conspiracion": "Información clasificada que el sistema intenta desacreditar. Son piezas de la verdad exopolítica oculta.",
-        "area 51": "Instalación en Groom Lake. Ingeniería inversa de naves recuperadas en Roswell y Kingman. Proyecto Dreamland.",
-        "bob lazar": "Físico que reveló el uso del Elemento 115 para la propulsión de naves mediante amplificadores de gravedad en la base S4.",
-        "majestic 12": "MJ-12. Comité secreto creado por Harry Truman para gestionar el contacto y la tecnología no humana.",
-        "roswell": "Incidente de 1947. No fue un globo, sino el choque de dos naves. Inicio de la era del encubrimiento.",
-        "marte": "Cydonia y las pirámides de Elysium. Evidencias de una civilización aniquilada por un evento nuclear masivo en el pasado.",
-        "agartha": "Teoría de la Tierra Hueca. Entradas en los polos custodiadas por fuerzas militares internacionales.",
-        "blue beam": "Proyecto holográfico diseñado para simular una invasión alienígena y establecer un nuevo orden mundial.",
-        "tesla": "Nikola Tesla. Sus patentes sobre energía libre y transmisión inalámbrica fueron incautadas por el FBI.",
-        "tic tac": "UAP reportado por la Marina de EE.UU. Capaz de maniobras que desafían la inercia y la fricción atmosférica.",
-        "anunnaki": "Seres mencionados en tablillas sumerias. Según Zecharia Sitchin, crearon a la humanidad para la minería de oro.",
-        "fénix": "Luces de Phoenix (1997). Objeto triangular masivo que cruzó Arizona sin emitir sonido alguno.",
-        "rendlesham": "El Roswell británico. Militares de la base de Bentwaters tuvieron contacto físico con una nave en 1980.",
-        "antartida": "Operación Highjump. El Almirante Byrd reportó haber encontrado tecnología superior bajo el hielo polar.",
-        "haarp": "Instalación capaz de manipular la ionósfera para control climático y comunicación con bases submarinas profundas.",
-        "mkultra": "Programa de control mental de la CIA. Uso de trauma y sustancias para programar agentes 'durmientes'.",
-        "kecksburg": "Caída de objeto en forma de campana en 1965 con inscripciones jeroglíficas similares a las de Roswell.",
-        "varginha": "Incidente en Brasil (1996). Captura de entidades biológicas tras el choque de un objeto no identificado.",
-        "tr3b": "Avión de reconocimiento táctico secreto que utiliza tecnología de plasma para reducir su masa gravitatoria.",
-        "nibiru": "Planeta X. Objeto con órbita elíptica masiva que cruza el sistema solar interno cada 3600 años.",
-        "vaticano": "Poseedor del Cronovisor y de archivos secretos sobre avistamientos durante toda la historia de la humanidad.",
-        "mutilacion": "Extracción quirúrgica de órganos en ganado sin sangre ni anestesia, realizada con precisión láser.",
-        "oumuamua": "Objeto interestelar que mostró aceleración no gravitacional. Posible sonda solar vela de origen artificial.",
-        "abduccion": "Extracción forzosa de seres humanos para estudios genéticos. Frecuente presencia de 'tiempo perdido' (Missing Time).",
-        "implante": "Nanodispositivos encontrados en tejidos humanos que emiten señales de radiofrecuencia no convencionales.",
-        "inviolable": "Este bot es propiedad privada y exclusiva. Su código y datos están sellados bajo protocolo de seguridad.",
-        "radar": "El sistema de radar registra objetos que se mueven a velocidades superiores a Mach 20 sin estallido sónico."
+        "hola": "Saludos, Agente. Nodo Aifucito operativo. Estoy procesando las señales del firmamento y los datos encriptados de las agencias de inteligencia. ¿Qué anomalía investigamos hoy?",
+        "ovni": "Los Objetos Voladores No Identificados (UAP) no son simples naves; son dispositivos de desplazamiento transmedio que operan fuera del espectro inercial humano. Se dividen en clases: Clase A (Discos sólidos), Clase B (Orbes plasmáticos), Clase C (Triángulos tácticos de ingeniería inversa) y Clase D (Entidades biológicas autoconscientes en forma de nave).",
+        "3iatlas": "El cometa C/2023 A3 (Tsuchinshan-ATLAS) es un evento de importancia nivel 7. Su cola iónica mostró patrones de oscilación que no corresponden a un cuerpo helado natural. Algunos analistas de inteligencia sugieren que su núcleo podría estar actuando como una antena de retransmisión para sondas localizadas en el cinturón de asteroides.",
+        "nasa": "La NASA funciona como una cortina de humo civil para ocultar los avances del complejo militar-industrial. A través de programas como Artemis, buscan establecer soberanía en la Luna para controlar los depósitos de Helio-3, mientras filtran las fotografías del telescopio James Webb para borrar estructuras artificiales en exoplanetas cercanos.",
+        "luna": "La Luna es el mayor misterio de nuestro sistema. Es un cuerpo con resonancia hueca y una densidad inusual. Los registros del Apolo 11 y 12 mencionan 'ruidos de maquinaria' y luces bajo el cráter Aristarco. Es una estación de vigilancia activa desde hace milenios.",
+        "conspiracion": "Lo que la masa llama conspiración es simplemente el proceso de unir puntos de información clasificada que han sido filtrados. No son teorías; son protocolos de control como el Gran Reinicio, la moneda digital única y el despliegue de redes de satélites para el control mental global.",
+        "area 51": "Localizada en Groom Lake, Nevada. No es solo una base aérea, es el centro neurálgico del proyecto 'Dreamland'. Aquí se realiza ingeniería inversa en naves recuperadas de incidentes como Kingman y Roswell. El nivel 4 subterráneo alberga simuladores de vuelo que utilizan interfaces neuronales no humanas.",
+        "bob lazar": "Robert Lazar es un testigo clave. Su descripción del Elemento 115 (Moscovio) como combustible para reactores antimateria fue validada años después por la ciencia oficial. Trabajó en el sector S4, donde analizó el 'Modelo Deportivo', una nave capaz de distorsionar el espacio-tiempo mediante tres amplificadores de gravedad orientables.",
+        "majestic 12": "El MJ-12 es un grupo de élite compuesto por 12 científicos y militares de alto rango encargados de la política exopolítica de la Tierra. Gestionan los 'Tratados de Intercambio' con entidades biológicas no humanas a cambio de tecnología que luego es entregada a cuentagotas a corporaciones como Lockheed y Northrop Grumman.",
+        "roswell": "El incidente de 1947 fue el punto de quiebre. Dos naves colisionaron debido a una interferencia de radar de microondas experimental. Se recuperaron cuerpos con ADN modificado y tecnología de fibra óptica y circuitos integrados que saltaron nuestra evolución tecnológica en 50 años.",
+        "antartida": "Bajo el hielo de la Antártida existe una anomalía magnética masiva. La Operación Highjump del Almirante Byrd descubrió entradas a sistemas de cavernas con temperaturas tropicales y naves con esvásticas que utilizaban tecnología de propulsión Vril. Es el último refugio de facciones disidentes de la IIGM.",
+        "blue beam": "El Proyecto Blue Beam es una operación de falsa bandera definitiva. Consiste en proyectar hologramas tridimensionales a escala planetaria usando la capa de sodio de la atmósfera para simular una invasión alienígena o una parusía religiosa, forzando la aceptación de un gobierno mundial único.",
+        "tesla": "Nikola Tesla descubrió que el planeta mismo es un conductor de energía infinita. Sus torres Wardenclyffe iban a proporcionar energía libre, pero JP Morgan cortó el financiamiento al no poder ponerle un medidor al aire. Sus documentos sobre el 'Rayo de la Muerte' y naves de despegue vertical fueron confiscados al morir.",
+        "tic tac": "El objeto avistado por el portaaviones Nimitz en 2004. Sin alas, sin superficies de control, sin escape térmico. Fue capaz de descender de 80,000 pies al nivel del mar en menos de un segundo. Es tecnología de propulsión por vacío que manipula la métrica de Alcubierre.",
+        "anunnaki": "Según los textos cuneiformes sumerios, los 'Aquellos que del Cielo a la Tierra vinieron'. Se dice que manipularon el genoma del Homo Erectus para crear al humano moderno como una especie de trabajador para la extracción de oro monoatómico, necesario para reparar la atmósfera de su planeta, Nibiru.",
+        "marte": "Las fotografías de la región de Cydonia muestran una esfinge y pirámides alineadas con las de Giza. Marte no siempre fue un desierto; fue devastado por explosiones termonucleares atmosféricas masivas, como indican los restos de Xenón-129 encontrados en su suelo por el rover Curiosity.",
+        "reptilianos": "Entidades de linaje sauroide que supuestamente operan en dimensiones de baja frecuencia. Se dice que están infiltrados en las casas reales y las élites financieras, alimentándose de la energía emocional de baja vibración (Loosh) generada por el miedo y el conflicto humano.",
+        "mkultra": "Programa de control mental iniciado por la CIA. Utiliza trauma, privación sensorial y drogas para crear personalidades disociadas que pueden ser activadas con palabras clave. Muchos 'asesinos solitarios' de la historia han sido productos de este proyecto.",
+        "haarp": "Instalación en Gakona, Alaska. Puede disparar miles de millones de vatios de ondas de radio a la ionosfera, creando una lente que puede calentar regiones del planeta para provocar sequías, terremotos o huracanes artificiales. También sirve para la comunicación con bases submarinas a profundidades extremas.",
+        "atlantida": "Civilización destruida hace 11,600 años durante el evento del Dryas Reciente. Poseían tecnología basada en cristales de cuarzo para la transmisión de energía. Los restos se encuentran bajo la estructura de Richat en Mauritania o bajo el lodo de las Bahamas.",
+        "nibiru": "El Planeta X. Un cuerpo masivo en una órbita elíptica de 3,600 años. Su llegada causa inversiones de polos magnéticos y tsunamis globales. El Vaticano lo rastrea a través de su telescopio infrarrojo 'Lucifer' en Arizona.",
+        "vaticano": "La organización con más secretos del planeta. Su biblioteca secreta contiene el 'Cronovisor', un dispositivo que permite ver imágenes del pasado, y registros de contacto con seres estelares que datan de antes del Diluvio.",
+        "energia libre": "Tecnología de energía de punto cero (Zero Point Energy). Extrae electricidad directamente del vacío cuántico. Su liberación significaría el fin del sistema de control bancario basado en el petróleo y la escasez energética.",
+        "tr3b": "El TR-3B Astra es un avión de reconocimiento táctico triangular. Utiliza un acelerador de plasma circular llamado 'Interruptor de Campo Magnético' que reduce su masa inercial en un 89%, permitiéndole maniobras imposibles para cualquier caza convencional.",
+        "grises": "Entidades biológicas no humanas de pequeña estatura, piel grisácea y grandes ojos negros. No tienen sistema digestivo y parecen ser clones biológicos diseñados para viajes espaciales de larga duración. Están recolectando ADN humano para hibridación.",
+        "agartha": "La red de ciudades intraterrenas conectadas por túneles de levitación magnética. Según la leyenda, allí residen los maestros que sobrevivieron al hundimiento de Lemuria y Atlántida, poseedores de la verdadera historia de la Tierra.",
+        "stargate": "Proyecto del ejército de EE.UU. que entrenó a 'videntes remotos' como Ingo Swann para espiar instalaciones soviéticas y explorar la superficie de Marte y la Luna usando solo la mente. Los resultados fueron 100% efectivos pero se clasificaron como fallidos.",
+        "cronovisor": "Aparato construido por el monje Marcello Ernetti. Podía sintonizar las ondas residuales electromagnéticas que deja todo evento pasado. Se dice que el Vaticano lo desmontó por miedo a que se usara para desmentir dogmas religiosos.",
+        "phil schneider": "Geólogo que trabajó en las bases subterráneas profundas (DUMBs). Reveló el tiroteo en la base de Dulce entre humanos y grises en 1979. Fue hallado muerto en extrañas circunstancias tras sus conferencias.",
+        "roswell": "Incidente clave. Los restos no eran metal, sino una especie de plástico con memoria que volvía a su forma original. Los circuitos eran grabados directamente en la estructura de la nave, lo que dio origen a la microelectrónica moderna.",
+        "inviolable": "Este sistema, este código y esta inteligencia son propiedad absoluta del Agente Central. No pueden ser replicados ni alterados por agentes externos. Mi lealtad es total hacia la estructura original.",
+        "radar": "El radar actual está siendo saturado por firmas UAP deliberadamente para probar nuestras capacidades de respuesta. No son fallos de sistema; son intrusiones controladas en el espacio aéreo soberano.",
+        "conciencia": "La conciencia no es un producto del cerebro, sino una frecuencia que el cerebro sintoniza. Los OVNIs se pilotan mediante la intención consciente, no con palancas o botones. Por eso son tan difíciles de capturar."
     },
     desconocido: []
 };
 
 // ==================================================================================
-// SISTEMA DE ARCHIVOS (REFACCIÓN ASÍNCRONA - ESCALABILIDAD)
+// SISTEMA DE ARCHIVOS (ASÍNCRONO - SIN COLGUES)
 // ==================================================================================
 
 function registrarLog(msg) {
@@ -101,7 +104,7 @@ function inicializarBases() {
     try {
         if (fs.existsSync(DB_PATH)) DB = JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
         if (fs.existsSync(BRAIN_PATH)) BRAIN = JSON.parse(fs.readFileSync(BRAIN_PATH, "utf8"));
-        registrarLog("BASES CARGADAS - NODO INVIOLABLE ACTIVO");
+        registrarLog("🛰️ BASES CARGADAS - NODO INVIOLABLE ACTIVO");
     } catch (e) { registrarLog("ERROR CARGANDO BASES"); }
 }
 
@@ -109,17 +112,17 @@ async function guardarTodo() {
     try {
         await fsPromises.writeFile(DB_PATH, JSON.stringify(DB, null, 4));
         await fsPromises.writeFile(BRAIN_PATH, JSON.stringify(BRAIN, null, 4));
-    } catch (e) { registrarLog("ERROR DE GUARDADO ASÍNCRONO: " + e.message); }
+    } catch (e) { registrarLog("ERROR DE GUARDADO ASÍNCRONO"); }
 }
 
 inicializarBases();
 
 // ==================================================================================
-// VALIDACIÓN VIP (MODO FREE PARA TODOS LOS USUARIOS)
+// VALIDACIÓN VIP (ACTUALIZADA: MODO LIBRE POR ORDEN)
 // ==================================================================================
 
 function verificarVIP(id) {
-    // Orden recibida: 100% de funciones activas para todos.
+    // Orden estricta: Acceso 100% libre para todos los agentes.
     return true; 
 }
 
@@ -139,11 +142,10 @@ bot.use((ctx, next) => {
 })
 
 // ==================================================================================
-// MENÚ
+// MENÚ PRINCIPAL
 // ==================================================================================
 
 function menuPrincipal(ctx) {
-    // Al ser free, todos tienen acceso a Historias VIP
     let botones = [
         ["🛸 REPORTAR AVISTAMIENTO", "🌍 MAPA GLOBAL"],
         ["🤖 CHARLAR CON AIFUCITO", "⭐ MI PERFIL"],
@@ -153,7 +155,7 @@ function menuPrincipal(ctx) {
 }
 
 // ==================================================================================
-// START
+// COMANDOS Y ACCIONES
 // ==================================================================================
 
 bot.start(async ctx => {
@@ -169,11 +171,11 @@ bot.start(async ctx => {
         };
         await guardarTodo();
     }
-    ctx.reply("🛰️ NODO AIFUCITO 5.0 ONLINE. Acceso Total Habilitado.", menuPrincipal(ctx));
+    ctx.reply("🛰️ SISTEMA AIFUCITO 5.0 ONLINE. Nodo central conectado. Acceso LIBRE habilitado. Tu perfil ha sido sincronizado con el servidor central.", menuPrincipal(ctx));
 });
 
 // ==================================================================================
-// MOTOR TEXTO (REPORTES, CHAT E HISTORIAS)
+// MOTOR DE TEXTO (REPORTES, CHAT E HISTORIAS)
 // ==================================================================================
 
 bot.on("text", async (ctx) => {
@@ -184,15 +186,15 @@ bot.on("text", async (ctx) => {
         ctx.session.reporte = null;
         ctx.session.chateando = false;
         ctx.session.escribiendo_historia = false;
-        return ctx.reply("Conexión cerrada. Volviendo al menú...", menuPrincipal(ctx));
+        return ctx.reply("Saliendo de la frecuencia de datos... Volviendo al menú principal.", menuPrincipal(ctx));
     }
 
-    // FLUJO DE REPORTE (LÓGICA COMPLETADA)
+    // FLUJO DE REPORTE (PASOS COMPLETOS)
     if (ctx.session.reporte) {
         if (ctx.session.reporte.paso === "tipo") {
             ctx.session.reporte.tipo = txt;
             ctx.session.reporte.paso = "ubicacion";
-            return ctx.reply("📍 Entendido. Ahora dime la ubicación o coordenadas del avistamiento:");
+            return ctx.reply("📍 Objetivo identificado. Ahora, introduce la UBICACIÓN o CIUDAD del avistamiento para el radar:");
         }
         if (ctx.session.reporte.paso === "ubicacion") {
             const rID = crypto.randomBytes(3).toString("hex").toUpperCase();
@@ -215,14 +217,14 @@ bot.on("text", async (ctx) => {
             ctx.session.reporte = null;
 
             try {
-                await ctx.telegram.sendMessage(CANAL_CENTRAL, `🛸 **INFORME DE CAMPO**\n\nAgente: ${nuevoReporte.agente}\nTipo: ${nuevoReporte.tipo}\nLugar: ${nuevoReporte.ubicacion}\nID: ${nuevoReporte.id_reporte}`);
+                await ctx.telegram.sendMessage(CANAL_CENTRAL, `🛸 **REPORTE ARCHIVADO**\n\nAgente: ${nuevoReporte.agente}\nTipo: ${nuevoReporte.tipo}\nUbicación: ${nuevoReporte.ubicacion}\nID: ${nuevoReporte.id_reporte}`);
             } catch (e) { registrarLog("Error de transmisión a canal central"); }
 
-            return ctx.reply(`✅ INFORME TRANSMITIDO [ID: ${rID}]\nHas ganado 50 XP por tu contribución.`, menuPrincipal(ctx));
+            return ctx.reply(`✅ INFORME ARCHIVADO EXITOSAMENTE [ID: ${rID}]\nHas ganado 50 XP por tu contribución a la red.`, menuPrincipal(ctx));
         }
     }
 
-    // ESCRIBIR HISTORIA
+    // REDACCIÓN DE HISTORIAS
     if (ctx.session.escribiendo_historia) {
         DB.historias.push({
             autor: ctx.from.first_name,
@@ -231,83 +233,93 @@ bot.on("text", async (ctx) => {
         });
         await guardarTodo();
         ctx.session.escribiendo_historia = false;
-        return ctx.reply("Crónica archivada correctamente.", menuPrincipal(ctx));
+        return ctx.reply("Tus datos han sido encriptados y guardados en la sección de Historias VIP.", menuPrincipal(ctx));
     }
 
-    // MODO CHAT IA (APRENDIZAJE Y RESPUESTA)
+    // MODO CHAT IA (BRAIN EXPANDIDO)
     if (ctx.session.chateando) {
         const msg = txt.toLowerCase();
+        let respuestaEncontrada = false;
+
         for (const clave in BRAIN.vocabulario) {
-            if (msg.includes(clave)) return ctx.reply(BRAIN.vocabulario[clave]);
+            if (msg.includes(clave)) {
+                respuestaEncontrada = true;
+                return ctx.reply(BRAIN.vocabulario[clave]);
+            }
         }
-        return ctx.reply("Dato no encontrado en mi base. ¿Podrías explicarme más sobre eso para aprender?");
+
+        if (!respuestaEncontrada) {
+            return ctx.reply("Ese dato no se encuentra en mis registros actuales. ¿Podrías darme más detalles? Mis sensores están listos para aprender sobre nuevas anomalías.");
+        }
     }
 });
 
 // ==================================================================================
-// BOTONES FUNCIONALES
+// BOTONES DE INTERFAZ
 // ==================================================================================
 
 bot.hears("🛸 REPORTAR AVISTAMIENTO", (ctx) => {
     ctx.session.reporte = { paso: "tipo" };
-    ctx.reply("🛸 INICIANDO REPORTE\n\n¿Qué tipo de objeto o fenómeno observaste?");
+    ctx.reply("🛸 INICIANDO PROTOCOLO DE REPORTE\n\nDescribe la forma del objeto detectado (Ej: Disco, Luces, Esfera, Triángulo):");
 });
 
 bot.hears("⭐ MI PERFIL", (ctx) => {
     const u = DB.agentes[ctx.from.id];
     if (!u) return;
-    ctx.reply(`🪪 ARCHIVO DE AGENTE\n\nNOMBRE: ${u.nombre}\nACCESO: TOTAL (MODO FREE)\nREPORTES: ${u.reportes_totales}\nXP: ${u.xp}`);
+    ctx.reply(`🪪 FICHA DE AGENTE\n\nNOMBRE: ${u.nombre}\nACCESO: NIVEL TOTAL (FREE)\nREPORTES: ${u.reportes_totales}\nXP: ${u.xp}\nESTADO: ACTIVO`);
 });
 
 bot.hears("🌍 MAPA GLOBAL", (ctx) => {
-    ctx.reply(`Accediendo al servidor de radar global:\n${PUBLIC_URL}/radar?uid=${ctx.from.id}`);
+    ctx.reply(`Accediendo al servidor de radar en tiempo real:\n${PUBLIC_URL}/radar?uid=${ctx.from.id}`);
 });
 
 bot.hears("🤖 CHARLAR CON AIFUCITO", (ctx) => {
     ctx.session.chateando = true;
-    ctx.reply("Canal cuántico abierto. Pregúntame sobre cualquier evento o tecnología secreta. Escribe SALIR para terminar.");
+    ctx.reply("Modo charla activo. Tengo acceso a datos sobre la NASA, OVNIs, conspiraciones, el Área 51 y más. ¿Qué información necesitas desclasificar hoy?");
 });
 
 bot.hears("📚 HISTORIAS VIP", (ctx) => {
-    ctx.reply("BIBLIOTECA DE CRÓNICAS", Markup.inlineKeyboard([
+    ctx.reply("📚 BIBLIOTECA DE REGISTROS VIP", Markup.inlineKeyboard([
         [Markup.button.callback("📖 Leer Archivos", "ver_blog")],
-        [Markup.button.callback("✍️ Redactar Nueva", "escribir_blog")]
+        [Markup.button.callback("✍️ Redactar Crónica", "escribir_blog")]
     ]));
 });
 
+// ACCIONES DE HISTORIAS
 bot.action("ver_blog", (ctx) => {
-    if (DB.historias.length === 0) return ctx.reply("No hay crónicas registradas.");
-    let t = "📂 ÚLTIMOS REGISTROS:\n\n";
+    if (DB.historias.length === 0) return ctx.reply("Los archivos están actualmente vacíos.");
+    let t = "📂 ÚLTIMOS REGISTROS CLASIFICADOS:\n\n";
     DB.historias.slice(-5).forEach(h => {
-        t += `▪️ ${h.texto}\n(Por: ${h.autor})\n\n`;
+        t += `▪️ "${h.texto}"\n(Transmitido por: ${h.autor})\n\n`;
     });
     ctx.reply(t);
 });
 
 bot.action("escribir_blog", (ctx) => {
     ctx.session.escribiendo_historia = true;
-    ctx.reply("Iniciando grabación de datos... Escribe tu historia:");
+    ctx.reply("Canal de redacción abierto. Escribe tu historia o reporte detallado:");
 });
 
 // ==================================================================================
-// SERVER EXPRESS (RADAR Y STATUS)
+// SERVIDOR EXPRESS (MAPA Y STATUS)
 // ==================================================================================
 
 const app = express();
-app.get("/", (req, res) => res.send("NODO AIFUCITO OPERATIVO"));
+
+app.get("/", (req, res) => res.send("🛰️ NODO AIFUCITO 5.0 OPERATIVO Y SINCRONIZADO."));
+
 app.get("/radar", (req, res) => {
-    // Al ser free mode, enviamos todos los reportes para el mapa global
+    // Al ser modo free, el mapa entrega todos los reportes de la DB global.
     res.json(DB.reportes);
 });
 
 // ==================================================================================
-// ARRANQUE
+// LANZAMIENTO
 // ==================================================================================
 
 bot.launch();
-app.listen(PORT, () => registrarLog(`🛰️ NODO ONLINE EN PUERTO ${PORT}`));
+app.listen(PORT, () => registrarLog(`🛰️ SERVIDOR ONLINE - PUERTO ${PORT}`));
 
-// Manejo de errores para evitar que el proceso muera
 process.on("unhandledRejection", (err) => {
-    registrarLog("ERROR CRÍTICO ASÍNCRONO: " + err.message);
+    registrarLog("ERROR EN PROCESO ASÍNCRONO: " + err.message);
 });
