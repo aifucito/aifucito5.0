@@ -41,7 +41,8 @@
     // Función para cargar reportes desde el servidor
     async function cargarDatos() {
         try {
-            const response = await fetch('/api/reportes?tipo=visible');
+            // Cambiado a la ruta que sí existe en tu bot
+            const response = await fetch('/reportes.json');
             const data = await response.json();
             const puntos = data.map(d => ({
                 lat: d.lat || -32.5,
