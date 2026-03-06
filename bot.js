@@ -14,7 +14,7 @@ import crypto from 'crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PATH = path.join(__dirname, 'aifucito_db.json');
-const TOKEN = process.env.BOT_TOKEN || "PON_AQUI_TU_TOKEN";
+const TOKEN = process.env.BOT_TOKEN || "8701174108:AAFgEE-uSZlDvrTNm_QIeDIINqmnCzQIOCM";
 const PORT = process.env.PORT || 3000;
 const PUBLIC_URL = "https://aifucito5-0.onrender.com";
 
