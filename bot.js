@@ -55,14 +55,29 @@ function obtenerRango(puntos) {
 // ==========================================
 // MÓDULO 4: MENÚS Y BOTONES
 // ==========================================
-let sesiones = {}; // Para los reportes
-let sesionesChat = {}; // Para la charla IA
-
-const menuPrincipal = () => Markup.keyboard([
-    ['🛸 Reportar Avistamiento', '🗺️ Ver Mapa'],
-    ['👤 Mi Perfil', '👽 Charlar con AIFUCITO'],
-    ['💳 Hazte Socio / VIP', 'ℹ️ Información AIFU']
-]).resize();
+// --- PASOS MANUALES OBLIGATORIOS ---
+if (s.paso === 'pais') { 
+    s.datos.pais = txt; 
+    s.paso = 'ciudad'; 
+    return ctx.reply("2️⃣ ¿En qué CIUDAD o PROVINCIA?"); 
+}
+if (s.paso === 'ciudad') { 
+    s.datos.ciudad = txt; 
+    s.paso = 'barrio'; 
+    return ctx.reply("3️⃣ ¿En qué BARRIO o ZONA específica?"); 
+}
+if (s.paso === 'barrio') { 
+    s.datos.barrio = txt; 
+    s.paso = 'referencia'; 
+    // Instrucción clara para no trabar al usuario
+    return ctx.reply("4️⃣ Indica un PUNTO DE REFERENCIA (ej: 'Cerca del estadio', 'Frente al faro').\n\n👉 Si no tienes referencias, solo pon **no**."); 
+}
+if (s.paso === 'referencia') { 
+    // Guardamos la referencia o marcamos que no hay
+    s.datos.referencia = (txt.toLowerCase() === 'no') ? 'Sin referencia específica' : txt; 
+    s.paso = 'descripcion'; 
+    return ctx.reply("5️⃣ **DESCRIPCIÓN:** ¿Qué fenómeno observaste exactamente? (Forma, color, comportamiento)"); 
+}
 
 // ==========================================
 // MÓDULO 5: LÓGICA DEL BOT (LO QUE HACE CADA BOTÓN)
