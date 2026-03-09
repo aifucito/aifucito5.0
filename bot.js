@@ -29,16 +29,16 @@ const obtenerRango = (puntos) => {
     return { nombre: "👨‍🚀 COMANDANTE ESPACIAL AIFULOGO", sig: 0 };
 };
 
-// --- FUNCIÓN DE IA: AJUSTE A V1 OFICIAL ---
+// --- FUNCIÓN DE IA: RUTA TÉCNICA COMPLETA ---
 async function llamarIA(mensaje) {
     const API_KEY = process.env.GEMINI_API_KEY;
-    // URL DEFINITIVA: v1 y nombre de modelo estándar
+    // URL con la ruta completa del modelo: models/gemini-1.5-flash
     const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
     
     const payload = {
         contents: [{
             parts: [
-                { text: "Eres AIFUCITO, asistente de AIFU Uruguay. Respondé corto y con onda charrúa. Si preguntan quién sos, sos el bot oficial del canal de Damián." },
+                { text: "Eres AIFUCITO, asistente de AIFU Uruguay. Respondé corto y con onda. Sos el bot oficial de Damián." },
                 { text: mensaje }
             ]
         }]
@@ -130,7 +130,7 @@ bot.hears('💳 Hazte Socio / VIP', (ctx) => {
 });
 
 bot.hears('⬅️ Volver al Menú', (ctx) => {
-    delete sesiones[ctx.from.id];
+    delete sesiones[id];
     ctx.reply("Volviendo...", menuPrincipal());
 });
 
@@ -149,7 +149,7 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
             ctx.reply(respuesta);
         } catch (e) { 
             console.error("ERROR IA:", e.message);
-            ctx.reply(`⚠️ Interferencia: ${e.message.substring(0, 70)}`); 
+            ctx.reply(`⚠️ Interferencia: ${e.message.substring(0, 80)}`); 
         }
         return;
     }
