@@ -9,7 +9,7 @@ import 'dotenv/config';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send('AIFUCITO 5.0 - SISTEMA ACTIVO'));
+app.get('/', (req, res) => res.send('AIFUCITO 5.0 - ACTIVO'));
 app.listen(PORT, () => console.log(`AIFUCITO encendido en puerto ${PORT}`));
 
 const bot = new Telegraf(process.env.TELEGRAM_TOKEN);
@@ -19,7 +19,7 @@ const model = genAI.getGenerativeModel({
     systemInstruction: "Eres AIFUCITO, investigador experto de AIFU Uruguay. Tu tono es serio, técnico y amable."
 });
 
-// --- BASE DE DATOS Y RANGOS ---
+// --- BASE DE DATOS ---
 let data = { usuarios: [], reportes: [] };
 const dataPath = './data.json';
 if (fs.existsSync(dataPath)) {
@@ -47,7 +47,7 @@ bot.start(ctx => {
         data.usuarios.push(user);
         guardar();
     }
-    ctx.reply(`👽 ¡Bienvenido a AIFU, ${user.nombre}!\nTu rango actual: ${RANGOS[Math.min(Math.floor(user.puntos/3), 6)]}`, menuPrincipal());
+    ctx.reply(`👽 ¡Bienvenido a AIFU, ${user.nombre}!\nRango: ${RANGOS[Math.min(Math.floor(user.puntos/3), 6)]}`, menuPrincipal());
 });
 
 bot.hears('👤 Mi Perfil', ctx => {
@@ -60,7 +60,7 @@ bot.hears('ℹ️ Información AIFU', ctx => {
 });
 
 bot.hears('💳 Hazte Socio / VIP', ctx => {
-    ctx.reply("🌟 **SÉ SOCIO AIFU**\nAcceso a Radar Multimedia y Mapa de Calor.\nContacto: aifuoficial@gmail.com");
+    ctx.reply("🌟 **SÉ SOCIO AIFU**\nAcceso a Radar Multimedia.\nContacto: aifuoficial@gmail.com");
 });
 
 bot.hears('🗺️ Ver Mapa', ctx => {
@@ -68,7 +68,7 @@ bot.hears('🗺️ Ver Mapa', ctx => {
 });
 
 // ==========================================
-// MÓDULO 4 Y 5: GESTIÓN DE REPORTES (UNIFICADO)
+// MÓDULO 4 Y 5: GESTIÓN DE REPORTES
 // ==========================================
 bot.hears('🛸 Reportar Avistamiento', ctx => {
     sesiones[ctx.from.id] = { paso: 'pregunta_gps', datos: { fotos: [] } };
@@ -84,7 +84,6 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
     const txt = ctx.message.text;
     if (txt === 'Cancelar') { delete sesiones[id]; return ctx.reply("❌ Reporte cancelado.", menuPrincipal()); }
 
-    // Paso GPS
     if (s.paso === 'pregunta_gps') {
         if (txt === '✅ Sí, usar GPS') {
             s.paso = 'esperando_gps';
@@ -103,7 +102,6 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
         return ctx.reply("✅ GPS fijado. 👁️ ¿Qué fenómeno observaste?");
     }
 
-    // Pasos Manuales
     if (s.paso === 'pais') { s.datos.pais = txt; s.paso = 'ciudad'; return ctx.reply("2️⃣ ¿En qué CIUDAD o PROVINCIA?"); }
     if (s.paso === 'ciudad') { s.datos.ciudad = txt; s.paso = 'barrio'; return ctx.reply("3️⃣ ¿En qué BARRIO o ZONA?"); }
     if (s.paso === 'barrio') { s.datos.barrio = txt; s.paso = 'referencia'; return ctx.reply("4️⃣ Indica un PUNTO DE REFERENCIA o pon **no**."); }
@@ -113,22 +111,17 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
         return ctx.reply("5️⃣ **DESCRIPCIÓN:** ¿Qué fenómeno viste?"); 
     }
 
-    // IA y Multimedia
     if (s.paso === 'descripcion') {
         s.datos.descripcion = txt;
         s.paso = 'interrogatorio';
         await ctx.sendChatAction('typing');
-        
         try {
             const res = await model.generateContent(`Testigo vio: "${txt}". Haz 2 preguntas técnicas breves.`);
-            const respuestaIA = res.response.text() || "Entendido. ¿A qué altura estaban y qué color tenían?";
+            const respuestaIA = res.response.text();
             return ctx.reply(`🔍 **INTERROGATORIO AIFUCITO:**\n\n${respuestaIA}`);
-        } catch (error) {
-            console.error("Error IA:", error);
-            // Si la IA falla, el bot sigue adelante con preguntas fijas para no trabarse
+        } catch (e) {
             return ctx.reply(`🔍 **INTERROGATORIO AIFUCITO:**\n\n¿Qué color tenían las luces y hacia qué dirección se movían?`);
         }
-    }
     }
 
     if (s.paso === 'interrogatorio') {
@@ -177,7 +170,6 @@ async function publicarReporte(datos, ctx) {
     } catch (e) { console.error("Error difusión:", e.message); }
 }
 
-// Charlar con la IA
 bot.hears('👽 Charlar con AIFUCITO', ctx => {
     sesionesChat[ctx.from.id] = true;
     ctx.reply("👽 Conexión establecida. Escribe 'Salir' para terminar.");
