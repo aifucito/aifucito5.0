@@ -40,7 +40,7 @@ app.get('/reportes.json', (req, res) => {
     }
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 AIFUCITO OMEGA v5.5 ACTIVO`));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 AIFUCITO 5.0 ACTIVO`));
 
 const bot = new Telegraf(process.env.TELEGRAM_TOKEN);
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -50,7 +50,7 @@ const model = genAI.getGenerativeModel({
 });
 
 let sesiones = {};
-let chatsIA = {}; // MEMORIA PARA LA CHARLA
+let chatsIA = {}; 
 
 const menuPrincipal = () => Markup.keyboard([
     ['🛸 Reportar Avistamiento', '🗺️ Ver Mapa Táctico'],
@@ -62,7 +62,7 @@ bot.start((ctx) => {
     const id = ctx.from.id;
     if (!db.usuarios[id]) db.usuarios[id] = { nombre: ctx.from.first_name, puntos: 0, reportes: 0 };
     guardarDB();
-    ctx.reply(`¡Buenas, ${ctx.from.first_name}! 🧉 Bienvenido a la central OMEGA. Tu rango actual: ${obtenerRango(db.usuarios[id].puntos).nombre}. ¿Qué viste hoy?`, menuPrincipal());
+    ctx.reply(`¡Buenas, ${ctx.from.first_name}! 🧉 Bienvenido a la central 5.0. Tu rango actual: ${obtenerRango(db.usuarios[id].puntos).nombre}. ¿Qué viste hoy?`, menuPrincipal());
 });
 
 bot.hears('ℹ️ Sobre AIFU', (ctx) => ctx.reply("✨ **AIFU:** Asociación de Investigadores de Fenómenos Uruguayos. Investigamos lo que otros ignoran. Contacto: aifuoficial@gmail.com"));
@@ -79,7 +79,7 @@ bot.hears('👤 Mi Perfil de Investigador', (ctx) => {
 bot.hears('👽 Charlar con AIFUCITO', (ctx) => {
     const id = ctx.from.id;
     sesiones[id] = { paso: 'charla_ia' };
-    chatsIA[id] = model.startChat({ history: [] }); // ACTIVA LA MEMORIA
+    chatsIA[id] = model.startChat({ history: [] }); 
     ctx.reply("Dale, compañero. ¿Qué tenés en mente? (Tocá volver al menú para salir)", Markup.keyboard([['⬅️ Volver al Menú']]).resize());
 });
 
@@ -107,33 +107,39 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
         return ctx.reply("Entendido. Volvemos al inicio.", menuPrincipal()); 
     }
 
-    // --- AQUÍ EL ARREGLO PARA QUE CHARLE DE VERDAD ---
+    // --- CHARLA CON IA ---
     if (s.paso === 'charla_ia') {
         try {
             await ctx.sendChatAction('typing');
-            const chatIA = chatsIA[id] || model.startChat({ history: [] });
-            const result = await chatIA.sendMessage(txt);
+            if (!chatsIA[id]) chatsIA[id] = model.startChat({ history: [] });
+            const result = await chatsIA[id].sendMessage(txt);
             return ctx.reply(result.response.text());
         } catch (e) {
+            console.error(e);
             return ctx.reply("Se me cortó la señal, compañero. ¿Qué decías?");
         }
     }
 
+    // --- LÓGICA DE REPORTE ---
     if (s.paso === 'ubicacion_tipo') {
         if (txt === '📍 Enviar GPS') {
             s.paso = 'esperando_gps';
-            return ctx.reply("Tocá el botón abajo:", Markup.keyboard([[Markup.button.locationRequest('📍 MANDAR UBICACIÓN')]]).resize());
+            return ctx.reply("Tocá el botón abajo para mandar tu posición:", Markup.keyboard([[Markup.button.locationRequest('📍 MANDAR UBICACIÓN')]]).resize());
         } else {
             s.paso = 'pais';
             return ctx.reply("¿En qué país fue?", Markup.keyboard([['Uruguay', 'Argentina', 'Chile'], ['Otro (Global)', '❌ Cancelar']]).resize());
         }
     }
 
+    // SALTO DIRECTO SI HAY GPS
     if (s.paso === 'esperando_gps' && ctx.message.location) {
         s.datos.lat = ctx.message.location.latitude;
         s.datos.lng = ctx.message.location.longitude;
-        s.datos.pais = "Uruguay"; s.paso = 'ciudad';
-        return ctx.reply("✅ GPS capturado. ¿En qué Departamento o Provincia estás?");
+        s.datos.pais = "Uruguay"; 
+        s.datos.ciudad = "Ubicación GPS"; 
+        s.datos.barrio = "Coordenadas directas";
+        s.paso = 'descripcion'; // SALTA LAS PREGUNTAS
+        return ctx.reply("✅ Posición capturada por GPS. Ahora sí, contame: 👁️ **¿Qué viste?**");
     }
 
     if (s.paso === 'pais') { s.datos.pais = txt; s.paso = 'ciudad'; return ctx.reply("📌 **Departamento o Provincia:**"); }
@@ -145,17 +151,17 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
         await ctx.sendChatAction('typing');
         const res = await model.generateContent(`Analiza: "${txt}". Clasifica: Nave, Luz o Paranormal. Sé breve y humano.`);
         s.datos.analisis_ia = res.response.text();
-        return ctx.reply(`${s.datos.analisis_ia}\n\n📸 Mandame evidencia. Cuando termines, dale a '🚀 REVISAR'.`, Markup.keyboard([['🚀 REVISAR'], ['❌ Cancelar']]).resize());
+        return ctx.reply(`${s.datos.analisis_ia}\n\n📸 Mandame evidencia (fotos). Cuando termines, dale a '🚀 REVISAR'.`, Markup.keyboard([['🚀 REVISAR'], ['❌ Cancelar']]).resize());
     }
 
     if (ctx.message.photo && s.paso === 'multimedia') {
         s.datos.fotos.push(ctx.message.photo[ctx.message.photo.length - 1].file_id);
-        return ctx.reply("✅ Guardada.");
+        return ctx.reply("✅ Foto guardada.");
     }
 
     if (txt === '🚀 REVISAR') {
         s.paso = 'confirmacion';
-        const resumen = `📋 **FICHA OMEGA**\n📍 ${s.datos.pais}, ${s.datos.ciudad}, ${s.datos.barrio}\n👁️ ${s.datos.descripcion}\n🧠 ${s.datos.analisis_ia}\n📸 Fotos: ${s.datos.fotos.length}`;
+        const resumen = `📋 **FICHA OMEGA**\n📍 ${s.datos.pais}, ${s.datos.ciudad}\n👁️ ${s.datos.descripcion}\n🧠 ${s.datos.analisis_ia}\n📸 Fotos: ${s.datos.fotos.length}`;
         return ctx.reply(resumen, Markup.keyboard([['✅ CONFIRMAR Y ENVIAR', '❌ DESCARTAR']]).resize());
     }
 
@@ -180,7 +186,7 @@ async function publicarYGuardar(datos, ctx) {
         "RadarConoSur": "-1003759731798" 
     };
     const canal = CANALES[datos.pais] || CANALES["Otro (Global)"];
-    const ficha = `🛸 **REPORTE AIFU**\n👤 ${ctx.from.first_name}\n📍 ${datos.pais} - ${datos.ciudad} (${datos.barrio})\n👁️ ${datos.descripcion}\n🔍 ${datos.analisis_ia}`;
+    const ficha = `🛸 **REPORTE AIFU**\n👤 ${ctx.from.first_name}\n📍 ${datos.pais} - ${datos.ciudad}\n👁️ ${datos.descripcion}\n🔍 ${datos.analisis_ia}`;
 
     let puntosMap = [];
     if (fs.existsSync(MAP_FILE)) puntosMap = JSON.parse(fs.readFileSync(MAP_FILE));
