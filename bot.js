@@ -29,16 +29,14 @@ const obtenerRango = (puntos) => {
     return { nombre: "👨‍🚀 COMANDANTE ESPACIAL AIFULOGO", sig: 0 };
 };
 
-// --- FUNCIÓN DE IA: RUTA TÉCNICA COMPLETA ---
 async function llamarIA(mensaje) {
     const API_KEY = process.env.GEMINI_API_KEY;
-    // URL con la ruta completa del modelo: models/gemini-1.5-flash
-    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
     
     const payload = {
         contents: [{
             parts: [
-                { text: "Eres AIFUCITO, asistente de AIFU Uruguay. Respondé corto y con onda. Sos el bot oficial de Damián." },
+                { text: "Eres AIFUCITO, asistente de AIFU Uruguay. Respondé corto, con onda y siempre en español. Sos el bot de Damián." },
                 { text: mensaje }
             ]
         }]
@@ -51,12 +49,7 @@ async function llamarIA(mensaje) {
     });
 
     const data = await response.json();
-    
-    if (data.error) {
-        console.error("ERROR GOOGLE:", data.error.message);
-        throw new Error(data.error.message);
-    }
-    
+    if (data.error) throw new Error(data.error.message);
     return data.candidates[0].content.parts[0].text;
 }
 
@@ -130,7 +123,7 @@ bot.hears('💳 Hazte Socio / VIP', (ctx) => {
 });
 
 bot.hears('⬅️ Volver al Menú', (ctx) => {
-    delete sesiones[id];
+    delete sesiones[ctx.from.id];
     ctx.reply("Volviendo...", menuPrincipal());
 });
 
@@ -148,19 +141,9 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
             const respuesta = await llamarIA(txt);
             ctx.reply(respuesta);
         } catch (e) { 
-            console.error("ERROR IA:", e.message);
             ctx.reply(`⚠️ Interferencia: ${e.message.substring(0, 80)}`); 
         }
         return;
-    }
-
-    if (s.paso === 'leyendo_vip') {
-        const index = parseInt(txt) - 1;
-        if (db.historias_vip && db.historias_vip[index]) {
-            await ctx.reply(`✨ **${db.historias_vip[index].titulo}**\n\n${db.historias_vip[index].relato}`);
-            delete sesiones[id];
-            return ctx.reply("¿Algo más?", menuPrincipal());
-        }
     }
 
     if (s.paso === 'ubicacion_tipo') {
@@ -175,12 +158,13 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
 
     if (s.paso === 'esperando_gps' && ctx.message.location) {
         s.datos.lat = ctx.message.location.latitude; s.datos.lng = ctx.message.location.longitude;
-        s.datos.pais = "Detectado GPS"; s.datos.ciudad = "Coordenadas"; s.paso = 'descripcion';
+        s.datos.pais = "GPS"; s.datos.ciudad = "GPS"; s.datos.barrio = "GPS"; s.paso = 'descripcion';
         return ctx.reply("✅ GPS recibido. 👁️ **¿Qué viste?**");
     }
 
     if (s.paso === 'pais') { s.datos.pais = txt; s.paso = 'ciudad'; return ctx.reply("📌 **Ciudad/Depto:**"); }
-    if (s.paso === 'ciudad') { s.datos.ciudad = txt; s.paso = 'descripcion'; return ctx.reply("👁️ **¿Qué viste?**"); }
+    if (s.paso === 'ciudad') { s.datos.ciudad = txt; s.paso = 'barrio'; return ctx.reply("🏠 **Barrio / Zona:**"); }
+    if (s.paso === 'barrio') { s.datos.barrio = txt; s.paso = 'descripcion'; return ctx.reply("👁️ **¿Qué viste?**"); }
 
     if (s.paso === 'descripcion') {
         s.datos.descripcion = txt;
@@ -189,18 +173,10 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
             const prompt = s.datos.esHistoria ? `Título corto: ${txt}` : `Analiza breve: ${txt}`;
             const respuestaIA = await llamarIA(prompt);
             s.datos.analisis_ia = respuestaIA.trim();
-        } catch (e) { 
-            console.error("ERROR ANALISIS:", e.message);
-            s.datos.analisis_ia = "Analizando... (IA en espera)"; 
-        }
+        } catch (e) { s.datos.analisis_ia = "Analizando... (IA en espera)"; }
         
-        if (s.datos.esHistoria) {
-            s.paso = 'confirmacion_vip';
-            return ctx.reply(`📝 **Título:** ${s.datos.analisis_ia}\n¿Guardamos?`, Markup.keyboard([['✅ GUARDAR EN BÓVEDA', '❌ DESCARTAR']]).resize());
-        } else {
-            s.paso = 'multimedia';
-            return ctx.reply(`${s.datos.analisis_ia}\n📸 Mandá fotos y tocá '🚀 REVISAR'.`, Markup.keyboard([['🚀 REVISAR'], ['❌ Cancelar']]).resize());
-        }
+        s.paso = 'multimedia';
+        return ctx.reply(`${s.datos.analisis_ia}\n📸 Mandá fotos y tocá '🚀 REVISAR'.`, Markup.keyboard([['🚀 REVISAR'], ['❌ Cancelar']]).resize());
     }
 
     if (ctx.message.photo && s.paso === 'multimedia') {
@@ -210,13 +186,7 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
 
     if (txt === '🚀 REVISAR') {
         s.paso = 'confirmacion';
-        return ctx.reply(`📋 **FICHA**\n📍 ${s.datos.pais}\n👁️ ${s.datos.descripcion}`, Markup.keyboard([['✅ ENVIAR AL RADAR', '❌ DESCARTAR']]).resize());
-    }
-
-    if (txt === '✅ GUARDAR EN BÓVEDA' && s.paso === 'confirmacion_vip') {
-        db.historias_vip.push({ titulo: s.datos.analisis_ia, relato: s.datos.descripcion });
-        guardarDB(); delete sesiones[id];
-        return ctx.reply("🚀 **Guardado.**", menuPrincipal());
+        return ctx.reply(`📋 **FICHA**\n📍 Pais: ${s.datos.pais}\n🏙️ Ciudad: ${s.datos.ciudad}\n🏠 Barrio: ${s.datos.barrio}\n👁️ ${s.datos.descripcion}`, Markup.keyboard([['✅ ENVIAR AL RADAR', '❌ DESCARTAR']]).resize());
     }
 
     if (txt === '✅ ENVIAR AL RADAR') {
@@ -231,10 +201,10 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
 async function publicarYGuardar(datos, ctx) {
     const CANALES = { "Uruguay": "-1003826671445", "Argentina": "-1003750025728", "Chile": "-1003811532520", "RadarConoSur": "-1003759731798" };
     const canal = CANALES[datos.pais] || "-1003820597313";
-    const ficha = `🛸 **REPORTE AIFU**\n📍 ${datos.pais}\n👁️ ${datos.descripcion}`;
+    const ficha = `🛸 **REPORTE AIFU**\n📍 Ubicación: ${datos.pais}, ${datos.ciudad}\n🏠 Barrio: ${datos.barrio}\n👁️ ${datos.descripcion}`;
 
     let puntosMap = fs.existsSync(MAP_FILE) ? JSON.parse(fs.readFileSync(MAP_FILE)) : [];
-    puntosMap.push({ lat: datos.lat || -34.8, lng: datos.lng || -56.1, desc: datos.descripcion.substring(0,30) });
+    puntosMap.push({ lat: datos.lat || -34.8, lng: datos.lng || -56.1, desc: `${datos.barrio}: ${datos.descripcion.substring(0,20)}` });
     fs.writeFileSync(MAP_FILE, JSON.stringify(puntosMap));
 
     try {
@@ -244,6 +214,4 @@ async function publicarYGuardar(datos, ctx) {
     } catch (e) { console.error(e); }
 }
 
-bot.telegram.deleteWebhook().then(() => {
-    bot.launch();
-});
+bot.telegram.deleteWebhook().then(() => { bot.launch(); });
