@@ -1,5 +1,4 @@
 import { Telegraf, Markup } from 'telegraf';
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
@@ -30,6 +29,30 @@ const obtenerRango = (puntos) => {
     return { nombre: "👨‍🚀 COMANDANTE ESPACIAL AIFULOGO", sig: 0 };
 };
 
+// --- FUNCIÓN DE IA POR CONEXIÓN DIRECTA (ANTI-BLOQUEO 403) ---
+async function llamarIA(mensaje) {
+    const API_KEY = process.env.GEMINI_API_KEY;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+    
+    const payload = {
+        contents: [{
+            parts: [{ text: "Eres AIFUCITO, asistente de AIFU Uruguay. Si es una historia, genera un TÍTULO corto y misterioso. Si es avistamiento, analiza Nave/Luz/Paranormal. Responde breve." }]
+        }, {
+            parts: [{ text: mensaje }]
+        }]
+    };
+
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+
+    const data = await response.json();
+    if (data.error) throw new Error(data.error.message);
+    return data.candidates[0].content.parts[0].text;
+}
+
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('/reportes.json', (req, res) => {
@@ -38,13 +61,6 @@ app.get('/reportes.json', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => console.log(`🚀 AIFUCITO 5.0 - RADAR ACTIVO`));
-
-// --- CONFIGURACIÓN DE IA REFORZADA ---
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ 
-    model: "gemini-1.5-flash",
-    systemInstruction: "Eres AIFUCITO, asistente de AIFU Uruguay. Si es una historia, genera un TÍTULO corto y misterioso. Si es avistamiento, analiza Nave/Luz/Paranormal."
-}, { apiVersion: 'v1' }); // Forzamos v1 para mayor estabilidad
 
 const bot = new Telegraf(process.env.TELEGRAM_TOKEN);
 let sesiones = {};
@@ -119,16 +135,14 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
     if (txt === '❌ Cancelar') { delete sesiones[id]; return ctx.reply("Cancelado.", menuPrincipal()); }
     if (!s) return next();
 
-    // MEJORA: Lógica de IA con diagnóstico de errores 403/409
     if (s.paso === 'charlar_ia') {
         await ctx.sendChatAction('typing');
         try {
-            if (!process.env.GEMINI_API_KEY) throw new Error("Falta KEY en Render.");
-            const res = await model.generateContent(txt);
-            ctx.reply(res.response.text());
+            const respuesta = await llamarIA(txt);
+            ctx.reply(respuesta);
         } catch (e) { 
             console.error("ERROR IA:", e.message);
-            ctx.reply(`⚠️ Error IA: ${e.message.includes('403') ? 'Permiso denegado por Google. Verifica que la API esté activa.' : e.message.substring(0, 100)}`); 
+            ctx.reply(`⚠️ Interferencia en la señal: ${e.message.substring(0, 50)}`); 
         }
         return;
     }
@@ -165,12 +179,12 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
         s.datos.descripcion = txt;
         await ctx.sendChatAction('typing');
         try {
-            const prompt = s.datos.esHistoria ? `Título corto: ${txt}` : `Analiza: ${txt}`;
-            const res = await model.generateContent(prompt);
-            s.datos.analisis_ia = res.response.text().trim();
+            const prompt = s.datos.esHistoria ? `Genera título para: ${txt}` : `Analiza breve: ${txt}`;
+            const respuestaIA = await llamarIA(prompt);
+            s.datos.analisis_ia = respuestaIA.trim();
         } catch (e) { 
             console.error("ERROR ANALISIS:", e.message);
-            s.datos.analisis_ia = "Analizando... (IA fuera de línea momentáneamente)"; 
+            s.datos.analisis_ia = "Analizando... (IA en espera)"; 
         }
         
         if (s.datos.esHistoria) {
@@ -223,7 +237,6 @@ async function publicarYGuardar(datos, ctx) {
     } catch (e) { console.error(e); }
 }
 
-// Limpieza de Webhook y Lanzamiento
 bot.telegram.deleteWebhook().then(() => {
     bot.launch();
 });
