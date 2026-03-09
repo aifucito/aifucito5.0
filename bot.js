@@ -29,16 +29,18 @@ const obtenerRango = (puntos) => {
     return { nombre: "👨‍🚀 COMANDANTE ESPACIAL AIFULOGO", sig: 0 };
 };
 
-// --- FUNCIÓN DE IA POR CONEXIÓN DIRECTA (ANTI-BLOQUEO 403) ---
+// --- FUNCIÓN DE IA POR CONEXIÓN DIRECTA CORREGIDA ---
 async function llamarIA(mensaje) {
     const API_KEY = process.env.GEMINI_API_KEY;
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+    // Usamos v1 que es la versión estable para cuentas oficiales
+    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
     
     const payload = {
         contents: [{
-            parts: [{ text: "Eres AIFUCITO, asistente de AIFU Uruguay. Si es una historia, genera un TÍTULO corto y misterioso. Si es avistamiento, analiza Nave/Luz/Paranormal. Responde breve." }]
-        }, {
-            parts: [{ text: mensaje }]
+            parts: [
+                { text: "Eres AIFUCITO, asistente de AIFU Uruguay. Si es una historia, genera un TÍTULO corto y misterioso. Si es avistamiento, analiza Nave/Luz/Paranormal. Responde breve y con onda uruguaya." },
+                { text: mensaje }
+            ]
         }]
     };
 
@@ -49,7 +51,12 @@ async function llamarIA(mensaje) {
     });
 
     const data = await response.json();
-    if (data.error) throw new Error(data.error.message);
+    
+    if (data.error) {
+        console.error("ERROR GOOGLE:", data.error.message);
+        throw new Error(data.error.message);
+    }
+    
     return data.candidates[0].content.parts[0].text;
 }
 
@@ -142,7 +149,7 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
             ctx.reply(respuesta);
         } catch (e) { 
             console.error("ERROR IA:", e.message);
-            ctx.reply(`⚠️ Interferencia en la señal: ${e.message.substring(0, 50)}`); 
+            ctx.reply(`⚠️ El radar tiene interferencias: ${e.message.substring(0, 50)}`); 
         }
         return;
     }
