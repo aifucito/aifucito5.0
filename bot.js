@@ -39,13 +39,12 @@ app.get('/reportes.json', (req, res) => {
 
 app.listen(PORT, '0.0.0.0', () => console.log(`🚀 AIFUCITO 5.0 - RADAR ACTIVO`));
 
-// --- INICIALIZACIÓN DE IA CON CONTROL DE ERRORES ---
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "FALTA_KEY");
+// --- INICIALIZACIÓN DE IA REFORZADA ---
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ 
-    model: "gemini-1.5-flash",
+    model: "gemini-1.5-flash", // Probá cambiar a "gemini-1.5-flash" si tenías otro
     systemInstruction: "Eres AIFUCITO, asistente de AIFU Uruguay. Si es una historia, genera un TÍTULO corto y misterioso. Si es avistamiento, analiza Nave/Luz/Paranormal."
-});
-
+}, { apiVersion: 'v1' }); // <--- AGREGAMOS ESTO PARA SALIR DE LA BETA
 const bot = new Telegraf(process.env.TELEGRAM_TOKEN);
 let sesiones = {};
 
