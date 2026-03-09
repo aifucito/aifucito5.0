@@ -29,15 +29,18 @@ const obtenerRango = (puntos) => {
     return { nombre: "👨‍🚀 COMANDANTE ESPACIAL AIFULOGO", sig: 0 };
 };
 
-// --- FUNCIÓN DE IA: AJUSTE DE URL DEFINITIVO ---
+// --- FUNCIÓN DE IA: AJUSTE A V1 OFICIAL ---
 async function llamarIA(mensaje) {
     const API_KEY = process.env.GEMINI_API_KEY;
-    // URL Corregida: Usamos v1beta y la estructura exacta de modelos
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+    // URL DEFINITIVA: v1 y nombre de modelo estándar
+    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
     
     const payload = {
         contents: [{
-            parts: [{ text: "Eres AIFUCITO, asistente de AIFU Uruguay. Responde breve y con onda." }, { text: mensaje }]
+            parts: [
+                { text: "Eres AIFUCITO, asistente de AIFU Uruguay. Respondé corto y con onda charrúa. Si preguntan quién sos, sos el bot oficial del canal de Damián." },
+                { text: mensaje }
+            ]
         }]
     };
 
@@ -146,7 +149,7 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
             ctx.reply(respuesta);
         } catch (e) { 
             console.error("ERROR IA:", e.message);
-            ctx.reply(`⚠️ Interferencia: ${e.message.substring(0, 60)}`); 
+            ctx.reply(`⚠️ Interferencia: ${e.message.substring(0, 70)}`); 
         }
         return;
     }
