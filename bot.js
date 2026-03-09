@@ -1,117 +1,157 @@
+// ==========================================
+// MÓDULO 1: IMPORTACIONES Y HERRAMIENTAS
+// ==========================================
 import { Telegraf, Markup } from 'telegraf';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import fs from 'fs';
 import express from 'express';
 import 'dotenv/config';
 
-// --- 1. CONFIGURACIÓN ESTRICTA ---
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Esto mantiene a Render feliz (el Health Check)
-app.get('/', (req, res) => res.send('AIFUCITO 5.0 Activo y Vigilando el Cielo 🛸'));
-app.listen(PORT, () => console.log(`Servidor Web en puerto ${PORT}`));
+// Mantiene el bot vivo en Render
+app.get('/', (req, res) => res.send('AIFUCITO 5.0 - SISTEMA ACTIVO'));
+app.listen(PORT, () => console.log(`Servidor en puerto ${PORT}`));
 
-const BOT_TOKEN = process.env.TELEGRAM_TOKEN; 
-const GEMINI_KEY = process.env.GEMINI_API_KEY;
-
-if (!BOT_TOKEN || !GEMINI_KEY) {
-    console.error("❌ ERROR: Faltan las variables TELEGRAM_TOKEN o GEMINI_API_KEY en Render.");
-    process.exit(1);
-}
-
-const bot = new Telegraf(BOT_TOKEN);
-const genAI = new GoogleGenerativeAI(GEMINI_KEY);
+// ==========================================
+// MÓDULO 2: CONFIGURACIÓN DE LLAVES Y IA
+// ==========================================
+const bot = new Telegraf(process.env.TELEGRAM_TOKEN);
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ 
     model: "gemini-1.5-flash",
-    systemInstruction: "Eres AIFUCITO, investigador de OVNIs. Analiza reportes y haz preguntas técnicas cortas."
+    systemInstruction: "Eres AIFUCITO, investigador experto en OVNIs de AIFU Uruguay. Tu misión es entrevistar testigos de forma técnica y amable."
 });
 
-// --- 2. BASE DE DATOS Y SESIONES ---
+// ==========================================
+// MÓDULO 3: BASE DE DATOS Y RANGOS
+// ==========================================
 let data = { usuarios: [], reportes: [] };
 const dataPath = './data.json';
 
-try {
-    if (fs.existsSync(dataPath)) {
-        data = JSON.parse(fs.readFileSync(dataPath));
-    }
-} catch (e) { console.log("Error leyendo DB, iniciando limpia."); }
+// Si ya existe información guardada, la carga
+if (fs.existsSync(dataPath)) {
+    data = JSON.parse(fs.readFileSync(dataPath));
+}
 
 const guardar = () => fs.writeFileSync(dataPath, JSON.stringify(data, null, 2));
-const RANGOS = ["Fajinero Espacial", "Recluta", "Cadete", "Explorador", "Investigador", "Oficial", "Comandante"];
-let sesiones = {};
 
-// --- 3. LÓGICA DEL BOT (LO QUE YA TENÍAMOS) ---
+const RANGOS = [
+    "Fajinero Espacial", 
+    "Recluta de Radar", 
+    "Cadete AIFU", 
+    "Explorador del Cielo", 
+    "Investigador de Campo", 
+    "Oficial de Inteligencia", 
+    "Comandante Intergaláctico"
+];
+
+function obtenerRango(puntos) {
+    let index = Math.floor(puntos / 3); 
+    return RANGOS[Math.min(index, RANGOS.length - 1)];
+}
+
+// ==========================================
+// MÓDULO 4: MENÚS Y BOTONES
+// ==========================================
+let sesiones = {}; // Para los reportes
+let sesionesChat = {}; // Para la charla IA
+
 const menuPrincipal = () => Markup.keyboard([
-    ['🛸 Reportar Avistamiento', '👤 Mi Perfil'],
-    ['👽 Charlar con AIFUCITO']
+    ['🛸 Reportar Avistamiento', '🗺️ Ver Mapa'],
+    ['👤 Mi Perfil', '👽 Charlar con AIFUCITO'],
+    ['💳 Hazte Socio / VIP', 'ℹ️ Información AIFU']
 ]).resize();
 
+// ==========================================
+// MÓDULO 5: LÓGICA DEL BOT (LO QUE HACE CADA BOTÓN)
+// ==========================================
+
+// --- BOTÓN START ---
 bot.start(ctx => {
     let user = data.usuarios.find(u => u.id === ctx.from.id);
     if (!user) {
-        user = { id: ctx.from.id, nombre: ctx.from.first_name, puntos: 0 };
+        user = { id: ctx.from.id, nombre: ctx.from.first_name, puntos: 0, vip: false };
         data.usuarios.push(user);
         guardar();
     }
-    ctx.reply(`👽 ¡Bienvenido a AIFU!\nRango: ${RANGOS[Math.min(Math.floor(user.puntos/3), 6)]}`, menuPrincipal());
+    ctx.reply(`🛸 **AIFUCITO 5.0**\nHola ${user.nombre}, rango: ${obtenerRango(user.puntos)}`, menuPrincipal());
 });
 
-// --- EL INTERROGATORIO INTELIGENTE ---
+// --- BOTÓN MI PERFIL ---
+bot.hears('👤 Mi Perfil', ctx => {
+    const user = data.usuarios.find(u => u.id === ctx.from.id);
+    ctx.reply(`👤 **EXPEDIENTE AIFU**\n\nNombre: ${user.nombre}\nRango: ${obtenerRango(user.puntos)}\nEstado: ${user.vip ? '⭐ VIP' : 'Estándar'}`);
+});
+
+// --- BOTÓN REPORTAR (Inicia el cuestionario) ---
 bot.hears('🛸 Reportar Avistamiento', ctx => {
     sesiones[ctx.from.id] = { paso: 'ubicacion', datos: { fotos: [] } };
-    ctx.reply("📍 ¿Dónde ocurrió? Envía GPS o escribe Ciudad/País.", 
-        Markup.keyboard([[Markup.button.locationRequest('📍 Enviar GPS')], ['Cancelar']]).resize());
+    ctx.reply("📍 **PASO 1:** ¿Dónde fue? Envía tu GPS o escribe Ciudad/País.", 
+        Markup.keyboard([[Markup.button.locationRequest('📍 Enviar GPS')], ['❌ Cancelar']]).resize());
 });
 
-bot.on('location', ctx => {
-    const s = sesiones[ctx.from.id];
-    if (!s) return;
-    s.datos.lat = ctx.message.location.latitude;
-    s.datos.lng = ctx.message.location.longitude;
-    s.paso = 'descripcion_inicial';
-    ctx.reply("✅ GPS OK. ¿Qué viste exactamente?");
-});
-
-bot.on(['text', 'photo'], async (ctx, next) => {
+// --- GESTOR DE RESPUESTAS (Aquí pasa toda la magia) ---
+bot.on(['text', 'location', 'photo'], async (ctx) => {
     const id = ctx.from.id;
     const s = sesiones[id];
-    if (!s) return next();
+    const texto = ctx.message.text;
 
-    if (s.paso === 'ubicacion' && ctx.message.text !== 'Cancelar') {
-        s.datos.ubicacion = ctx.message.text;
-        s.paso = 'descripcion_inicial';
-        return ctx.reply("✅ Ubicación guardada. ¿Qué fenómeno viste?");
+    if (texto === '❌ Cancelar') { delete sesiones[id]; return ctx.reply("Cancelado.", menuPrincipal()); }
+
+    // Si el usuario está en medio de un reporte...
+    if (s) {
+        // Recibir Ubicación (GPS o Texto)
+        if (s.paso === 'ubicacion') {
+            s.datos.ubicacion = ctx.message.location ? "GPS" : texto;
+            s.datos.lat = ctx.message.location?.latitude;
+            s.datos.lng = ctx.message.location?.longitude;
+            s.paso = 'descripcion';
+            return ctx.reply("✅ Recibido. Ahora dime: ¿Qué fenómeno viste?");
+        }
+
+        // Recibir Descripción e Interrogar con IA
+        if (s.paso === 'descripcion') {
+            s.datos.descripcion = texto;
+            s.paso = 'preguntas_ia';
+            await ctx.sendChatAction('typing');
+            const result = await model.generateContent(`Testigo dice: "${texto}". Haz 2 preguntas técnicas cortas.`);
+            return ctx.reply(`🔍 **PREGUNTAS TÉCNICAS:**\n\n${result.response.text()}`);
+        }
+
+        // Recibir respuestas técnicas y pedir Multimedia
+        if (s.paso === 'preguntas_ia') {
+            s.datos.detalles_ia = texto;
+            s.paso = 'multimedia';
+            return ctx.reply("📸 Envía fotos/videos. Al terminar presiona 'Finalizar'.", 
+                Markup.keyboard([['🚀 FINALIZAR REPORTE']]).resize());
+        }
+
+        // Recibir Fotos
+        if (ctx.message.photo && s.paso === 'multimedia') {
+            s.datos.fotos.push(ctx.message.photo[ctx.message.photo.length - 1].file_id);
+            return ctx.reply("✅ Foto guardada. ¿Alguna otra?");
+        }
+
+        // Cerrar Reporte
+        if (texto === '🚀 FINALIZAR REPORTE') {
+            const user = data.usuarios.find(u => u.id === id);
+            user.puntos++;
+            data.reportes.push({ id_rep: Date.now(), user: id, ...s.datos });
+            guardar();
+            delete sesiones[id];
+            return ctx.reply("✅ ¡REPORTE ARCHIVADO!", menuPrincipal());
+        }
     }
 
-    if (s.paso === 'descripcion_inicial') {
-        s.datos.descripcion = ctx.message.text;
-        s.paso = 'preguntas_ia';
-        await ctx.sendChatAction('typing');
-        const prompt = `Testigo dice: "${ctx.message.text}". Genera 2 preguntas técnicas cortas.`;
-        const result = await model.generateContent(prompt);
-        return ctx.reply(`Entendido. Una consulta:\n\n${result.response.text()}\n\n(Responde aquí)`);
-    }
-
-    if (s.paso === 'preguntas_ia') {
-        s.datos.detalles = ctx.message.text;
-        s.paso = 'multimedia';
-        return ctx.reply("📸 Envía fotos o pulsa 'Finalizar'.", Markup.keyboard([['🚀 Finalizar']]).resize());
-    }
-
-    if (ctx.message.text === '🚀 Finalizar') {
-        data.reportes.push({ id: Date.now(), userId: id, ...s.datos });
-        const u = data.usuarios.find(u => u.id === id);
-        if(u) u.puntos++;
-        guardar();
-        delete sesiones[id];
-        return ctx.reply("✅ Reporte Archivador.", menuPrincipal());
+    // Si no está reportando, puede charlar con la IA
+    if (sesionesChat[id]) {
+        if (texto === 'Terminar charla') { delete sesionesChat[id]; return ctx.reply("Cerrando...", menuPrincipal()); }
+        const r = await model.generateContent(texto);
+        return ctx.reply(r.response.text());
     }
 });
 
-// Lanzamiento con manejo de errores
-bot.launch().then(() => console.log("🤖 Telegram Bot Funcionando")).catch(err => console.error("Error lanzando bot:", err));
-
-// Manejo de cierre elegante
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+// Lanzamiento
+bot.launch();
