@@ -1,25 +1,23 @@
-// ==========================================
-// AIFUCITO 5.0 - INVESTIGADOR JEFE AIFU
-// ==========================================
-import { Telegraf, Markup } from 'telegraf';
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import fs from 'fs';
-import express from 'express';
-import 'dotenv/config';
+const { Telegraf, Markup } = require('telegraf');
+const { GoogleGenerativeAI } = require("@google/generative-ai");
+const express = require('express');
+require('dotenv').config();
 
+// Configuración del servidor para Render
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send('AIFUCITO 5.0 - PERITAJE ACTIVO'));
-app.listen(PORT, () => console.log(`AIFUCITO en línea`));
+app.get('/', (req, res) => res.send('AIFUCITO 5.0 - RADAR ACTIVO'));
+app.listen(PORT, () => console.log(`Servidor en puerto ${PORT}`));
 
+// Inicialización del Bot
 const bot = new Telegraf(process.env.TELEGRAM_TOKEN);
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ 
     model: "gemini-1.5-flash",
-    systemInstruction: "Eres AIFUCITO, experto de AIFU Uruguay. Clasifica eventos en: Nave (Plato/Cigarro/Triángulo), Fenómeno Luminoso o Paranormal (Duende/Fantasma/Espíritu). Sé técnico."
+    systemInstruction: "Eres AIFUCITO, experto técnico de AIFU Uruguay. Tu misión es obtener datos de trayectoria, tamaño y sonidos. Clasifica en: Nave, Fenómeno Luminoso o Paranormal."
 });
 
-let sesiones = {}; 
+let sesiones = {};
 
 const menuPrincipal = () => Markup.keyboard([
     ['🛸 Reportar Avistamiento', '🗺️ Ver Mapa'],
@@ -27,9 +25,12 @@ const menuPrincipal = () => Markup.keyboard([
     ['💳 Hazte Socio / VIP', 'ℹ️ Información AIFU']
 ]).resize();
 
+bot.start((ctx) => ctx.reply(`¡Hola ${ctx.from.first_name}! AIFUCITO 5.0 listo para investigar.`, menuPrincipal()));
+
+// --- FLUJO DE REPORTE ---
 bot.hears('🛸 Reportar Avistamiento', ctx => {
     sesiones[ctx.from.id] = { paso: 'pregunta_gps', datos: { fotos: [] } };
-    ctx.reply("🛸 **INICIANDO FICHA TÉCNICA AIFU**\n\n¿Deseas usar tu ubicación GPS?", 
+    ctx.reply("🛸 **INICIANDO FICHA TÉCNICA AIFU**\n\n¿Usar ubicación GPS?", 
         Markup.keyboard([['✅ Sí, usar GPS', '❌ No, manual'], ['Cancelar']]).resize().oneTime());
 });
 
@@ -38,13 +39,14 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
     const s = sesiones[id];
     if (!s) return next();
 
-    if (ctx.message.text === 'Cancelar') { delete sesiones[id]; return ctx.reply("❌ Cancelado.", menuPrincipal()); }
+    const txt = ctx.message.text;
+    if (txt === 'Cancelar') { delete sesiones[id]; return ctx.reply("❌ Cancelado.", menuPrincipal()); }
 
-    // --- PASOS DE UBICACIÓN ---
+    // Ubicación
     if (s.paso === 'pregunta_gps') {
-        if (ctx.message.text === '✅ Sí, usar GPS') {
+        if (txt === '✅ Sí, usar GPS') {
             s.paso = 'esperando_gps';
-            return ctx.reply("📍 Envía tu posición GPS:", Markup.keyboard([[Markup.button.locationRequest('📍 ENVIAR GPS')]]).resize());
+            return ctx.reply("📍 Presiona el botón:", Markup.keyboard([[Markup.button.locationRequest('📍 ENVIAR GPS')]]).resize());
         } else {
             s.paso = 'pais';
             return ctx.reply("1️⃣ **PAÍS:**", Markup.keyboard([['Uruguay', 'Argentina', 'Chile'], ['Otro (Global)', 'Cancelar']]).resize());
@@ -56,44 +58,38 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
         s.datos.lng = ctx.message.location.longitude;
         s.datos.pais = "Uruguay"; 
         s.paso = 'descripcion';
-        return ctx.reply("✅ GPS fijado.\n\n👁️ **RELATO INICIAL:** ¿Qué observaste?");
+        return ctx.reply("✅ GPS fijado. 👁️ **RELATO:** ¿Qué viste?");
     }
 
-    if (s.paso === 'pais') { s.datos.pais = ctx.message.text; s.paso = 'ciudad'; return ctx.reply("2️⃣ **DEPARTAMENTO / PROVINCIA:**"); }
-    if (s.paso === 'ciudad') { s.datos.ciudad = ctx.message.text; s.paso = 'barrio'; return ctx.reply("3️⃣ **CIUDAD O BARRIO:**"); }
-    if (s.paso === 'barrio') { s.datos.barrio = ctx.message.text; s.paso = 'referencia'; return ctx.reply("4️⃣ **REFERENCIA CERCANA:**"); }
-    if (s.paso === 'referencia') { s.datos.referencia = ctx.message.text; s.paso = 'descripcion'; return ctx.reply("5️⃣ **RELATO:** Cuéntame el evento con detalle."); }
+    if (s.paso === 'pais') { s.datos.pais = txt; s.paso = 'ciudad'; return ctx.reply("2️⃣ **CIUDAD/DEPTO:**"); }
+    if (s.paso === 'ciudad') { s.datos.ciudad = txt; s.paso = 'barrio'; return ctx.reply("3️⃣ **BARRIO/ZONA:**"); }
+    if (s.paso === 'barrio') { s.datos.barrio = txt; s.paso = 'referencia'; return ctx.reply("4️⃣ **REFERENCIA:**"); }
+    if (s.paso === 'referencia') { s.datos.referencia = txt; s.paso = 'descripcion'; return ctx.reply("5️⃣ **DESCRIPCIÓN:** Cuéntame el evento."); }
 
-    // --- INTERROGATORIO Y CLASIFICACIÓN IA ---
     if (s.paso === 'descripcion') {
-        s.datos.descripcion = ctx.message.text;
+        s.datos.descripcion = txt;
         s.paso = 'multimedia';
         await ctx.sendChatAction('typing');
         try {
-            const prompt = `Analiza este relato: "${ctx.message.text}". 
-            1. Clasifica el evento (Nave, Luz, Paranormal/Entidad). 
-            2. Pide al testigo: Trayectoria, tamaño y si hubo sonidos o efectos físicos.`;
+            const prompt = `Relato: "${txt}". Clasifica brevemente (Nave, Luz o Paranormal) y pide trayectoria y sonidos.`;
             const res = await model.generateContent(prompt);
             s.datos.analisis_ia = res.response.text();
-            return ctx.reply(`🔍 **ANÁLISIS TÉCNICO PRELIMINAR:**\n\n${s.datos.analisis_ia}\n\n📸 **EVIDENCIA:** Envía tus fotos/videos ahora y luego pulsa '🚀 FINALIZAR'.`, 
+            return ctx.reply(`🔍 **PERITAJE:**\n${s.datos.analisis_ia}\n\n📸 Envía fotos y luego pulsa '🚀 FINALIZAR'.`, 
                 Markup.keyboard([['🚀 FINALIZAR'], ['Cancelar']]).resize());
         } catch (e) {
-            s.datos.analisis_ia = "Pendiente de clasificación técnica.";
-            return ctx.reply("📸 **EVIDENCIA:** Envía tus fotos/videos y luego pulsa '🚀 FINALIZAR'.");
+            return ctx.reply("📸 Envía fotos y luego pulsa '🚀 FINALIZAR'.");
         }
     }
 
-    // CAPTURA DE FOTOS
     if (ctx.message.photo && s.paso === 'multimedia') {
-        const fotoId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
-        s.datos.fotos.push(fotoId);
-        return ctx.reply("✅ Archivo recibido correctamente.");
+        s.datos.fotos.push(ctx.message.photo[ctx.message.photo.length - 1].file_id);
+        return ctx.reply("✅ Foto guardada.");
     }
 
-    if (ctx.message.text === '🚀 FINALIZAR') {
+    if (txt === '🚀 FINALIZAR') {
         await publicarReporte(s.datos, ctx); 
         delete sesiones[id];
-        return ctx.reply("✅ **REPORTE CLASIFICADO Y DIFUNDIDO POR AIFU**", menuPrincipal());
+        return ctx.reply("✅ Enviado al Radar AIFU.", menuPrincipal());
     }
 });
 
@@ -102,20 +98,17 @@ async function publicarReporte(datos, ctx) {
         "Uruguay": "-1003826671445", "Argentina": "-1003750025728", 
         "Chile": "-1003811532520", "Otro (Global)": "-1003820597313", "RadarConoSur": "-1003759731798"
     };
-    
     const canalDestino = CANALES[datos.pais] || CANALES["Otro (Global)"];
-    const ficha = `🛸 **ALERTA AIFU: REPORTE CLASIFICADO**\n━━━━━━━━━━━━\n👤 **POR:** ${ctx.from.first_name}\n📍 **LUGAR:** ${datos.pais} - ${datos.ciudad || ''}\n━━━━━━━━━━━━\n👁️ **RELATO:**\n"${datos.descripcion}"\n\n🔍 **PERITAJE DE AIFUCITO:**\n${datos.analisis_ia || 'N/A'}`;
+    const ficha = `🛸 **REPORTE AIFU**\n👤 **POR:** ${ctx.from.first_name}\n📍 **LUGAR:** ${datos.pais} - ${datos.ciudad || ''}\n👁️ **RELATO:** ${datos.descripcion}\n🔍 **IA:** ${datos.analisis_ia || 'N/A'}`;
 
     try {
-        // Enviar todas las fotos primero a ambos canales
         for (const foto of datos.fotos) {
             await bot.telegram.sendPhoto(canalDestino, foto);
             await bot.telegram.sendPhoto(CANALES["RadarConoSur"], foto);
         }
-        // Enviar la ficha técnica
         await bot.telegram.sendMessage(canalDestino, ficha);
         await bot.telegram.sendMessage(CANALES["RadarConoSur"], ficha);
-    } catch (e) { console.error("Error envío:", e.message); }
+    } catch (e) { console.log("Error envío:", e.message); }
 }
 
 bot.launch();
