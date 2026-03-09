@@ -67,25 +67,35 @@ bot.start((ctx) => {
 
 bot.hears('ℹ️ Sobre AIFU', (ctx) => ctx.reply("✨ **AIFU:** Asociación de Investigadores de Fenómenos Uruguayos. Investigamos lo que otros ignoran. Contacto: aifuoficial@gmail.com"));
 
-// --- MEJORA: SECCIÓN VIP INTEGRADA ---
+// --- SECCIÓN VIP MEJORADA ---
 bot.hears('💳 Hazte Socio / VIP', (ctx) => {
     ctx.reply(
-        "🌟 **ZONA VIP (Solo usuarios y lectores VIP)**\n\nEn esta sección puedes contar tu historia personal o contacto de manera anónima para los canales. Nosotros guardaremos el registro histórico, pero tu identidad será protegida en la publicación.",
+        "🌟 **ZONA VIP (Funciones Exclusivas)**\n\n¿Qué desea hacer, compañero? Como usuario VIP tiene opciones de privacidad avanzadas:",
         Markup.keyboard([
-            ['📖 Contar mi Historia (Anónimo)'], 
+            ['🛸 Reporte Anónimo (VIP)', '📖 Contar mi Historia'], 
             ['⬅️ Volver al Menú']
         ]).resize()
     );
 });
 
-bot.hears('📖 Contar mi Historia (Anónimo)', (ctx) => {
+// Opción 1: Reporte de Avistamiento pero Anónimo
+bot.hears('🛸 Reporte Anónimo (VIP)', (ctx) => {
+    sesiones[ctx.from.id] = { 
+        paso: 'ubicacion_tipo', 
+        datos: { fotos: [], anonimo: true, esHistoria: false } 
+    };
+    ctx.reply("🕵️ **MODO INCÓGNITO ACTIVADO**\nProcederemos con el reporte técnico, pero su nombre no figurará en los canales.\n\n¿GPS o escribir lugar?", 
+        Markup.keyboard([['📍 Enviar GPS', '✍️ Escribir lugar'], ['❌ Cancelar']]).resize());
+});
+
+// Opción 2: Relato o Historia Personal
+bot.hears('📖 Contar mi Historia', (ctx) => {
     sesiones[ctx.from.id] = { 
         paso: 'descripcion', 
         datos: { fotos: [], anonimo: true, esHistoria: true, pais: "Uruguay", ciudad: "Relato VIP" } 
     };
-    ctx.reply("🕵️ **ARCHIVO CONFIDENCIAL AIFU**\nAdelante, compañero. Contame tu historia o contacto con libertad. ¿Qué pasó?");
+    ctx.reply("📖 **ARCHIVO DE RELATOS AIFU**\nEste es su espacio para contar esa experiencia personal o contacto de forma anónima. ¿Qué nos quiere contar?");
 });
-
 bot.hears('👤 Mi Perfil de Investigador', (ctx) => {
     const user = db.usuarios[ctx.from.id] || { puntos: 0, reportes: 0 };
     const rango = obtenerRango(user.puntos);
