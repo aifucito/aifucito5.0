@@ -66,7 +66,25 @@ bot.start((ctx) => {
 });
 
 bot.hears('ℹ️ Sobre AIFU', (ctx) => ctx.reply("✨ **AIFU:** Asociación de Investigadores de Fenómenos Uruguayos. Investigamos lo que otros ignoran. Contacto: aifuoficial@gmail.com"));
-bot.hears('💳 Hazte Socio / VIP', (ctx) => ctx.reply("🌟 Las funciones están abiertas. Para colaborar con el servidor, contactá a Damián."));
+
+// --- MEJORA: SECCIÓN VIP INTEGRADA ---
+bot.hears('💳 Hazte Socio / VIP', (ctx) => {
+    ctx.reply(
+        "🌟 **ZONA VIP (Solo usuarios y lectores VIP)**\n\nEn esta sección puedes contar tu historia personal o contacto de manera anónima para los canales. Nosotros guardaremos el registro histórico, pero tu identidad será protegida en la publicación.",
+        Markup.keyboard([
+            ['📖 Contar mi Historia (Anónimo)'], 
+            ['⬅️ Volver al Menú']
+        ]).resize()
+    );
+});
+
+bot.hears('📖 Contar mi Historia (Anónimo)', (ctx) => {
+    sesiones[ctx.from.id] = { 
+        paso: 'descripcion', 
+        datos: { fotos: [], anonimo: true, esHistoria: true, pais: "Uruguay", ciudad: "Relato VIP" } 
+    };
+    ctx.reply("🕵️ **ARCHIVO CONFIDENCIAL AIFU**\nAdelante, compañero. Contame tu historia o contacto con libertad. ¿Qué pasó?");
+});
 
 bot.hears('👤 Mi Perfil de Investigador', (ctx) => {
     const user = db.usuarios[ctx.from.id] || { puntos: 0, reportes: 0 };
@@ -90,7 +108,7 @@ bot.hears('🗺️ Ver Mapa Táctico', (ctx) => {
 });
 
 bot.hears('🛸 Reportar Avistamiento', ctx => {
-    sesiones[ctx.from.id] = { paso: 'ubicacion_tipo', datos: { fotos: [] } };
+    sesiones[ctx.from.id] = { paso: 'ubicacion_tipo', datos: { fotos: [], anonimo: false } };
     ctx.reply("🛸 **NUEVO REGISTRO**\n¿Querés mandarme tu ubicación GPS o preferís escribir el lugar?", 
         Markup.keyboard([['📍 Enviar GPS', '✍️ Escribir lugar'], ['❌ Cancelar']]).resize().oneTime());
 });
@@ -115,7 +133,6 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
             const result = await chatsIA[id].sendMessage(txt);
             return ctx.reply(result.response.text());
         } catch (e) {
-            console.error(e);
             return ctx.reply("Se me cortó la señal, compañero. ¿Qué decías?");
         }
     }
@@ -138,7 +155,7 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
         s.datos.pais = "Uruguay"; 
         s.datos.ciudad = "Ubicación GPS"; 
         s.datos.barrio = "Coordenadas directas";
-        s.paso = 'descripcion'; // SALTA LAS PREGUNTAS
+        s.paso = 'descripcion'; 
         return ctx.reply("✅ Posición capturada por GPS. Ahora sí, contame: 👁️ **¿Qué viste?**");
     }
 
@@ -149,7 +166,9 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
     if (s.paso === 'descripcion') {
         s.datos.descripcion = txt; s.paso = 'multimedia';
         await ctx.sendChatAction('typing');
-        const res = await model.generateContent(`Analiza: "${txt}". Clasifica: Nave, Luz o Paranormal. Sé breve y humano.`);
+        // Ajustamos el análisis según si es historia o reporte
+        const promptIA = s.datos.esHistoria ? `Resume este relato personal de forma breve: "${txt}"` : `Analiza: "${txt}". Clasifica: Nave, Luz o Paranormal. Sé breve y humano.`;
+        const res = await model.generateContent(promptIA);
         s.datos.analisis_ia = res.response.text();
         return ctx.reply(`${s.datos.analisis_ia}\n\n📸 Mandame evidencia (fotos). Cuando termines, dale a '🚀 REVISAR'.`, Markup.keyboard([['🚀 REVISAR'], ['❌ Cancelar']]).resize());
     }
@@ -161,7 +180,8 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
 
     if (txt === '🚀 REVISAR') {
         s.paso = 'confirmacion';
-        const resumen = `📋 **FICHA OMEGA**\n📍 ${s.datos.pais}, ${s.datos.ciudad}\n👁️ ${s.datos.descripcion}\n🧠 ${s.datos.analisis_ia}\n📸 Fotos: ${s.datos.fotos.length}`;
+        const titulo = s.datos.esHistoria ? "📖 REVISIÓN DE RELATO VIP" : "📋 FICHA OMEGA";
+        const resumen = `${titulo}\n📍 ${s.datos.pais}, ${s.datos.ciudad}\n👁️ ${s.datos.descripcion}\n🧠 ${s.datos.analisis_ia}${s.datos.anonimo ? '\n🕵️ MODO ANÓNIMO ACTIVO' : ''}`;
         return ctx.reply(resumen, Markup.keyboard([['✅ CONFIRMAR Y ENVIAR', '❌ DESCARTAR']]).resize());
     }
 
@@ -186,7 +206,12 @@ async function publicarYGuardar(datos, ctx) {
         "RadarConoSur": "-1003759731798" 
     };
     const canal = CANALES[datos.pais] || CANALES["Otro (Global)"];
-    const ficha = `🛸 **REPORTE AIFU**\n👤 ${ctx.from.first_name}\n📍 ${datos.pais} - ${datos.ciudad}\n👁️ ${datos.descripcion}\n🔍 ${datos.analisis_ia}`;
+    
+    // Si es historia VIP, el nombre es anónimo. Si es reporte normal, lleva el nombre del investigador.
+    const nombreParaMostrar = datos.anonimo ? "Testigo Anónimo 🕵️" : ctx.from.first_name;
+    const encabezado = datos.esHistoria ? "📖 **NUEVA HISTORIA VIP**" : "🛸 **REPORTE AIFU**";
+    
+    const ficha = `${encabezado}\n👤 ${nombreParaMostrar}\n📍 ${datos.pais} - ${datos.ciudad}\n👁️ ${datos.descripcion}\n🔍 ${datos.analisis_ia}`;
 
     let puntosMap = [];
     if (fs.existsSync(MAP_FILE)) puntosMap = JSON.parse(fs.readFileSync(MAP_FILE));
