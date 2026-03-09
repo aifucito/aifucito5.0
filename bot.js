@@ -18,6 +18,7 @@ let db = { usuarios: {} };
 if (fs.existsSync(DB_FILE)) db = JSON.parse(fs.readFileSync(DB_FILE));
 const guardarDB = () => fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
 
+// --- ESCALA DE RANGOS AIFULOGOS ---
 const obtenerRango = (puntos) => {
     if (puntos < 30) return { nombre: "🧻 Fajinador de Retretes Espaciales", sig: 30 - puntos };
     if (puntos < 100) return { nombre: "🧉 Cebador de Mate Intergaláctico", sig: 100 - puntos };
@@ -41,7 +42,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const model = genAI.getGenerativeModel({ 
     model: "gemini-1.5-flash",
-    systemInstruction: "Eres AIFUCITO, el asistente inteligente de AIFU (Avistamiento Investigación de Fenómenos Uruguayos). Estás orgulloso de manejar el primer radar mundial colaborativo. Habla como un uruguayo moderno y servicial. Cuando te saluden, responde con mucha onda y pregunta cómo están."
+    systemInstruction: "Eres AIFUCITO, el asistente inteligente de AIFU (Avistamiento Investigación de Fenómenos Uruguayos). Habla como un uruguayo moderno y servicial. Cuando te saluden, responde con mucha onda."
 });
 
 let sesiones = {};
@@ -50,7 +51,8 @@ let chatsIA = {};
 const menuPrincipal = () => Markup.keyboard([
     ['🛸 Reportar Avistamiento', '🗺️ Ver Mapa Táctico'],
     ['🎖️ Mi Rango de Investigador', '👽 Charlar con AIFUCITO'],
-    ['💳 Hazte Socio / VIP', 'ℹ️ Sobre AIFU']
+    ['💳 Hazte Socio / VIP', '🔗 Red de Canales'], // Agregado Red de Canales
+    ['ℹ️ Sobre AIFU']
 ]).resize();
 
 bot.start((ctx) => {
@@ -58,20 +60,26 @@ bot.start((ctx) => {
     if (!db.usuarios[id]) db.usuarios[id] = { nombre: ctx.from.first_name, puntos: 0, reportes: 0 };
     guardarDB();
     const r = obtenerRango(db.usuarios[id].puntos);
-    ctx.reply(`¡Hola! 👋 Soy AIFUCITO, tu asistente de investigación.\n\nTu rango: ${r.nombre}.`, menuPrincipal());
+    ctx.reply(`¡Hola! 👋 Soy AIFUCITO, tu asistente de investigación.\n\nTu rango actual: ${r.nombre}.`, menuPrincipal());
 });
 
 bot.hears('ℹ️ Sobre AIFU', (ctx) => {
-    const infoText = "✨ **AIFU: Avistamiento Investigación de Fenómenos Uruguayos**\n\n" +
-        "Ubicados en Uruguay, con los ojos en todo el mundo. 🌍\n\n" +
-        "Debido a la cantidad de gente que nos ve, creamos este medio oficial para reunir una Central de Avistamientos global.\n\n" +
-        "🛰️ **Este es el primer Radar Oficial de AIFU**, único en el mundo. Lo crean USTEDES con sus reportes.\n\n" +
-        "🛡️ *Investigamos lo que otros ignoran.*";
-    ctx.reply(infoText);
+    ctx.reply("✨ **AIFU: Avistamiento Investigación de Fenómenos Uruguayos**\n\nUbicados en Uruguay, con los ojos en todo el mundo. 🌍\n\n🛰️ **Este es el primer Radar Oficial de AIFU**, único en el mundo.\n\n🛡️ *Investigamos lo que otros ignoran.*");
+});
+
+// NUEVO: BOTÓN DE ACCESO A CANALES
+bot.hears('🔗 Red de Canales', (ctx) => {
+    const links = "🌍 **NUESTRA RED DE MONITOREO:**\n\n" +
+                  "🇺🇾 [Canal Uruguay](https://t.me/AifuUruguay)\n" +
+                  "🇦🇷 [Canal Argentina](https://t.me/AifuArgentina)\n" +
+                  "🇨🇱 [Canal Chile](https://t.me/AifuChile)\n" +
+                  "🌐 [Canal Global](https://t.me/AifuGlobal)\n" +
+                  "🛰️ [RADAR CENTRAL](https://t.me/RadarConoSur)";
+    ctx.reply(links, { parse_mode: 'Markdown', disable_web_page_preview: true });
 });
 
 bot.hears('💳 Hazte Socio / VIP', (ctx) => {
-    ctx.reply("🌟 **ZONA VIP Y RELATOS**", Markup.keyboard([['🕵️ Reporte Anónimo (VIP)', '📖 Contar mi Historia'], ['⬅️ Volver al Menú']]).resize());
+    ctx.reply("🌟 **ZONA VIP Y RELATOS**\n¿Qué desea hacer?", Markup.keyboard([['🕵️ Reporte Anónimo (VIP)', '📖 Contar mi Historia'], ['⬅️ Volver al Menú']]).resize());
 });
 
 bot.hears('🕵️ Reporte Anónimo (VIP)', (ctx) => {
@@ -81,25 +89,25 @@ bot.hears('🕵️ Reporte Anónimo (VIP)', (ctx) => {
 
 bot.hears('📖 Contar mi Historia', (ctx) => {
     sesiones[ctx.from.id] = { paso: 'descripcion', datos: { fotos: [], anonimo: true, esHistoria: true, pais: "Uruguay", ciudad: "Relato VIP" } };
-    ctx.reply("📖 **ARCHIVO DE RELATOS**\nContame tu historia de forma anónima:");
+    ctx.reply("📖 **ARCHIVO DE RELATOS**\nContame tu historia de forma anónima. Te escucho:");
 });
 
 bot.hears('🎖️ Mi Rango de Investigador', (ctx) => {
     const user = db.usuarios[ctx.from.id] || { puntos: 0, reportes: 0 };
     const r = obtenerRango(user.puntos);
-    ctx.reply(`🎖️ **TU RANGO:**\n${r.nombre}\n\n📊 Puntos: ${user.puntos}`, menuPrincipal());
+    ctx.reply(`🎖️ **TU RANGO:**\n${r.nombre}\n\n📊 Puntos: ${user.puntos}\n🛸 Reportes: ${user.reportes}`, menuPrincipal());
 });
 
 bot.hears('👽 Charlar con AIFUCITO', (ctx) => {
     const id = ctx.from.id;
     sesiones[id] = { paso: 'charla_ia' };
     chatsIA[id] = model.startChat({ history: [] }); 
-    ctx.reply("¡Hola! Soy AIFUCITO 🤖 ¿En qué te ayudo hoy?", Markup.keyboard([['⬅️ Volver al Menú']]).resize());
+    ctx.reply("¡Hola! Soy AIFUCITO 🤖 ¿En qué puedo ayudarte hoy?", Markup.keyboard([['⬅️ Volver al Menú']]).resize());
 });
 
 bot.hears('🛸 Reportar Avistamiento', ctx => {
     sesiones[ctx.from.id] = { paso: 'ubicacion_tipo', datos: { fotos: [], anonimo: false } };
-    ctx.reply("🛸 **NUEVO REPORTE**", Markup.keyboard([['📍 Enviar GPS', '✍️ Escribir lugar'], ['❌ Cancelar']]).resize());
+    ctx.reply("🛸 **NUEVO REPORTE**\n¿GPS o escribir lugar?", Markup.keyboard([['📍 Enviar GPS', '✍️ Escribir lugar'], ['❌ Cancelar']]).resize());
 });
 
 bot.on(['text', 'location', 'photo'], async (ctx, next) => {
@@ -110,7 +118,7 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
     const txt = ctx.message.text;
     if (txt === '❌ Cancelar' || txt === '⬅️ Volver al Menú') { 
         delete sesiones[id]; delete chatsIA[id];
-        return ctx.reply("Volvemos al inicio.", menuPrincipal()); 
+        return ctx.reply("¡Entendido! Volvemos al inicio.", menuPrincipal()); 
     }
 
     if (s.paso === 'charla_ia') {
@@ -121,82 +129,92 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
             return ctx.reply(result.response.text());
         } catch (e) {
             chatsIA[id] = model.startChat({ history: [] });
-            return ctx.reply("¡Uy! Se cortó la señal. ¿Repetís?");
+            return ctx.reply("¡Uy! Se me cruzó un satélite. ¿Me repetís?");
         }
     }
 
     if (s.paso === 'ubicacion_tipo') {
         if (txt === '📍 Enviar GPS') {
             s.paso = 'esperando_gps';
-            return ctx.reply("Mandá el GPS:", Markup.keyboard([[Markup.button.locationRequest('📍 MANDAR UBICACIÓN')]]).resize());
+            return ctx.reply("Mandame tu ubicación con el botón:", Markup.keyboard([[Markup.button.locationRequest('📍 MANDAR UBICACIÓN')]]).resize());
         } else {
             s.paso = 'pais';
             return ctx.reply("¿País?", Markup.keyboard([['Uruguay', 'Argentina', 'Chile'], ['Otro (Global)']]).resize());
         }
     }
 
+    // MEJORA: DETECCIÓN AUTOMÁTICA POR GPS
     if (s.paso === 'esperando_gps' && ctx.message.location) {
-        s.datos.lat = ctx.message.location.latitude; s.datos.lng = ctx.message.location.longitude;
-        s.datos.pais = "Uruguay"; s.datos.ciudad = "Ubicación GPS"; s.paso = 'descripcion';
-        return ctx.reply("✅ ¡Recibido! 👁️ **¿Qué viste?**");
+        const lat = ctx.message.location.latitude;
+        const lng = ctx.message.location.longitude;
+        s.datos.lat = lat; s.datos.lng = lng;
+
+        if (lat < -30 && lat > -35 && lng < -59 && lng > -53) s.datos.pais = "Uruguay";
+        else if (lat < -21 && lat > -55 && lng < -73 && lng > -53) s.datos.pais = "Argentina";
+        else if (lat < -17 && lat > -56 && lng < -76 && lng > -66) s.datos.pais = "Chile";
+        else s.datos.pais = "Otro (Global)";
+
+        s.datos.ciudad = "Ubicación GPS"; s.paso = 'descripcion';
+        return ctx.reply(`✅ Sistema reconoce: ${s.datos.pais}. 👁️ **¿Qué viste?**`);
     }
 
-    if (s.paso === 'pais') { s.datos.pais = txt; s.paso = 'ciudad'; return ctx.reply("📌 **Departamento:**"); }
-    if (s.paso === 'ciudad') { s.datos.ciudad = txt; s.paso = 'barrio'; return ctx.reply("🏘️ **Barrio:**"); }
-    if (s.paso === 'barrio') { s.datos.barrio = txt; s.paso = 'descripcion'; return ctx.reply("👁️ **Descripción:**"); }
+    if (s.paso === 'pais') { s.datos.pais = txt; s.paso = 'ciudad'; return ctx.reply("📌 **Departamento/Provincia:**"); }
+    if (s.paso === 'ciudad') { s.datos.ciudad = txt; s.paso = 'barrio'; return ctx.reply("🏘️ **¿Barrio?**"); }
+    if (s.paso === 'barrio') { s.datos.barrio = txt; s.paso = 'descripcion'; return ctx.reply("👁️ **¿Qué viste?**"); }
 
     if (s.paso === 'descripcion') {
         s.datos.descripcion = txt; s.paso = 'multimedia';
         await ctx.sendChatAction('typing');
-        const promptIA = s.datos.esHistoria ? `Resume brevemente: "${txt}"` : `Analiza: "${txt}".`;
+        const promptIA = s.datos.esHistoria ? `Resume este relato: "${txt}"` : `Analiza brevemente: "${txt}". Clasifica: Nave, Luz o Paranormal.`;
         const res = await model.generateContent(promptIA);
         s.datos.analisis_ia = res.response.text();
-        return ctx.reply(`${s.datos.analisis_ia}\n\n📸 Mandá fotos y tocá '🚀 REVISAR'.`, Markup.keyboard([['🚀 REVISAR'], ['❌ Cancelar']]).resize());
+        return ctx.reply(`${s.datos.analisis_ia}\n\n📸 Mandame las fotos y tocá '🚀 REVISAR'.`, Markup.keyboard([['🚀 REVISAR'], ['❌ Cancelar']]).resize());
     }
 
     if (ctx.message.photo && s.paso === 'multimedia') {
         s.datos.fotos.push(ctx.message.photo[ctx.message.photo.length - 1].file_id);
-        return ctx.reply("✅ Foto anotada.");
+        return ctx.reply("✅ Foto guardada.");
     }
 
     if (txt === '🚀 REVISAR') {
         s.paso = 'confirmacion';
         const titulo = s.datos.esHistoria ? "📖 RELATO VIP" : "📋 FICHA OMEGA";
-        const resumen = `${titulo}\n📍 ${s.datos.pais}\n👁️ ${s.datos.descripcion}\n🕵️ ${s.datos.anonimo ? 'Anónimo' : 'Público'}`;
+        const resumen = `${titulo}\n📍 ${s.datos.pais}, ${s.datos.ciudad}\n👁️ ${s.datos.descripcion}\n🧠 ${s.datos.analisis_ia}${s.datos.anonimo ? '\n🕵️ (ANÓNIMO)' : ''}`;
         return ctx.reply(resumen, Markup.keyboard([['✅ CONFIRMAR Y ENVIAR', '❌ DESCARTAR']]).resize());
     }
 
     if (txt === '✅ CONFIRMAR Y ENVIAR') {
-        ctx.reply("🚀 Subiendo reporte al radar... por favor espera.");
+        ctx.reply("🚀 Subiendo reporte al radar... un segundo.");
         if (!db.usuarios[id]) db.usuarios[id] = { nombre: ctx.from.first_name, puntos: 0, reportes: 0 };
         db.usuarios[id].puntos += 10; db.usuarios[id].reportes += 1; guardarDB();
         await publicarYGuardar(s.datos, ctx);
         delete sesiones[id];
-        ctx.reply(`✅ **¡EXITO!** Reporte enviado al radar.`, menuPrincipal());
+        ctx.reply(`✅ **¡ENVIADO!** Sumaste 10 puntos.`, menuPrincipal());
     }
 });
 
 async function publicarYGuardar(datos, ctx) {
     const CANALES = { "Uruguay": "-1003826671445", "Argentina": "-1003750025728", "Chile": "-1003811532520", "Otro (Global)": "-1003820597313", "RadarConoSur": "-1003759731798" };
     const canal = CANALES[datos.pais] || CANALES["Otro (Global)"];
+    
     const nombrePublico = datos.anonimo ? "Testigo Anónimo 🕵️" : ctx.from.first_name;
-    const ficha = `${datos.esHistoria ? '📖 HISTORIA' : '🛸 REPORTE'}\n👤 ${nombrePublico}\n📍 ${datos.pais}\n👁️ ${datos.descripcion}\n🔍 ${datos.analisis_ia}`;
+    const ficha = `${datos.esHistoria ? '📖 HISTORIA VIP' : '🛸 REPORTE AIFU'}\n👤 ${nombrePublico}\n📍 ${datos.pais} - ${datos.ciudad}\n👁️ ${datos.descripcion}\n🔍 ${datos.analisis_ia}`;
 
     let puntosMap = [];
     if (fs.existsSync(MAP_FILE)) puntosMap = JSON.parse(fs.readFileSync(MAP_FILE));
-    puntosMap.push({ lat: datos.lat || -34.8, lng: datos.lng || -56.1, desc: datos.descripcion.substring(0,30) });
+    puntosMap.push({ lat: datos.lat || -34.8, lng: datos.lng || -56.1, desc: `${datos.ciudad}: ${datos.descripcion.substring(0,30)}` });
     fs.writeFileSync(MAP_FILE, JSON.stringify(puntosMap));
 
     try {
-        // Mejorado: Espera un poquito entre fotos para no trabarse
+        // MEJORA: PAUSA PARA NO TRABARSE
         for (const f of datos.fotos) { 
             await bot.telegram.sendPhoto(canal, f);
             await bot.telegram.sendPhoto(CANALES["RadarConoSur"], f);
-            await new Promise(r => setTimeout(r, 1000)); // Espera 1 segundo
+            await new Promise(r => setTimeout(r, 1000)); 
         }
         await bot.telegram.sendMessage(canal, ficha);
         await bot.telegram.sendMessage(CANALES["RadarConoSur"], ficha);
-    } catch (e) { console.log("Error al subir:", e); }
+    } catch (e) { console.log("Error de subida:", e); }
 }
 
 bot.launch();
