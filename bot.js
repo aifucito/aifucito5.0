@@ -53,120 +53,138 @@ function obtenerRango(puntos) {
 }
 
 // ==========================================
-// MÓDULO 4: MENÚS Y BOTONES
-// ==========================================
-// --- PASOS MANUALES OBLIGATORIOS ---
-if (s.paso === 'pais') { 
-    s.datos.pais = txt; 
-    s.paso = 'ciudad'; 
-    return ctx.reply("2️⃣ ¿En qué CIUDAD o PROVINCIA?"); 
-}
-if (s.paso === 'ciudad') { 
-    s.datos.ciudad = txt; 
-    s.paso = 'barrio'; 
-    return ctx.reply("3️⃣ ¿En qué BARRIO o ZONA específica?"); 
-}
-if (s.paso === 'barrio') { 
-    s.datos.barrio = txt; 
-    s.paso = 'referencia'; 
-    // Instrucción clara para no trabar al usuario
-    return ctx.reply("4️⃣ Indica un PUNTO DE REFERENCIA (ej: 'Cerca del estadio', 'Frente al faro').\n\n👉 Si no tienes referencias, solo pon **no**."); 
-}
-if (s.paso === 'referencia') { 
-    // Guardamos la referencia o marcamos que no hay
-    s.datos.referencia = (txt.toLowerCase() === 'no') ? 'Sin referencia específica' : txt; 
-    s.paso = 'descripcion'; 
-    return ctx.reply("5️⃣ **DESCRIPCIÓN:** ¿Qué fenómeno observaste exactamente? (Forma, color, comportamiento)"); 
-}
-
-// ==========================================
-// MÓDULO 5: LÓGICA DEL BOT (LO QUE HACE CADA BOTÓN)
+// MÓDULO 4: GESTIÓN DE REPORTES (PASO A PASO)
 // ==========================================
 
-// --- BOTÓN START ---
-bot.start(ctx => {
-    let user = data.usuarios.find(u => u.id === ctx.from.id);
-    if (!user) {
-        user = { id: ctx.from.id, nombre: ctx.from.first_name, puntos: 0, vip: false };
-        data.usuarios.push(user);
-        guardar();
-    }
-    ctx.reply(`🛸 **AIFUCITO 5.0**\nHola ${user.nombre}, rango: ${obtenerRango(user.puntos)}`, menuPrincipal());
-});
-
-// --- BOTÓN MI PERFIL ---
-bot.hears('👤 Mi Perfil', ctx => {
-    const user = data.usuarios.find(u => u.id === ctx.from.id);
-    ctx.reply(`👤 **EXPEDIENTE AIFU**\n\nNombre: ${user.nombre}\nRango: ${obtenerRango(user.puntos)}\nEstado: ${user.vip ? '⭐ VIP' : 'Estándar'}`);
-});
-
-// --- BOTÓN REPORTAR (Inicia el cuestionario) ---
+// --- INICIO DEL REPORTE ---
 bot.hears('🛸 Reportar Avistamiento', ctx => {
-    sesiones[ctx.from.id] = { paso: 'ubicacion', datos: { fotos: [] } };
-    ctx.reply("📍 **PASO 1:** ¿Dónde fue? Envía tu GPS o escribe Ciudad/País.", 
-        Markup.keyboard([[Markup.button.locationRequest('📍 Enviar GPS')], ['❌ Cancelar']]).resize());
+    sesiones[ctx.from.id] = { paso: 'pregunta_gps', datos: { fotos: [] } };
+    ctx.reply("🛸 **INICIANDO REPORTE AIFU**\n\n¿Deseas enviar tu ubicación exacta por GPS?", 
+        Markup.keyboard([
+            ['✅ Sí, usar GPS', '❌ No, manual'],
+            ['Cancelar']
+        ]).resize().oneTime());
 });
 
-// --- GESTOR DE RESPUESTAS (Aquí pasa toda la magia) ---
-bot.on(['text', 'location', 'photo'], async (ctx) => {
+// --- MOTOR DE PASOS (UBICACIÓN Y DESCRIPCIÓN) ---
+bot.on(['text', 'location', 'photo'], async (ctx, next) => {
     const id = ctx.from.id;
     const s = sesiones[id];
-    const texto = ctx.message.text;
+    
+    // Si el usuario no está en un reporte activo, pasamos al siguiente módulo
+    if (!s) return next();
 
-    if (texto === '❌ Cancelar') { delete sesiones[id]; return ctx.reply("Cancelado.", menuPrincipal()); }
+    const txt = ctx.message.text;
+    if (txt === 'Cancelar') { 
+        delete sesiones[id]; 
+        return ctx.reply("❌ Reporte cancelado.", menuPrincipal()); 
+    }
 
-    // Si el usuario está en medio de un reporte...
-    if (s) {
-        // Recibir Ubicación (GPS o Texto)
-        if (s.paso === 'ubicacion') {
-            s.datos.ubicacion = ctx.message.location ? "GPS" : texto;
-            s.datos.lat = ctx.message.location?.latitude;
-            s.datos.lng = ctx.message.location?.longitude;
-            s.paso = 'descripcion';
-            return ctx.reply("✅ Recibido. Ahora dime: ¿Qué fenómeno viste?");
-        }
-
-        // Recibir Descripción e Interrogar con IA
-        if (s.paso === 'descripcion') {
-            s.datos.descripcion = texto;
-            s.paso = 'preguntas_ia';
-            await ctx.sendChatAction('typing');
-            const result = await model.generateContent(`Testigo dice: "${texto}". Haz 2 preguntas técnicas cortas.`);
-            return ctx.reply(`🔍 **PREGUNTAS TÉCNICAS:**\n\n${result.response.text()}`);
-        }
-
-        // Recibir respuestas técnicas y pedir Multimedia
-        if (s.paso === 'preguntas_ia') {
-            s.datos.detalles_ia = texto;
-            s.paso = 'multimedia';
-            return ctx.reply("📸 Envía fotos/videos. Al terminar presiona 'Finalizar'.", 
-                Markup.keyboard([['🚀 FINALIZAR REPORTE']]).resize());
-        }
-
-        // Recibir Fotos
-        if (ctx.message.photo && s.paso === 'multimedia') {
-            s.datos.fotos.push(ctx.message.photo[ctx.message.photo.length - 1].file_id);
-            return ctx.reply("✅ Foto guardada. ¿Alguna otra?");
-        }
-
-        // Cerrar Reporte
-        if (texto === '🚀 FINALIZAR REPORTE') {
-            const user = data.usuarios.find(u => u.id === id);
-            user.puntos++;
-            data.reportes.push({ id_rep: Date.now(), user: id, ...s.datos });
-            guardar();
-            delete sesiones[id];
-            return ctx.reply("✅ ¡REPORTE ARCHIVADO!", menuPrincipal());
+    // --- PASO 1: ELECCIÓN DE MÉTODO ---
+    if (s.paso === 'pregunta_gps') {
+        if (txt === '✅ Sí, usar GPS') {
+            s.paso = 'esperando_gps';
+            return ctx.reply("📍 Presiona el botón para enviar tu posición:", 
+                Markup.keyboard([[Markup.button.locationRequest('📍 ENVIAR MI GPS')]]).resize());
+        } else {
+            s.paso = 'pais';
+            return ctx.reply("1️⃣ **SELECCIÓN DE PAÍS:**", 
+                Markup.keyboard([
+                    ['Uruguay', 'Argentina'], 
+                    ['Chile', 'Otro (Global)'], 
+                    ['Cancelar']
+                ]).resize());
         }
     }
 
-    // Si no está reportando, puede charlar con la IA
-    if (sesionesChat[id]) {
-        if (texto === 'Terminar charla') { delete sesionesChat[id]; return ctx.reply("Cerrando...", menuPrincipal()); }
-        const r = await model.generateContent(texto);
-        return ctx.reply(r.response.text());
+    // --- PASO 1.5: RECEPCIÓN DE GPS ---
+    if (s.paso === 'esperando_gps' && ctx.message.location) {
+        s.datos.lat = ctx.message.location.latitude;
+        s.datos.lng = ctx.message.location.longitude;
+        s.datos.pais = "Detectado por GPS";
+        s.paso = 'descripcion';
+        return ctx.reply("✅ GPS fijado correctamente.\n\n👁️ **PASO 2:** Describe el fenómeno: ¿Qué viste?");
     }
-});
 
+    // --- PASOS MANUALES OBLIGATORIOS ---
+    if (s.paso === 'pais') { 
+        s.datos.pais = txt; 
+        s.paso = 'ciudad'; 
+        return ctx.reply("2️⃣ ¿En qué CIUDAD o PROVINCIA ocurrió?"); 
+    }
+    
+    if (s.paso === 'ciudad') { 
+        s.datos.ciudad = txt; 
+        s.paso = 'barrio'; 
+        return ctx.reply("3️⃣ ¿En qué BARRIO o ZONA específica?"); 
+    }
+    
+    if (s.paso === 'barrio') { 
+        s.datos.barrio = txt; 
+        s.paso = 'referencia'; 
+        return ctx.reply("4️⃣ Indica un PUNTO DE REFERENCIA (ej: 'Frente al faro').\n\n👉 Si no tienes referencias, solo pon **no**."); 
+    }
+    
+    if (s.paso === 'referencia') { 
+        s.datos.referencia = (txt.toLowerCase() === 'no') ? 'Sin referencia específica' : txt
+        
+// ==========================================
+// MÓDULO 6: PUBLICADOR INTERNACIONAL (CONO SUR)
+// ==========================================
+
+async function publicarReporte(datos, ctx) {
+    // Lista de canales por país (IDs o Enlaces)
+    const CANALES = {
+        "Uruguay": "-1002081514745",   // AIFU Uruguay
+        "Argentina": "-1002120455561", // AIFU Argentina
+        "Chile": "-1002084654961",     // AIFU Chile
+        "Global": "-1002086324681",    // AIFU Global
+        "RadarVIP": "-1002070387533"   // Radar Cono Sur (VIP)
+    };
+    
+    const nombreUser = ctx.from.first_name || "Investigador";
+    const paisReporte = datos.pais || "Global";
+    const fecha = new Date().toLocaleString('es-UY', { timeZone: 'America/Montevideo' });
+
+    // Diseño de la Ficha Técnica
+    const ficha = 
+        `🛸 **ALERTA AIFU: AVISTAMIENTO**\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `👤 **POR:** ${nombreUser}\n` +
+        `📍 **PAÍS:** ${paisReporte.toUpperCase()}\n` +
+        `🏙️ **CIUDAD:** ${datos.ciudad || 'N/A'}\n` +
+        `🏠 **ZONA:** ${datos.barrio || 'N/A'}\n` +
+        `🚩 **REF:** ${datos.referencia || 'Sin referencia'}\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `👁️ **DESCRIPCIÓN:**\n"${datos.descripcion}"\n\n` +
+        `🔍 **ANÁLISIS TÉCNICO:**\n${datos.detalles_ia || 'Analizando...'}\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `📅 ${fecha}\n` +
+        `📡 #AIFU #UFO #UAP #${paisReporte}`;
+
+    try {
+        // 1. PUBLICAR EN EL CANAL DEL PAÍS CORRESPONDIENTE (Solo Texto)
+        let canalDestino = CANALES[paisReporte] || CANALES["Global"];
+        await bot.telegram.sendMessage(canalDestino, ficha);
+
+        // 2. PUBLICAR EN EL RADAR CONO SUR (VIP con Multimedia)
+        if (datos.fotos && datos.fotos.length > 0) {
+            await bot.telegram.sendPhoto(CANALES["RadarVIP"], datos.fotos[0], { 
+                caption: ficha + "\n\n⭐ [MULTIMEDIA COMPLETA EN RADAR VIP]" 
+            });
+        } else {
+            await bot.telegram.sendMessage(CANALES["RadarVIP"], ficha);
+        }
+
+        // 3. SIEMPRE ENVIAR AL GLOBAL PARA RESPALDO
+        if (paisReporte !== "Global") {
+            await bot.telegram.sendMessage(CANALES["Global"], ficha);
+        }
+
+        console.log(`📢 Reporte de ${paisReporte} distribuido con éxito.`);
+    } catch (error) {
+        console.error("❌ Error en distribución:", error.message);
+    }
+}
 // Lanzamiento
 bot.launch();
