@@ -118,8 +118,17 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
         s.datos.descripcion = txt;
         s.paso = 'interrogatorio';
         await ctx.sendChatAction('typing');
-        const res = await model.generateContent(`Testigo vio: "${txt}". Haz 2 preguntas técnicas breves.`);
-        return ctx.reply(`🔍 **INTERROGATORIO AIFUCITO:**\n\n${res.response.text()}`);
+        
+        try {
+            const res = await model.generateContent(`Testigo vio: "${txt}". Haz 2 preguntas técnicas breves.`);
+            const respuestaIA = res.response.text() || "Entendido. ¿A qué altura estaban y qué color tenían?";
+            return ctx.reply(`🔍 **INTERROGATORIO AIFUCITO:**\n\n${respuestaIA}`);
+        } catch (error) {
+            console.error("Error IA:", error);
+            // Si la IA falla, el bot sigue adelante con preguntas fijas para no trabarse
+            return ctx.reply(`🔍 **INTERROGATORIO AIFUCITO:**\n\n¿Qué color tenían las luces y hacia qué dirección se movían?`);
+        }
+    }
     }
 
     if (s.paso === 'interrogatorio') {
