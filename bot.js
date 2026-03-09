@@ -64,7 +64,16 @@ bot.start((ctx) => {
     ctx.reply(`¡Hola ${ctx.from.first_name}! 👋 Soy AIFUCITO.\n\nTu rango actual: ${r.nombre}.`, menuPrincipal());
 });
 
-// --- COMANDOS DE MENÚ PRINCIPAL ---
+// --- ENLACES CORREGIDOS SEGÚN TU LISTA ---
+bot.hears('🔗 Red de Canales', (ctx) => {
+    const redMsg = "🌍 **RED DE MONITOREO AIFU:**\n\n" +
+                  "🇺🇾 [AIFU UY 🇺🇾](https://t.me/+f09zTsh78pE0YjUx)\n" +
+                  "🇦🇷 [AIFU AR 🇦🇷](https://t.me/+P3_tYQGzU_NhMzYx)\n" +
+                  "🇨🇱 [AIFU CH 🇨🇱](https://t.me/+_v0YmYWRmZExNDUx)\n" +
+                  "🌐 [AIFU GLOBAL 👽](https://t.me/+Y1NlNDUxMTgxOTIx)\n" +
+                  "🛰️ **[RADAR CONO SUR](https://t.me/+TzO4yS8m7RszM2Ix)**";
+    ctx.reply(redMsg, { parse_mode: 'Markdown', disable_web_page_preview: true });
+});
 
 bot.hears('🛸 Reportar Avistamiento', (ctx) => {
     sesiones[ctx.from.id] = { paso: 'ubicacion_tipo', datos: { fotos: [], anonimo: false, esHistoria: false } };
@@ -90,16 +99,6 @@ bot.hears('👽 Charlar con AIFUCITO', (ctx) => {
     ctx.reply("👽 **COMUNICACIÓN ABIERTA**\n\n¿Qué duda tenés sobre el fenómeno? Escribime lo que quieras (o tocá Cancelar).", Markup.keyboard([['❌ Cancelar']]).resize());
 });
 
-bot.hears('🔗 Red de Canales', (ctx) => {
-    const redMsg = "🌍 **RED DE MONITOREO AIFU:**\n\n" +
-                  "🇺🇾 [AIFU Uruguay](https://t.me/AIFU_Uruguay)\n" +
-                  "🇦🇷 [AIFU Argentina](https://t.me/AIFU_Argentina)\n" +
-                  "🇨🇱 [AIFU Chile](https://t.me/AIFU_Chile)\n" +
-                  "🌐 [AIFU Global](https://t.me/AIFU_Global)\n" +
-                  "🛰️ **[RADAR CENTRAL](https://t.me/RadarConoSur)**";
-    ctx.reply(redMsg, { parse_mode: 'Markdown', disable_web_page_preview: true });
-});
-
 bot.hears('💳 Hazte Socio / VIP', (ctx) => {
     ctx.reply("🌟 **ZONA VIP - AIFU**", Markup.keyboard([
         ['📖 Contar mi Historia', '📚 Bóveda de Historias'],
@@ -111,8 +110,6 @@ bot.hears('⬅️ Volver al Menú', (ctx) => {
     delete sesiones[ctx.from.id];
     ctx.reply("Volviendo al menú principal...", menuPrincipal());
 });
-
-// --- LÓGICA DE SESIONES Y EVENTOS ---
 
 bot.on(['text', 'location', 'photo'], async (ctx, next) => {
     const id = ctx.from.id;
@@ -126,20 +123,24 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
 
     if (!s) return next();
 
-    // Charlar con IA
+    // Charlar con IA (CORREGIDO)
     if (s.paso === 'charlar_ia') {
         await ctx.sendChatAction('typing');
         try {
             const res = await model.generateContent(txt);
-            ctx.reply(res.response.text());
-        } catch (e) { ctx.reply("Error de conexión con la matriz. Intentá luego."); }
+            const responseText = res.response.text();
+            ctx.reply(responseText);
+        } catch (e) { 
+            console.error("Error IA:", e);
+            ctx.reply("Error de conexión con la matriz. Verificá tu GEMINI_API_KEY en Render."); 
+        }
         return;
     }
 
     // Bóveda VIP
     if (s.paso === 'leyendo_vip') {
         const index = parseInt(txt) - 1;
-        if (db.historias_vip[index]) {
+        if (db.historias_vip && db.historias_vip[index]) {
             await ctx.reply(`✨ **${db.historias_vip[index].titulo}**\n\n${db.historias_vip[index].relato}`);
             delete sesiones[id];
             return ctx.reply("¿Querés leer algo más?", menuPrincipal());
@@ -167,15 +168,17 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
     }
 
     if (s.paso === 'pais') { s.datos.pais = txt; s.paso = 'ciudad'; return ctx.reply("📌 **Provincia o Departamento:**"); }
-    if (s.paso === 'ciudad') { s.datos.ciudad = txt; s.paso = 'descripcion'; return ctx.reply("👁️ **¿Qué viste? Describí el objeto o fenómeno:**"); }
+    if (s.paso === 'ciudad') { s.datos.ciudad = txt; s.paso = 'descripcion'; return ctx.reply("👁️ **¿Qué viste? Describí el fenómeno:**"); }
 
     if (s.paso === 'descripcion') {
         if (s.datos.esHistoria && txt.split(/\s+/).length > 500) return ctx.reply("⚠️ Muy largo. Resumilo.");
         s.datos.descripcion = txt;
         await ctx.sendChatAction('typing');
-        const promptIA = s.datos.esHistoria ? `Título corto: ${txt}` : `Analiza: ${txt}. Nave/Luz/Paranormal.`;
-        const res = await model.generateContent(promptIA);
-        s.datos.analisis_ia = res.response.text().trim();
+        try {
+            const promptIA = s.datos.esHistoria ? `Título corto: ${txt}` : `Analiza: ${txt}. Nave/Luz/Paranormal.`;
+            const res = await model.generateContent(promptIA);
+            s.datos.analisis_ia = res.response.text().trim();
+        } catch (e) { s.datos.analisis_ia = "Análisis no disponible por el momento."; }
         
         if (s.datos.esHistoria) {
             s.paso = 'confirmacion_vip';
@@ -203,6 +206,7 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
     }
 
     if (txt === '✅ ENVIAR AL RADAR') {
+        if (!db.usuarios[id]) db.usuarios[id] = { nombre: ctx.from.first_name, puntos: 0, reportes: 0 };
         db.usuarios[id].puntos += 10; guardarDB();
         await publicarYGuardar(s.datos, ctx);
         delete sesiones[id];
@@ -213,7 +217,7 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
 async function publicarYGuardar(datos, ctx) {
     const CANALES = { "Uruguay": "-1003826671445", "Argentina": "-1003750025728", "Chile": "-1003811532520", "RadarConoSur": "-1003759731798" };
     const canal = CANALES[datos.pais] || "-1003820597313";
-    const ficha = `🛸 **REPORTE AIFU**\n📍 ${datos.pais}\n👁️ ${datos.descripcion}\n🔍 ${datos.analisis_ia}`;
+    const ficha = `🛸 **REPORTE AIFU**\n👤 ${ctx.from.first_name}\n📍 ${datos.pais}\n👁️ ${datos.descripcion}\n🔍 ${datos.analisis_ia}`;
 
     let puntosMap = fs.existsSync(MAP_FILE) ? JSON.parse(fs.readFileSync(MAP_FILE)) : [];
     puntosMap.push({ lat: datos.lat || -34.8, lng: datos.lng || -56.1, desc: datos.descripcion.substring(0,30) });
@@ -223,7 +227,7 @@ async function publicarYGuardar(datos, ctx) {
         for (const f of datos.fotos) { await bot.telegram.sendPhoto(canal, f); }
         await bot.telegram.sendMessage(canal, ficha);
         await bot.telegram.sendMessage(CANALES["RadarConoSur"], ficha);
-    } catch (e) { console.log(e); }
+    } catch (e) { console.error("Error enviando a canales:", e); }
 }
 
 bot.launch();
