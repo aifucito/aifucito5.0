@@ -29,18 +29,15 @@ const obtenerRango = (puntos) => {
     return { nombre: "👨‍🚀 COMANDANTE ESPACIAL AIFULOGO", sig: 0 };
 };
 
-// --- FUNCIÓN DE IA POR CONEXIÓN DIRECTA CORREGIDA ---
+// --- FUNCIÓN DE IA: AJUSTE DE URL DEFINITIVO ---
 async function llamarIA(mensaje) {
     const API_KEY = process.env.GEMINI_API_KEY;
-    // Usamos v1 que es la versión estable para cuentas oficiales
-    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+    // URL Corregida: Usamos v1beta y la estructura exacta de modelos
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
     
     const payload = {
         contents: [{
-            parts: [
-                { text: "Eres AIFUCITO, asistente de AIFU Uruguay. Si es una historia, genera un TÍTULO corto y misterioso. Si es avistamiento, analiza Nave/Luz/Paranormal. Responde breve y con onda uruguaya." },
-                { text: mensaje }
-            ]
+            parts: [{ text: "Eres AIFUCITO, asistente de AIFU Uruguay. Responde breve y con onda." }, { text: mensaje }]
         }]
     };
 
@@ -149,7 +146,7 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
             ctx.reply(respuesta);
         } catch (e) { 
             console.error("ERROR IA:", e.message);
-            ctx.reply(`⚠️ El radar tiene interferencias: ${e.message.substring(0, 50)}`); 
+            ctx.reply(`⚠️ Interferencia: ${e.message.substring(0, 60)}`); 
         }
         return;
     }
@@ -186,7 +183,7 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
         s.datos.descripcion = txt;
         await ctx.sendChatAction('typing');
         try {
-            const prompt = s.datos.esHistoria ? `Genera título para: ${txt}` : `Analiza breve: ${txt}`;
+            const prompt = s.datos.esHistoria ? `Título corto: ${txt}` : `Analiza breve: ${txt}`;
             const respuestaIA = await llamarIA(prompt);
             s.datos.analisis_ia = respuestaIA.trim();
         } catch (e) { 
