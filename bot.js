@@ -33,11 +33,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 app.get('/reportes.json', (req, res) => {
-    if (fs.existsSync(MAP_FILE)) {
-        res.json(JSON.parse(fs.readFileSync(MAP_FILE)));
-    } else {
-        res.json([]);
-    }
+    if (fs.existsSync(MAP_FILE)) res.json(JSON.parse(fs.readFileSync(MAP_FILE)));
+    else res.json([]);
 });
 
 app.listen(PORT, '0.0.0.0', () => console.log(`🚀 AIFUCITO 5.0 ACTIVO`));
@@ -62,65 +59,53 @@ bot.start((ctx) => {
     const id = ctx.from.id;
     if (!db.usuarios[id]) db.usuarios[id] = { nombre: ctx.from.first_name, puntos: 0, reportes: 0 };
     guardarDB();
-    ctx.reply(`¡Buenas, ${ctx.from.first_name}! 🧉 Bienvenido a la central 5.0. Tu rango actual: ${obtenerRango(db.usuarios[id].puntos).nombre}. ¿Qué viste hoy?`, menuPrincipal());
+    ctx.reply(`¡Buenas, ${ctx.from.first_name}! 🧉 Bienvenido a la central 5.0. Rango: ${obtenerRango(db.usuarios[id].puntos).nombre}.`, menuPrincipal());
 });
 
-bot.hears('ℹ️ Sobre AIFU', (ctx) => ctx.reply("✨ **AIFU:** Asociación de Investigadores de Fenómenos Uruguayos. Investigamos lo que otros ignoran. Contacto: aifuoficial@gmail.com"));
-
-// --- SECCIÓN VIP MEJORADA ---
+// --- SECCIÓN VIP (3 OPCIONES) ---
 bot.hears('💳 Hazte Socio / VIP', (ctx) => {
     ctx.reply(
-        "🌟 **ZONA VIP (Funciones Exclusivas)**\n\n¿Qué desea hacer, compañero? Como usuario VIP tiene opciones de privacidad avanzadas:",
+        "🌟 **ZONA VIP (Funciones Exclusivas)**\n\n¿Qué desea hacer, compañero? Como usuario VIP tiene opciones de privacidad:",
         Markup.keyboard([
-            ['🛸 Reporte Anónimo (VIP)', '📖 Contar mi Historia'], 
+            ['🕵️ Reporte Anónimo (VIP)', '📖 Contar mi Historia'], 
             ['⬅️ Volver al Menú']
         ]).resize()
     );
 });
 
-// Opción 1: Reporte de Avistamiento pero Anónimo
-bot.hears('🛸 Reporte Anónimo (VIP)', (ctx) => {
-    sesiones[ctx.from.id] = { 
-        paso: 'ubicacion_tipo', 
-        datos: { fotos: [], anonimo: true, esHistoria: false } 
-    };
-    ctx.reply("🕵️ **MODO INCÓGNITO ACTIVADO**\nProcederemos con el reporte técnico, pero su nombre no figurará en los canales.\n\n¿GPS o escribir lugar?", 
+bot.hears('🕵️ Reporte Anónimo (VIP)', (ctx) => {
+    sesiones[ctx.from.id] = { paso: 'ubicacion_tipo', datos: { fotos: [], anonimo: true, esHistoria: false } };
+    ctx.reply("🕵️ **MODO ANÓNIMO ACTIVADO**\nEl reporte técnico se publicará sin su nombre.\n\n¿GPS o escribir lugar?", 
         Markup.keyboard([['📍 Enviar GPS', '✍️ Escribir lugar'], ['❌ Cancelar']]).resize());
 });
 
-// Opción 2: Relato o Historia Personal
 bot.hears('📖 Contar mi Historia', (ctx) => {
-    sesiones[ctx.from.id] = { 
-        paso: 'descripcion', 
-        datos: { fotos: [], anonimo: true, esHistoria: true, pais: "Uruguay", ciudad: "Relato VIP" } 
-    };
-    ctx.reply("📖 **ARCHIVO DE RELATOS AIFU**\nEste es su espacio para contar esa experiencia personal o contacto de forma anónima. ¿Qué nos quiere contar?");
+    sesiones[ctx.from.id] = { paso: 'descripcion', datos: { fotos: [], anonimo: true, esHistoria: true, pais: "Uruguay", ciudad: "Relato VIP" } };
+    ctx.reply("📖 **ARCHIVO DE RELATOS**\nEspacio para su experiencia personal o contacto de forma anónima. ¿Qué pasó?");
 });
+
+// --- PERFIL, IA Y MAPA ---
 bot.hears('👤 Mi Perfil de Investigador', (ctx) => {
     const user = db.usuarios[ctx.from.id] || { puntos: 0, reportes: 0 };
     const rango = obtenerRango(user.puntos);
-    let msg = `👤 **FICHA TÉCNICA AIFU**\n━━━━━━━━━━━━\n🧔 **Investigador:** ${ctx.from.first_name}\n🎖️ **Rango:** ${rango.nombre}\n📊 **Puntos:** ${user.puntos}\n🛸 **Reportes:** ${user.reportes}\n━━━━━━━━━━━━\n`;
-    msg += rango.sig > 0 ? `🚀 Te faltan ${rango.sig} puntos para el próximo nivel.` : `👑 ¡Rango Máximo!`;
-    ctx.reply(msg, menuPrincipal());
+    ctx.reply(`👤 **INVESTIGADOR:** ${ctx.from.first_name}\n🎖️ **Rango:** ${rango.nombre}\n📊 **Puntos:** ${user.puntos}\n🛸 **Reportes:** ${user.reportes}`, menuPrincipal());
 });
 
 bot.hears('👽 Charlar con AIFUCITO', (ctx) => {
     const id = ctx.from.id;
     sesiones[id] = { paso: 'charla_ia' };
     chatsIA[id] = model.startChat({ history: [] }); 
-    ctx.reply("Dale, compañero. ¿Qué tenés en mente? (Tocá volver al menú para salir)", Markup.keyboard([['⬅️ Volver al Menú']]).resize());
+    ctx.reply("Dale, compañero. ¿Qué tenés en mente?", Markup.keyboard([['⬅️ Volver al Menú']]).resize());
 });
 
 bot.hears('🗺️ Ver Mapa Táctico', (ctx) => {
     const urlMapa = `https://${process.env.RENDER_EXTERNAL_HOSTNAME || 'aifucito5-0.onrender.com'}`;
-    ctx.replyWithHTML(`📍 <b>RADAR OMEGA</b>\nPodés ver los puntos calientes en tiempo real.`, 
-        Markup.inlineKeyboard([[Markup.button.url('🌐 ABRIR RADAR', urlMapa)]]));
+    ctx.replyWithHTML(`📍 <b>RADAR OMEGA</b>`, Markup.inlineKeyboard([[Markup.button.url('🌐 ABRIR RADAR', urlMapa)]]));
 });
 
 bot.hears('🛸 Reportar Avistamiento', ctx => {
     sesiones[ctx.from.id] = { paso: 'ubicacion_tipo', datos: { fotos: [], anonimo: false } };
-    ctx.reply("🛸 **NUEVO REGISTRO**\n¿Querés mandarme tu ubicación GPS o preferís escribir el lugar?", 
-        Markup.keyboard([['📍 Enviar GPS', '✍️ Escribir lugar'], ['❌ Cancelar']]).resize().oneTime());
+    ctx.reply("🛸 **NUEVO REGISTRO**\n¿GPS o escribir lugar?", Markup.keyboard([['📍 Enviar GPS', '✍️ Escribir lugar'], ['❌ Cancelar']]).resize());
 });
 
 bot.on(['text', 'location', 'photo'], async (ctx, next) => {
@@ -130,12 +115,11 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
 
     const txt = ctx.message.text;
     if (txt === '❌ Cancelar' || txt === '⬅️ Volver al Menú') { 
-        delete sesiones[id]; 
-        delete chatsIA[id];
+        delete sesiones[id]; delete chatsIA[id];
         return ctx.reply("Entendido. Volvemos al inicio.", menuPrincipal()); 
     }
 
-    // --- CHARLA CON IA ---
+    // --- CHARLA IA BLINDADA ---
     if (s.paso === 'charla_ia') {
         try {
             await ctx.sendChatAction('typing');
@@ -143,44 +127,39 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
             const result = await chatsIA[id].sendMessage(txt);
             return ctx.reply(result.response.text());
         } catch (e) {
-            return ctx.reply("Se me cortó la señal, compañero. ¿Qué decías?");
+            chatsIA[id] = model.startChat({ history: [] }); // Reset en caso de falla
+            return ctx.reply("Se me cortó la señal, compañero. ¿Me repetís?");
         }
     }
 
-    // --- LÓGICA DE REPORTE ---
+    // --- LÓGICA DE REPORTES ---
     if (s.paso === 'ubicacion_tipo') {
         if (txt === '📍 Enviar GPS') {
             s.paso = 'esperando_gps';
-            return ctx.reply("Tocá el botón abajo para mandar tu posición:", Markup.keyboard([[Markup.button.locationRequest('📍 MANDAR UBICACIÓN')]]).resize());
+            return ctx.reply("Mandá el GPS abajo:", Markup.keyboard([[Markup.button.locationRequest('📍 MANDAR UBICACIÓN')]]).resize());
         } else {
             s.paso = 'pais';
-            return ctx.reply("¿En qué país fue?", Markup.keyboard([['Uruguay', 'Argentina', 'Chile'], ['Otro (Global)', '❌ Cancelar']]).resize());
+            return ctx.reply("¿País?", Markup.keyboard([['Uruguay', 'Argentina', 'Chile'], ['Otro (Global)']]).resize());
         }
     }
 
-    // SALTO DIRECTO SI HAY GPS
     if (s.paso === 'esperando_gps' && ctx.message.location) {
-        s.datos.lat = ctx.message.location.latitude;
-        s.datos.lng = ctx.message.location.longitude;
-        s.datos.pais = "Uruguay"; 
-        s.datos.ciudad = "Ubicación GPS"; 
-        s.datos.barrio = "Coordenadas directas";
-        s.paso = 'descripcion'; 
-        return ctx.reply("✅ Posición capturada por GPS. Ahora sí, contame: 👁️ **¿Qué viste?**");
+        s.datos.lat = ctx.message.location.latitude; s.datos.lng = ctx.message.location.longitude;
+        s.datos.pais = "Uruguay"; s.datos.ciudad = "Ubicación GPS"; s.paso = 'descripcion';
+        return ctx.reply("✅ GPS capturado. 👁️ **¿Qué viste?**");
     }
 
-    if (s.paso === 'pais') { s.datos.pais = txt; s.paso = 'ciudad'; return ctx.reply("📌 **Departamento o Provincia:**"); }
-    if (s.paso === 'ciudad') { s.datos.ciudad = txt; s.paso = 'barrio'; return ctx.reply("🏘️ **¿Barrio o paraje?**"); }
-    if (s.paso === 'barrio') { s.datos.barrio = txt; s.paso = 'descripcion'; return ctx.reply("👁️ **¿Qué viste?** Contame tu relato."); }
+    if (s.paso === 'pais') { s.datos.pais = txt; s.paso = 'ciudad'; return ctx.reply("📌 **Departamento/Provincia:**"); }
+    if (s.paso === 'ciudad') { s.datos.ciudad = txt; s.paso = 'barrio'; return ctx.reply("🏘️ **¿Barrio/Paraje?**"); }
+    if (s.paso === 'barrio') { s.datos.barrio = txt; s.paso = 'descripcion'; return ctx.reply("👁️ **¿Qué viste?**"); }
 
     if (s.paso === 'descripcion') {
         s.datos.descripcion = txt; s.paso = 'multimedia';
         await ctx.sendChatAction('typing');
-        // Ajustamos el análisis según si es historia o reporte
-        const promptIA = s.datos.esHistoria ? `Resume este relato personal de forma breve: "${txt}"` : `Analiza: "${txt}". Clasifica: Nave, Luz o Paranormal. Sé breve y humano.`;
+        const promptIA = s.datos.esHistoria ? `Resume este relato: "${txt}"` : `Analiza: "${txt}". Nave, Luz o Paranormal.`;
         const res = await model.generateContent(promptIA);
         s.datos.analisis_ia = res.response.text();
-        return ctx.reply(`${s.datos.analisis_ia}\n\n📸 Mandame evidencia (fotos). Cuando termines, dale a '🚀 REVISAR'.`, Markup.keyboard([['🚀 REVISAR'], ['❌ Cancelar']]).resize());
+        return ctx.reply(`${s.datos.analisis_ia}\n\n📸 Mandame fotos y luego dale a '🚀 REVISAR'.`, Markup.keyboard([['🚀 REVISAR'], ['❌ Cancelar']]).resize());
     }
 
     if (ctx.message.photo && s.paso === 'multimedia') {
@@ -190,38 +169,29 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
 
     if (txt === '🚀 REVISAR') {
         s.paso = 'confirmacion';
-        const titulo = s.datos.esHistoria ? "📖 REVISIÓN DE RELATO VIP" : "📋 FICHA OMEGA";
-        const resumen = `${titulo}\n📍 ${s.datos.pais}, ${s.datos.ciudad}\n👁️ ${s.datos.descripcion}\n🧠 ${s.datos.analisis_ia}${s.datos.anonimo ? '\n🕵️ MODO ANÓNIMO ACTIVO' : ''}`;
+        const titulo = s.datos.esHistoria ? "📖 RELATO VIP" : "📋 FICHA OMEGA";
+        const resumen = `${titulo}\n📍 ${s.datos.pais}, ${s.datos.ciudad}\n👁️ ${s.datos.descripcion}\n🧠 ${s.datos.analisis_ia}${s.datos.anonimo ? '\n🕵️ (ANÓNIMO)' : ''}`;
         return ctx.reply(resumen, Markup.keyboard([['✅ CONFIRMAR Y ENVIAR', '❌ DESCARTAR']]).resize());
     }
 
     if (txt === '✅ CONFIRMAR Y ENVIAR') {
         if (!db.usuarios[id]) db.usuarios[id] = { nombre: ctx.from.first_name, puntos: 0, reportes: 0 };
-        db.usuarios[id].puntos += 10;
-        db.usuarios[id].reportes += 1;
-        guardarDB();
-
+        db.usuarios[id].puntos += 10; db.usuarios[id].reportes += 1; guardarDB();
         await publicarYGuardar(s.datos, ctx);
         delete sesiones[id];
-        ctx.reply(`✅ **ENVIADO.** Sumaste 10 puntos. Rango: ${obtenerRango(db.usuarios[id].puntos).nombre}`, menuPrincipal());
+        ctx.reply(`✅ **ENVIADO.** Sumaste 10 puntos.`, menuPrincipal());
     }
 });
 
 async function publicarYGuardar(datos, ctx) {
-    const CANALES = { 
-        "Uruguay": "-1003826671445", 
-        "Argentina": "-1003750025728", 
-        "Chile": "-1003811532520", 
-        "Otro (Global)": "-1003820597313", 
-        "RadarConoSur": "-1003759731798" 
-    };
+    const CANALES = { "Uruguay": "-1003826671445", "Argentina": "-1003750025728", "Chile": "-1003811532520", "Otro (Global)": "-1003820597313", "RadarConoSur": "-1003759731798" };
     const canal = CANALES[datos.pais] || CANALES["Otro (Global)"];
     
-    // Si es historia VIP, el nombre es anónimo. Si es reporte normal, lleva el nombre del investigador.
-    const nombreParaMostrar = datos.anonimo ? "Testigo Anónimo 🕵️" : ctx.from.first_name;
-    const encabezado = datos.esHistoria ? "📖 **NUEVA HISTORIA VIP**" : "🛸 **REPORTE AIFU**";
+    // LÓGICA DE NOMBRE: Anónimo para VIP/Historias, nombre real para reportes normales.
+    const nombrePublico = datos.anonimo ? (datos.esHistoria ? "Testigo Anónimo 🕵️" : "Investigador Anónimo 🕵️") : ctx.from.first_name;
+    const cabecera = datos.esHistoria ? "📖 **HISTORIA VIP**" : "🛸 **REPORTE AIFU**";
     
-    const ficha = `${encabezado}\n👤 ${nombreParaMostrar}\n📍 ${datos.pais} - ${datos.ciudad}\n👁️ ${datos.descripcion}\n🔍 ${datos.analisis_ia}`;
+    const ficha = `${cabecera}\n👤 ${nombrePublico}\n📍 ${datos.pais} - ${datos.ciudad}\n👁️ ${datos.descripcion}\n🔍 ${datos.analisis_ia}`;
 
     let puntosMap = [];
     if (fs.existsSync(MAP_FILE)) puntosMap = JSON.parse(fs.readFileSync(MAP_FILE));
@@ -235,7 +205,7 @@ async function publicarYGuardar(datos, ctx) {
         }
         await bot.telegram.sendMessage(canal, ficha);
         await bot.telegram.sendMessage(CANALES["RadarConoSur"], ficha);
-    } catch (e) { console.log("Error de envío:", e); }
+    } catch (e) { console.log(e); }
 }
 
 bot.launch();
