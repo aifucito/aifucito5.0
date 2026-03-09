@@ -39,13 +39,14 @@ app.get('/reportes.json', (req, res) => {
 
 app.listen(PORT, '0.0.0.0', () => console.log(`🚀 AIFUCITO 5.0 - RADAR ACTIVO`));
 
-const bot = new Telegraf(process.env.TELEGRAM_TOKEN);
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// --- INICIALIZACIÓN DE IA CON CONTROL DE ERRORES ---
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "FALTA_KEY");
 const model = genAI.getGenerativeModel({ 
     model: "gemini-1.5-flash",
     systemInstruction: "Eres AIFUCITO, asistente de AIFU Uruguay. Si es una historia, genera un TÍTULO corto y misterioso. Si es avistamiento, analiza Nave/Luz/Paranormal."
 });
 
+const bot = new Telegraf(process.env.TELEGRAM_TOKEN);
 let sesiones = {};
 
 const menuPrincipal = () => Markup.keyboard([
@@ -64,7 +65,6 @@ bot.start((ctx) => {
     ctx.reply(`¡Hola ${ctx.from.first_name}! 👋 Soy AIFUCITO.\n\nTu rango: ${r.nombre}.`, menuPrincipal());
 });
 
-// --- RED DE CANALES CON ENLACES ACTUALIZADOS ---
 bot.hears('🔗 Red de Canales', (ctx) => {
     const redMsg = "🌍 **RED DE MONITOREO AIFU**\n\n" +
                   "🇺🇾 [AIFU UY 🇺🇾](https://t.me/+nCVD4NsOihIyNGFh)\n" +
@@ -111,7 +111,6 @@ bot.hears('⬅️ Volver al Menú', (ctx) => {
     ctx.reply("Volviendo...", menuPrincipal());
 });
 
-// --- LÓGICA DE EVENTOS ---
 bot.on(['text', 'location', 'photo'], async (ctx, next) => {
     const id = ctx.from.id;
     const s = sesiones[id];
@@ -120,12 +119,17 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
     if (txt === '❌ Cancelar') { delete sesiones[id]; return ctx.reply("Cancelado.", menuPrincipal()); }
     if (!s) return next();
 
+    // --- MODIFICACIÓN CLAVE PARA DIAGNÓSTICO DE IA ---
     if (s.paso === 'charlar_ia') {
         await ctx.sendChatAction('typing');
         try {
+            if (!process.env.GEMINI_API_KEY) throw new Error("La variable GEMINI_API_KEY no existe en Render.");
             const res = await model.generateContent(txt);
             ctx.reply(res.response.text());
-        } catch (e) { ctx.reply("Error con la IA. Verificá la KEY en Render."); }
+        } catch (e) { 
+            console.error("ERROR IA:", e.message);
+            ctx.reply(`⚠️ Error IA: ${e.message.includes('API_KEY_INVALID') ? 'La clave es incorrecta.' : e.message.substring(0, 100)}`); 
+        }
         return;
     }
 
@@ -164,7 +168,10 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
             const prompt = s.datos.esHistoria ? `Título corto: ${txt}` : `Analiza: ${txt}`;
             const res = await model.generateContent(prompt);
             s.datos.analisis_ia = res.response.text().trim();
-        } catch (e) { s.datos.analisis_ia = "Analizando..."; }
+        } catch (e) { 
+            console.error("ERROR ANALISIS:", e.message);
+            s.datos.analisis_ia = "Analizando... (IA ocupada o clave inválida)"; 
+        }
         
         if (s.datos.esHistoria) {
             s.paso = 'confirmacion_vip';
@@ -216,4 +223,7 @@ async function publicarYGuardar(datos, ctx) {
     } catch (e) { console.error(e); }
 }
 
-bot.launch();
+// Limpieza de Webhook para evitar el error 409
+bot.telegram.deleteWebhook().then(() => {
+    bot.launch();
+});
