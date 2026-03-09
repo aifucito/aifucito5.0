@@ -39,12 +39,13 @@ app.get('/reportes.json', (req, res) => {
 
 app.listen(PORT, '0.0.0.0', () => console.log(`🚀 AIFUCITO 5.0 - RADAR ACTIVO`));
 
-// --- INICIALIZACIÓN DE IA REFORZADA ---
+// --- CONFIGURACIÓN DE IA (VERSIÓN ESTABLE V1) ---
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ 
-    model: "gemini-1.5-flash", // Probá cambiar a "gemini-1.5-flash" si tenías otro
+    model: "gemini-1.5-flash",
     systemInstruction: "Eres AIFUCITO, asistente de AIFU Uruguay. Si es una historia, genera un TÍTULO corto y misterioso. Si es avistamiento, analiza Nave/Luz/Paranormal."
-}, { apiVersion: 'v1' }); // <--- AGREGAMOS ESTO PARA SALIR DE LA BETA
+}, { apiVersion: 'v1' });
+
 const bot = new Telegraf(process.env.TELEGRAM_TOKEN);
 let sesiones = {};
 
@@ -118,16 +119,15 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
     if (txt === '❌ Cancelar') { delete sesiones[id]; return ctx.reply("Cancelado.", menuPrincipal()); }
     if (!s) return next();
 
-    // --- MODIFICACIÓN CLAVE PARA DIAGNÓSTICO DE IA ---
     if (s.paso === 'charlar_ia') {
         await ctx.sendChatAction('typing');
         try {
-            if (!process.env.GEMINI_API_KEY) throw new Error("La variable GEMINI_API_KEY no existe en Render.");
+            if (!process.env.GEMINI_API_KEY) throw new Error("Falta KEY en Render.");
             const res = await model.generateContent(txt);
             ctx.reply(res.response.text());
         } catch (e) { 
             console.error("ERROR IA:", e.message);
-            ctx.reply(`⚠️ Error IA: ${e.message.includes('API_KEY_INVALID') ? 'La clave es incorrecta.' : e.message.substring(0, 100)}`); 
+            ctx.reply(`⚠️ Error IA: ${e.message.includes('API_KEY_INVALID') ? 'Clave incorrecta.' : e.message.substring(0, 100)}`); 
         }
         return;
     }
@@ -169,7 +169,7 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
             s.datos.analisis_ia = res.response.text().trim();
         } catch (e) { 
             console.error("ERROR ANALISIS:", e.message);
-            s.datos.analisis_ia = "Analizando... (IA ocupada o clave inválida)"; 
+            s.datos.analisis_ia = "Analizando... (IA ocupada)"; 
         }
         
         if (s.datos.esHistoria) {
@@ -222,7 +222,6 @@ async function publicarYGuardar(datos, ctx) {
     } catch (e) { console.error(e); }
 }
 
-// Limpieza de Webhook para evitar el error 409
 bot.telegram.deleteWebhook().then(() => {
     bot.launch();
 });
