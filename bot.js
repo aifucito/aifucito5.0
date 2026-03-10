@@ -136,5 +136,16 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
             await bot.telegram.sendMessage(destino.id, ficha);
             await bot.telegram.sendMessage(CANALES.Central.id, ficha);
 
-            // Guardar para el mapa
-            let puntos =
+            let puntos = fs.existsSync(MAP_FILE) ? JSON.parse(fs.readFileSync(MAP_FILE)) : [];
+            puntos.push({ lat: s.datos.lat || -34.6, lng: s.datos.lng || -58.4, lugar: s.datos.direccion, descripcion: s.datos.descripcion });
+            fs.writeFileSync(MAP_FILE, JSON.stringify(puntos));
+
+            db.usuarios[ctx.from.id].puntos += 20;
+            guardarDB();
+            ctx.reply(`✅ ENVIADO AL CANAL ${s.datos.pais.toUpperCase()}.\nTu rango: ${obtenerRango(db.usuarios[ctx.from.id].puntos)}`, menuPrincipal());
+        } catch (e) { ctx.reply("Error al enviar."); }
+        delete sesiones[ctx.from.id];
+    }
+});
+
+bot.launch();
