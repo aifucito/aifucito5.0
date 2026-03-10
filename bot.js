@@ -12,23 +12,28 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 /* =========================
-   CONFIGURACIÓN DE DISCO (Render Starter)
+   CONFIGURACIÓN DE DISCO (Render Starter / Emergencia)
 ========================= */
-// IMPORTANTE: No usamos mkdirSync en '/', Render ya monta la carpeta /data
 const DATA_DIR = '/data';
-const DB_FILE = path.join(DATA_DIR, 'base_datos_aifu.json');
-const MAP_FILE = path.join(DATA_DIR, 'reportes.json');
+let DB_FILE, MAP_FILE;
 
-// Inicialización segura de archivos
-try {
-    if (!fs.existsSync(DB_FILE)) {
-        fs.writeFileSync(DB_FILE, JSON.stringify({ usuarios: {}, historias_vip: [] }));
-    }
-    if (!fs.existsSync(MAP_FILE)) {
-        fs.writeFileSync(MAP_FILE, JSON.stringify([]));
-    }
-} catch (err) {
-    console.error("⚠️ Error inicializando archivos en /data. Revisa el Disk en Render.");
+// Verificamos si Render montó el disco correctamente
+if (fs.existsSync(DATA_DIR)) {
+    console.log("✅ DISCO DETECTADO: Almacenamiento persistente activado en /data");
+    DB_FILE = path.join(DATA_DIR, 'base_datos_aifu.json');
+    MAP_FILE = path.join(DATA_DIR, 'reportes.json');
+} else {
+    console.log("⚠️ ADVERTENCIA: Disco /data no encontrado. Usando almacenamiento temporal del servidor.");
+    DB_FILE = path.join(__dirname, 'base_datos_aifu.json');
+    MAP_FILE = path.join(__dirname, 'reportes.json');
+}
+
+// Inicializar archivos si no existen (Garantiza que el bot no crashee al leer)
+if (!fs.existsSync(DB_FILE)) {
+    fs.writeFileSync(DB_FILE, JSON.stringify({ usuarios: {}, historias_vip: [] }));
+}
+if (!fs.existsSync(MAP_FILE)) {
+    fs.writeFileSync(MAP_FILE, JSON.stringify([]));
 }
 
 let db = JSON.parse(fs.readFileSync(DB_FILE));
@@ -41,7 +46,7 @@ const guardarReporteMapa = (reporte) => {
 };
 
 /* =========================
-   IA CON MEMORIA
+   IA CON MEMORIA (AIFUCITO)
 ========================= */
 let memoriaIA = {};
 
@@ -83,10 +88,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('/reportes.json', (req, res) => res.sendFile(MAP_FILE));
 
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 RADAR AIFU ACTIVO EN PUERTO ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 RADAR AIFU EN PUERTO ${PORT}`));
 
 /* =========================
-   BOT TELEGRAM
+   BOT TELEGRAM (Lógica de Reportes y Puntos)
 ========================= */
 const bot = new Telegraf(process.env.TELEGRAM_TOKEN);
 let sesiones = {};
@@ -120,9 +125,6 @@ bot.hears('🛸 Reportar Avistamiento', (ctx) => {
     ctx.reply("🛸 Nuevo reporte. ¿Lugar?", Markup.keyboard([['📍 Enviar GPS', '✍️ Escribir lugar'], ['❌ Cancelar']]).resize());
 });
 
-/* =========================
-   FLUJO DE MENSAJES
-========================= */
 bot.on(['text', 'location', 'photo'], async (ctx, next) => {
     const id = ctx.from.id;
     const s = sesiones[id];
@@ -131,6 +133,7 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
     if (txt === '❌ Cancelar') { delete sesiones[id]; return ctx.reply("Cancelado.", menuPrincipal()); }
     if (!s) return next();
 
+    // LÓGICA IA
     if (s.paso === 'charlar_ia') {
         try {
             await ctx.sendChatAction('typing');
@@ -139,6 +142,7 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
         return;
     }
 
+    // FLUJO DE REPORTE PASO A PASO
     if (s.paso === 'ubicacion_tipo') {
         if (txt === '📍 Enviar GPS') {
             s.paso = 'esperando_gps';
@@ -165,7 +169,7 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
     if (s.paso === 'descripcion') {
         s.datos.descripcion = txt;
         s.paso = 'multimedia';
-        return ctx.reply("📸 Fotos y tocá REVISAR.", Markup.keyboard([['🚀 REVISAR'], ['❌ Cancelar']]).resize());
+        return ctx.reply("📸 Mandá fotos si tenés, luego tocá 🚀 REVISAR.", Markup.keyboard([['🚀 REVISAR'], ['❌ Cancelar']]).resize());
     }
 
     if (ctx.message.photo && s.paso === 'multimedia') {
@@ -193,11 +197,16 @@ async function publicarYGuardar(datos, ctx) {
         for (const f of datos.fotos) await bot.telegram.sendPhoto(canal, f);
         await bot.telegram.sendMessage(canal, ficha);
         await bot.telegram.sendMessage("-1003759731798", ficha);
+
         guardarReporteMapa({ ...datos, fecha: new Date() });
         if (db.usuarios[ctx.from.id]) db.usuarios[ctx.from.id].puntos += 10;
         guardarDB();
-        ctx.reply("✅ Enviado.", menuPrincipal());
-    } catch { ctx.reply("⚠️ Error."); }
+
+        ctx.reply("✅ Reporte enviado al radar.", menuPrincipal());
+    } catch { ctx.reply("⚠️ Error al publicar."); }
 }
 
 bot.launch().then(() => console.log("📡 AIFU URUGUAY ACTIVO"));
+
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
