@@ -1,220 +1,185 @@
-import { Telegraf, Markup } from 'telegraf';
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import express from 'express';
-import fs from 'fs';
-import path from 'path';
+import { Telegraf, Markup, session } from "telegraf";
+import express from "express";
+import fs from "fs";
+import path from "path";
 import { fileURLToPath } from 'url';
-import 'dotenv/config';
+import crypto from "crypto";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const app = express();
-const PORT = process.env.PORT || 3000;
 
-const DB_FILE = './base_datos_aifu.json';
-const MAP_FILE = './reportes.json';
+// ==========================================
+// CONFIGURACIÓN DE VARIABLES
+// ==========================================
+const TOKEN = process.env.BOT_TOKEN;
+const PORT = process.env.PORT || 10000;
+const PUBLIC_URL = process.env.PUBLIC_URL || "https://aifucito5-0.onrender.com";
+const GEMINI_KEY = process.env.GEMINI_API_KEY; // Para la IA
 
-// Inicialización de DB con soporte para Historias VIP
-let db = { usuarios: {}, historias_vip: [] };
-if (fs.existsSync(DB_FILE)) {
-    const data = JSON.parse(fs.readFileSync(DB_FILE));
-    db = { ...db, ...data };
+// BASE DE DATOS LOCAL
+const DB_PATH = "./aifucito_db.json";
+let DB = { agentes: {}, reportes: [], historias: [] };
+
+if (fs.existsSync(DB_PATH)) {
+    try {
+        DB = JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
+    } catch (e) { console.log("⚠️ Error en DB, reiniciando..."); }
 }
-const guardarDB = () => fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
 
-const obtenerRango = (puntos) => {
-    if (puntos < 30) return { nombre: "🧻 Fajinador de Retretes Espaciales", sig: 30 - puntos };
-    if (puntos < 100) return { nombre: "🧉 Cebador de Mate Intergaláctico", sig: 100 - puntos };
-    if (puntos < 250) return { nombre: "👽 Traductor de Dialectos Marcianos", sig: 250 - puntos };
-    if (puntos < 500) return { nombre: "🔭 Cazador de Luces de Boliche", sig: 500 - puntos };
-    if (puntos < 1000) return { nombre: "🛸 Piloto de Plato Volador a Pedal", sig: 1000 - puntos };
-    return { nombre: "👨‍🚀 COMANDANTE ESPACIAL AIFULOGO", sig: 0 };
-};
+const guardarTodo = () => fs.writeFileSync(DB_PATH, JSON.stringify(DB, null, 4));
 
-app.use(express.static(path.join(__dirname, 'public')));
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-app.get('/reportes.json', (req, res) => {
-    if (fs.existsSync(MAP_FILE)) res.json(JSON.parse(fs.readFileSync(MAP_FILE)));
-    else res.json([]);
-});
+// ==========================================
+// FUNCIÓN IA (GEMINI) - CONEXIÓN EXTERNA
+// ==========================================
+async function hablarIA(pregunta) {
+    if (!GEMINI_KEY) return "El canal de IA está offline (Falta API KEY).";
+    try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`;
+        const response = await fetch(url, {
+            method: "POST",
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: `Eres AIFUCITO, asistente de la Asociación AIFU Uruguay. Responde con tono uruguayo, experto en OVNIS y misterios. Pregunta: ${pregunta}` }] }]
+            })
+        });
+        const data = await response.json();
+        return data.candidates[0].content.parts[0].text;
+    } catch (e) { return "Interferencia en la señal de la IA..."; }
+}
 
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 AIFUCITO 5.0 - RADAR ACTIVO`));
-
-const bot = new Telegraf(process.env.TELEGRAM_TOKEN);
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ 
-    model: "gemini-1.5-flash",
-    systemInstruction: "Eres AIFUCITO, asistente de AIFU Uruguay. Si es una historia, genera un TÍTULO corto y misterioso. Si es avistamiento, analiza Nave/Luz/Paranormal."
-});
-
-let sesiones = {};
-let chatsIA = {}; 
+// ==========================================
+// LÓGICA DEL BOT DE TELEGRAM
+// ==========================================
+const bot = new Telegraf(TOKEN);
+bot.use(session());
 
 const menuPrincipal = () => Markup.keyboard([
-    ['🛸 Reportar Avistamiento', '🗺️ Ver Mapa Táctico'],
-    ['🎖️ Mi Rango de Investigador', '👽 Charlar con AIFUCITO'],
-    ['💳 Hazte Socio / VIP', '🔗 Red de Canales'],
-    ['ℹ️ Sobre AIFU']
+    ["🛸 REPORTAR AVISTAMIENTO", "🌍 VER RADAR"],
+    ["🤖 CHARLAR CON AIFUCITO", "⭐ MI PERFIL"]
 ]).resize();
 
 bot.start((ctx) => {
     const id = ctx.from.id;
-    if (!db.usuarios[id]) db.usuarios[id] = { nombre: ctx.from.first_name, puntos: 0, reportes: 0 };
-    guardarDB();
-    const r = obtenerRango(db.usuarios[id].puntos);
-    ctx.reply(`¡Hola! 👋 Soy AIFUCITO.\n\nTu rango: ${r.nombre}.`, menuPrincipal());
+    if (!DB.agentes[id]) {
+        DB.agentes[id] = { nombre: ctx.from.first_name, reportes: 0, xp: 100 };
+        guardarTodo();
+    }
+    ctx.reply(`🛰️ NODO AIFU URUGUAY ACTIVO\nBienvenido Agente ${ctx.from.first_name}.`, menuPrincipal());
 });
 
-bot.hears('🔗 Red de Canales', (ctx) => {
-    const redMsg = "🌍 **RED DE MONITOREO AIFU:**\n\n" +
-                  "🇺🇾 [AIFU Uruguay](https://t.me/AIFU_Uruguay)\n" +
-                  "🇦🇷 [AIFU Argentina](https://t.me/AIFU_Argentina)\n" +
-                  "🇨🇱 [AIFU Chile](https://t.me/AIFU_Chile)\n" +
-                  "🌐 [AIFU Global](https://t.me/AIFU_Global)\n" +
-                  "🛰️ **[RADAR CENTRAL](https://t.me/RadarConoSur)**";
-    ctx.reply(redMsg, { parse_mode: 'Markdown', disable_web_page_preview: true });
+// --- REPORTE CON GPS ---
+bot.hears("🛸 REPORTAR AVISTAMIENTO", (ctx) => {
+    ctx.session.reporte = { paso: "tipo" };
+    ctx.reply("🛸 MODO REPORTE\n¿Qué tipo de objeto observaste? (Ej: Esfera, Triángulo, Luces)");
 });
 
-bot.hears('💳 Hazte Socio / VIP', (ctx) => {
-    ctx.reply("🌟 **ZONA VIP**", Markup.keyboard([
-        ['📖 Contar mi Historia', '📚 Bóveda de Historias'],
-        ['🕵️ Reporte Anónimo (VIP)', '⬅️ Volver al Menú']
-    ]).resize());
+bot.on("text", async (ctx, next) => {
+    if (ctx.message.text === "❌ Cancelar") {
+        ctx.session.reporte = null;
+        ctx.session.ia = false;
+        return ctx.reply("Operación cancelada.", menuPrincipal());
+    }
+
+    // Lógica de Reporte
+    if (ctx.session.reporte && ctx.session.reporte.paso === "tipo") {
+        ctx.session.reporte.tipo = ctx.message.text;
+        ctx.session.reporte.paso = "gps";
+        return ctx.reply("📍 ENVIAR UBICACIÓN\nToca el clip 📎 y selecciona 'Ubicación' para marcar el punto exacto en el radar.", 
+            Markup.keyboard([["❌ Cancelar"]]).resize());
+    }
+
+    // Lógica de Chat IA
+    if (ctx.session.ia) {
+        await ctx.sendChatAction("typing");
+        const rpa = await hablarIA(ctx.message.text);
+        return ctx.reply(rpa);
+    }
+    return next();
 });
 
-bot.hears('📚 Bóveda de Historias', (ctx) => {
-    if (db.historias_vip.length === 0) return ctx.reply("La bóveda está cerrada. No hay historias aún.");
-    let lista = "📂 **ARCHIVOS VIP CLASIFICADOS**\n\n";
-    db.historias_vip.forEach((h, i) => lista += `${i + 1}. 🛸 ${h.titulo}\n`);
-    lista += "\nEscribí el número para leer el relato completo:";
-    sesiones[ctx.from.id] = { paso: 'leyendo_vip' };
-    ctx.reply(lista);
-});
+bot.on("location", async (ctx) => {
+    if (ctx.session.reporte && ctx.session.reporte.paso === "gps") {
+        const { latitude, longitude } = ctx.message.location;
+        const rID = crypto.randomBytes(2).toString("hex").toUpperCase();
 
-bot.hears('🕵️ Reporte Anónimo (VIP)', (ctx) => {
-    sesiones[ctx.from.id] = { paso: 'ubicacion_tipo', datos: { fotos: [], anonimo: true, esHistoria: false } };
-    ctx.reply("🕵️ **MODO ANÓNIMO**\n¿GPS o escribís lugar?", Markup.keyboard([['📍 Enviar GPS', '✍️ Escribir lugar'], ['❌ Cancelar']]).resize());
-});
+        DB.reportes.push({
+            id: rID,
+            agente: ctx.from.first_name,
+            tipo: ctx.session.reporte.tipo,
+            lat: latitude,
+            lng: longitude,
+            fecha: new Date().toLocaleString('es-UY')
+        });
 
-bot.hears('📖 Contar mi Historia', (ctx) => {
-    sesiones[ctx.from.id] = { paso: 'descripcion', datos: { fotos: [], anonimo: true, esHistoria: true } };
-    ctx.reply("📖 **TU HISTORIA VIP**\nContame tu experiencia (Máx 500 palabras):");
-});
+        DB.agentes[ctx.from.id].reportes++;
+        DB.agentes[ctx.from.id].xp += 50;
+        guardarTodo();
 
-bot.on(['text', 'location', 'photo'], async (ctx, next) => {
-    const id = ctx.from.id;
-    const s = sesiones[id];
-    if (!s) return next();
-    const txt = ctx.message.text;
-
-    if (txt === '❌ Cancelar' || txt === '⬅️ Volver al Menú') { 
-        delete sesiones[id]; delete chatsIA[id];
-        return ctx.reply("Volvemos al inicio.", menuPrincipal()); 
-    }
-
-    if (s.paso === 'leyendo_vip') {
-        const index = parseInt(txt) - 1;
-        if (db.historias_vip[index]) {
-            const h = db.historias_vip[index];
-            await ctx.reply(`✨ **${h.titulo}**\n\n${h.relato}`);
-            delete sesiones[id];
-            return ctx.reply("¿Querés leer otra?", menuPrincipal());
-        }
-    }
-
-    if (s.paso === 'ubicacion_tipo') {
-        if (txt === '📍 Enviar GPS') {
-            s.paso = 'esperando_gps';
-            return ctx.reply("Mandame el GPS:", Markup.keyboard([[Markup.button.locationRequest('📍 MANDAR UBICACIÓN')]]).resize());
-        } else {
-            s.paso = 'pais';
-            return ctx.reply("¿País?", Markup.keyboard([['Uruguay', 'Argentina', 'Chile'], ['Otro (Global)']]).resize());
-        }
-    }
-
-    if (s.paso === 'esperando_gps' && ctx.message.location) {
-        const { latitude: lat, longitude: lng } = ctx.message.location;
-        s.datos.lat = lat; s.datos.lng = lng;
-        if (lat < -30 && lat > -35 && lng < -59 && lng > -53) s.datos.pais = "Uruguay";
-        else if (lat < -21 && lat > -55 && lng < -73 && lng > -53) s.datos.pais = "Argentina";
-        else if (lat < -17 && lat > -56 && lng < -76 && lng > -66) s.datos.pais = "Chile";
-        else s.datos.pais = "Otro (Global)";
-        s.datos.ciudad = "Ubicación GPS"; s.paso = 'descripcion';
-        return ctx.reply(`✅ Localizado en: ${s.datos.pais}.\n👁️ **¿Qué viste?**`);
-    }
-
-    if (s.paso === 'pais') { s.datos.pais = txt; s.paso = 'ciudad'; return ctx.reply("📌 **Departamento/Provincia:**"); }
-    if (s.paso === 'ciudad') { s.datos.ciudad = txt; s.paso = 'barrio'; return ctx.reply("🏘️ **Barrio:**"); }
-    if (s.paso === 'barrio') { s.datos.barrio = txt; s.paso = 'descripcion'; return ctx.reply("👁️ **¿Qué viste?**"); }
-
-    if (s.paso === 'descripcion') {
-        if (s.datos.esHistoria && txt.split(/\s+/).length > 500) {
-            return ctx.reply("⚠️ La historia es muy larga (máx 500 palabras). Resumila un poco.");
-        }
-        s.datos.descripcion = txt;
-        await ctx.sendChatAction('typing');
-        const promptIA = s.datos.esHistoria ? `Genera un título corto y atrapante para esta historia: "${txt}"` : `Analiza brevemente: "${txt}". Clasifica como Nave, Luz o Paranormal.`;
-        const res = await model.generateContent(promptIA);
-        s.datos.analisis_ia = res.response.text().trim();
-        
-        if (s.datos.esHistoria) {
-            s.paso = 'confirmacion_vip';
-            return ctx.reply(`📝 **Título sugerido:** ${s.datos.analisis_ia}\n\n¿Guardamos esta historia en la Bóveda VIP?`, Markup.keyboard([['✅ GUARDAR EN BÓVEDA', '❌ DESCARTAR']]).resize());
-        } else {
-            s.paso = 'multimedia';
-            return ctx.reply(`${s.datos.analisis_ia}\n\n📸 Mandá fotos y tocá '🚀 REVISAR'.`, Markup.keyboard([['🚀 REVISAR'], ['❌ Cancelar']]).resize());
-        }
-    }
-
-    if (ctx.message.photo && s.paso === 'multimedia') {
-        s.datos.fotos.push(ctx.message.photo[ctx.message.photo.length - 1].file_id);
-        return ctx.reply("✅ Foto recibida.");
-    }
-
-    if (txt === '🚀 REVISAR') {
-        s.paso = 'confirmacion';
-        const resumen = `📋 **FICHA REPORTE**\n📍 ${s.datos.pais}\n👁️ ${s.datos.descripcion}\n🧠 ${s.datos.analisis_ia}`;
-        return ctx.reply(resumen, Markup.keyboard([['✅ CONFIRMAR Y ENVIAR', '❌ DESCARTAR']]).resize());
-    }
-
-    if (txt === '✅ GUARDAR EN BÓVEDA' && s.paso === 'confirmacion_vip') {
-        db.historias_vip.push({ titulo: s.datos.analisis_ia, relato: s.datos.descripcion, id_user: id });
-        guardarDB();
-        delete sesiones[id];
-        return ctx.reply("🚀 **RELATO GUARDADO.** Ya está disponible en la Bóveda para los socios.", menuPrincipal());
-    }
-
-    if (txt === '✅ CONFIRMAR Y ENVIAR') {
-        ctx.reply("🚀 Subiendo reporte...");
-        if (!db.usuarios[id]) db.usuarios[id] = { nombre: ctx.from.first_name, puntos: 0, reportes: 0 };
-        db.usuarios[id].puntos += 10; db.usuarios[id].reportes += 1; guardarDB();
-        await publicarYGuardar(s.datos, ctx);
-        delete sesiones[id];
-        ctx.reply(`✅ **¡ENVIADO AL RADAR!**`, menuPrincipal());
+        ctx.session.reporte = null;
+        ctx.reply(`✅ REPORTE ARCHIVADO [ID: ${rID}]\nSe ha actualizado el radar global.`, menuPrincipal());
     }
 });
 
-async function publicarYGuardar(datos, ctx) {
-    if (datos.esHistoria) return; // Las historias NO van a los canales
-    const CANALES = { "Uruguay": "-1003826671445", "Argentina": "-1003750025728", "Chile": "-1003811532520", "Otro (Global)": "-1003820597313", "RadarConoSur": "-1003759731798" };
-    const canal = CANALES[datos.pais] || CANALES["Otro (Global)"];
-    const autor = datos.anonimo ? "Testigo Anónimo 🕵️" : ctx.from.first_name;
-    const ficha = `🛸 **REPORTE AIFU**\n👤 ${autor}\n📍 ${datos.pais} - ${datos.ciudad}\n👁️ ${datos.descripcion}\n🔍 ${datos.analisis_ia}`;
+bot.hears("🤖 CHARLAR CON AIFUCITO", (ctx) => {
+    ctx.session.ia = true;
+    ctx.reply("👽 Canal abierto. Pregúntame lo que quieras sobre el fenómeno UAP o la asociación. (Escribe '❌ Cancelar' para salir)");
+});
 
-    let puntosMap = [];
-    if (fs.existsSync(MAP_FILE)) puntosMap = JSON.parse(fs.readFileSync(MAP_FILE));
-    puntosMap.push({ lat: datos.lat || -34.8, lng: datos.lng || -56.1, desc: `${datos.ciudad}: ${datos.descripcion.substring(0,30)}` });
-    fs.writeFileSync(MAP_FILE, JSON.stringify(puntosMap));
+bot.hears("🌍 VER RADAR", (ctx) => {
+    ctx.reply(`🛰️ ACCESO AL RADAR TÁCTICO:\n${PUBLIC_URL}/radar`);
+});
 
-    try {
-        for (const f of datos.fotos) { 
-            await bot.telegram.sendPhoto(canal, f);
-            await bot.telegram.sendPhoto(CANALES["RadarConoSur"], f);
-            await new Promise(r => setTimeout(r, 1000)); 
-        }
-        await bot.telegram.sendMessage(canal, ficha);
-        await bot.telegram.sendMessage(CANALES["RadarConoSur"], ficha);
-    } catch (e) { console.log("Error:", e); }
-}
+bot.hears("⭐ MI PERFIL", (ctx) => {
+    const u = DB.agentes[ctx.from.id];
+    ctx.reply(`🪪 AGENTE: ${u.nombre}\nRANKING: Investigador Nivel ${(u.xp/100).toFixed(0)}\nREPORTES: ${u.reportes}`);
+});
 
-bot.launch();
+// ==========================================
+// SERVIDOR WEB Y RADAR VISUAL
+// ==========================================
+const app = express();
+
+app.get("/radar", (req, res) => {
+    res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>AIFU RADAR</title>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+        <style>
+            body { margin: 0; background: #000; color: #0f0; font-family: monospace; }
+            #map { height: 100vh; width: 100vw; }
+            .ui { position: absolute; top: 10px; left: 50px; z-index: 1000; background: rgba(0,20,0,0.8); border: 1px solid #0f0; padding: 10px; }
+        </style>
+    </head>
+    <body>
+        <div class="ui">🛰️ AIFU RADAR: MONITOREO EN VIVO</div>
+        <div id="map"></div>
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <script>
+            var map = L.map('map').setView([-32.522779, -55.765835], 7);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
+
+            fetch('/api/reportes').then(r => r.json()).then(data => {
+                data.forEach(r => {
+                    L.marker([r.lat, r.lng]).addTo(map)
+                    .bindPopup("<b>"+r.tipo+"</b><br>Agente: "+r.agente+"<br>"+r.fecha);
+                });
+            });
+        </script>
+    </body>
+    </html>
+    `);
+});
+
+app.get("/api/reportes", (req, res) => res.json(DB.reportes));
+
+// ARRANQUE SEGURO
+bot.launch().then(() => console.log("🛰️ BOT ONLINE"));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 SERVER ONLINE`));
+
+// Para que no se apague por errores
+process.on('unhandledRejection', (reason, promise) => {
+    console.log('Unhandled Rejection at:', promise, 'reason:', reason);
+});
