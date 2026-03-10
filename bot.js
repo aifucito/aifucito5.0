@@ -1,4 +1,5 @@
 import { Telegraf, Markup } from 'telegraf';
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
@@ -11,100 +12,75 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-/* =========================
-   BASE DE DATOS (JSON LOCAL)
-========================= */
-const DB_FILE = path.join(__dirname, 'base_datos_aifu.json');
-const MAP_FILE = path.join(__dirname, 'reportes.json');
+const DB_FILE = './base_datos_aifu.json';
+const MAP_FILE = './reportes.json';
 
-if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify({ usuarios: {} }));
-if (!fs.existsSync(MAP_FILE)) fs.writeFileSync(MAP_FILE, JSON.stringify([]));
-
-let db = JSON.parse(fs.readFileSync(DB_FILE));
+/* --- PERSISTENCIA Y RANGOS --- */
+let db = { usuarios: {} };
+if (fs.existsSync(DB_FILE)) db = JSON.parse(fs.readFileSync(DB_FILE));
 const guardarDB = () => fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
 
-const guardarReporteMapa = (reporte) => {
-    let data = JSON.parse(fs.readFileSync(MAP_FILE));
-    data.push({ ...reporte, id: Date.now(), fecha: new Date().toISOString() });
-    fs.writeFileSync(MAP_FILE, JSON.stringify(data, null, 2));
+const obtenerRango = (p) => {
+    if (p < 30) return "🧽 Fajinador de Retretes Espaciales";
+    if (p < 100) return "🧉 Cebador de Mate Intergaláctico";
+    if (p < 250) return "👽 Traductor de Dialectos Marcianos";
+    if (p < 500) return "🔭 Cazador de Luces de Boliche";
+    if (p < 1000) return "🛸 Piloto de Plato Volador a Pedal";
+    return "👨‍🚀 COMANDANTE ESPACIAL AIFULOGO";
 };
 
-/* =========================
-   GEOLOCALIZACIÓN INVERSA
-========================= */
+/* --- SERVIDOR WEB (Ruta del Respaldo) --- */
+app.use(express.static(path.join(__dirname, 'public')));
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('/reportes.json', (req, res) => {
+    res.json(fs.existsSync(MAP_FILE) ? JSON.parse(fs.readFileSync(MAP_FILE)) : []);
+});
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 RADAR AIFU ACTIVO EN PUERTO ${PORT}`));
+
+/* --- GEOLOCALIZACIÓN INVERSA --- */
 async function obtenerDireccion(lat, lon) {
     try {
         const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`, {
-            headers: { 'User-Agent': 'AIFU_Radar_Bot' }
+            headers: { 'User-Agent': 'AIFU_Bot_Uruguay' }
         });
         const data = await response.json();
-        const a = data.address;
-        return `${a.road || a.suburb || 'Zona Detectada'}, ${a.city || a.town || a.village || 'Sin Ciudad'}, ${a.state || 'Región'}`;
-    } catch (e) { return "Ubicación GPS (Coordenadas)"; }
+        return data.display_name || "Ubicación detectada";
+    } catch (e) { return "Coordenadas GPS"; }
 }
 
-/* =========================
-   SISTEMA DE RANGOS
-========================= */
-const obtenerRango = (p) => {
-    if (p >= 2000) return "👑 COMANDANTE INTERGALÁCTICO";
-    if (p >= 1000) return "🛸 PILOTO DE CAZA UFOLÓGICO";
-    if (p >= 500)  return "📡 OPERADOR DE RADAR TÁCTICO";
-    if (p >= 200)  return "🔍 ANALISTA DE EVIDENCIA";
-    if (p >= 50)   return "📸 CAZADOR DE LUCES";
-    return "🧽 FAJINADOR DE NAVES ESPACIALES";
+/* --- BOT Y CANALES --- */
+const bot = new Telegraf(process.env.TELEGRAM_TOKEN);
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+const CANALES = {
+    "Uruguay": { id: "-1003826671445", link: "https://t.me/+nCVD4NsOihIyNGFh" },
+    "Argentina": { id: "-1003750025728", link: "https://t.me/+QpErPk26SY05OGIx" },
+    "Chile": { id: "-1003811532520", link: "https://t.me/+VP2T47eLvIowNmYx" },
+    "Global": { id: "-1003820597313", link: "https://t.me/+r5XfcJma3g03MWZh" },
+    "Central": { id: "-1003759731798" }
 };
 
-/* =========================
-   SERVIDOR Y RADAR
-========================= */
-app.use(express.static(path.join(__dirname, 'public')));
-app.get('/reportes.json', (req, res) => {
-    res.setHeader('Cache-Control', 'no-store');
-    res.sendFile(MAP_FILE);
-});
-app.listen(PORT, '0.0.0.0', () => console.log("🚀 RADAR AIFU ONLINE"));
-
-/* =========================
-   BOT TELEGRAM (CONFIGURACIÓN)
-========================= */
-const bot = new Telegraf(process.env.TELEGRAM_TOKEN);
 let sesiones = {};
 
-// RED DE CANALES OFICIAL
-const CANALES = {
-    Uruguay: { id: "-1003826671445", link: "https://t.me/+nCVD4NsOihIyNGFh" },
-    Argentina: { id: "-1003750025728", link: "https://t.me/+QpErPk26SY05OGIx" },
-    Chile: { id: "-1003811532520", link: "https://t.me/+VP2T47eLvIowNmYx" },
-    Global: { id: "-1003820597313", link: "https://t.me/+r5XfcJma3g03MWZh" },
-    Central: { id: "-1003759731798" }
-};
-
 const menuPrincipal = () => Markup.keyboard([
-    ['🛸 Reportar Avistamiento', '🗺️ Radar Táctico'],
-    ['🎖️ Mi Rango Investigador', '🔗 Red de Canales'],
+    ['🛸 Reportar Avistamiento', '🗺️ Ver Mapa Táctico'],
+    ['🎖️ Mi Rango de Investigador', '🔗 Red de Canales'],
     ['ℹ️ Sobre AIFU']
 ]).resize();
 
 bot.start((ctx) => {
-    if (!db.usuarios[ctx.from.id]) {
-        db.usuarios[ctx.from.id] = { nombre: ctx.from.first_name, puntos: 0, reportes: 0 };
-        guardarDB();
-    }
-    ctx.reply(`🛸 Central AIFU Iniciada.\nInvestigador: ${ctx.from.first_name}\nRango: ${obtenerRango(db.usuarios[ctx.from.id].puntos)}`, menuPrincipal());
-});
-
-bot.hears('🗺️ Radar Táctico', (ctx) => {
-    ctx.reply(`🛰️ ACCESO AL RADAR EN VIVO (RENDER):\nhttps://aifucito5-0.onrender.com`);
+    if (!db.usuarios[ctx.from.id]) db.usuarios[ctx.from.id] = { nombre: ctx.from.first_name, puntos: 0, reportes: 0 };
+    guardarDB();
+    ctx.reply(`🛸 AIFUCITO 5.0 Conectado.\nInvestigador: ${ctx.from.first_name}`, menuPrincipal());
 });
 
 bot.hears('🔗 Red de Canales', (ctx) => {
-    ctx.reply(`📢 CANALES OFICIALES AIFU\n\n🇺🇾 Uruguay: ${CANALES.Uruguay.link}\n🇦🇷 Argentina: ${CANALES.Argentina.link}\n🇨🇱 Chile: ${CANALES.Chile.link}\n🌎 Global: ${CANALES.Global.link}`);
+    ctx.reply(`🌍 **RED DE TELEGRAM AIFU:**\n\n🇺🇾 [Uruguay](${CANALES.Uruguay.link})\n🇦🇷 [Argentina](${CANALES.Argentina.link})\n🇨🇱 [Chile](${CANALES.Chile.link})\n🌐 [Global](${CANALES.Global.link})`, { parse_mode: 'Markdown' });
 });
 
-bot.hears('🎖️ Mi Rango Investigador', (ctx) => {
-    const user = db.usuarios[ctx.from.id];
-    ctx.reply(`🚀 PERFIL DE MISIÓN\n━━━━━━━━━━━━━━\n👤 ${user.nombre}\n🎖️ Rango: ${obtenerRango(user.puntos)}\n📊 XP: ${user.puntos}\n🛸 Reportes: ${user.reportes}\n━━━━━━━━━━━━━━`);
+bot.hears('🗺️ Ver Mapa Táctico', (ctx) => {
+    ctx.reply(`🛰️ ACCESO AL RADAR:\nhttps://aifucito5-0.onrender.com`);
 });
 
 bot.hears('🛸 Reportar Avistamiento', (ctx) => {
@@ -112,9 +88,6 @@ bot.hears('🛸 Reportar Avistamiento', (ctx) => {
     ctx.reply("🌎 ¿País del evento?", Markup.keyboard([['Uruguay', 'Argentina', 'Chile'], ['Otro'], ['❌ Cancelar']]).resize());
 });
 
-/* =========================
-   LÓGICA DE REPORTE (FLUJO)
-========================= */
 bot.on(['text', 'location', 'photo'], async (ctx, next) => {
     const s = sesiones[ctx.from.id];
     if (!s) return next();
@@ -122,45 +95,46 @@ bot.on(['text', 'location', 'photo'], async (ctx, next) => {
 
     if (txt === '❌ Cancelar') { delete sesiones[ctx.from.id]; return ctx.reply("Abortado.", menuPrincipal()); }
 
-    if (s.paso === 'pais') { s.datos.pais = txt; s.paso = 'gps'; 
-        return ctx.reply("📍 Mandá ubicación GPS para el Radar Táctico:", Markup.keyboard([[Markup.button.locationRequest('📍 ENVIAR UBICACIÓN')], ['Omitir GPS']]).resize());
+    if (s.paso === 'pais') {
+        s.datos.pais = txt; s.paso = 'gps';
+        return ctx.reply("📍 Mandá ubicación GPS para el mapa:", Markup.keyboard([[Markup.button.locationRequest('📍 ENVIAR UBICACIÓN')], ['Omitir GPS']]).resize());
     }
 
     if (s.paso === 'gps') {
         if (ctx.message.location) {
             s.datos.lat = ctx.message.location.latitude;
             s.datos.lng = ctx.message.location.longitude;
-            s.datos.lugar = await obtenerDireccion(s.datos.lat, s.datos.lng);
-            ctx.reply(`✅ Localizado: ${s.datos.lugar}`);
-        } else {
-            s.datos.lugar = "Ubicación informada manualmente";
-        }
+            s.datos.direccion = await obtenerDireccion(s.datos.lat, s.datos.lng);
+            ctx.reply(`✅ Localizado: ${s.datos.direccion}`);
+        } else { s.datos.direccion = "Ubicación manual"; }
         s.paso = 'descripcion';
-        return ctx.reply("👁️ ¿Qué observaste? (Descripción corta):", Markup.removeKeyboard());
+        return ctx.reply("👁️ ¿Qué viste? (Descripción):", Markup.removeKeyboard());
     }
 
-    if (s.paso === 'descripcion') { s.datos.descripcion = txt; s.paso = 'fotos'; return ctx.reply("📸 Enviá fotos y luego tocá FINALIZAR.", Markup.keyboard([['🚀 FINALIZAR']]).resize()); }
-    
-    if (ctx.message.photo && s.paso === 'fotos') { s.datos.fotos.push(ctx.message.photo.pop().file_id); return ctx.reply("✅ Foto añadida."); }
+    if (s.paso === 'descripcion') {
+        s.datos.descripcion = txt;
+        const res = await model.generateContent(`Analiza este reporte OVNI de forma breve: ${txt}`);
+        s.datos.analisis = res.response.text().trim();
+        s.paso = 'fotos';
+        return ctx.reply(`${s.datos.analisis}\n\n📸 Mandá fotos y tocá '🚀 FINALIZAR'.`, Markup.keyboard([['🚀 FINALIZAR']]).resize());
+    }
+
+    if (ctx.message.photo && s.paso === 'fotos') {
+        s.datos.fotos.push(ctx.message.photo.pop().file_id);
+        return ctx.reply("✅ Foto añadida.");
+    }
 
     if (txt === '🚀 FINALIZAR') {
-        const canalRef = CANALES[s.datos.pais] || CANALES.Global;
-        const ficha = `🛸 REPORTE AIFU [${s.datos.pais.toUpperCase()}]\n📍 Lugar: ${s.datos.lugar}\n📝 ${s.datos.descripcion}`;
+        const destino = CANALES[s.datos.pais] || CANALES.Global;
+        const ficha = `🛸 **REPORTE AIFU**\n📍 ${s.datos.direccion}\n📝 ${s.datos.descripcion}\n🔍 ${s.datos.analisis}`;
         
         try {
-            for (const f of s.datos.fotos) await bot.telegram.sendPhoto(canalRef.id, f);
-            await bot.telegram.sendMessage(canalRef.id, ficha);
-            await bot.telegram.sendMessage(CANALES.Central.id, `🛰️ COPIA CENTRAL:\n${ficha}`);
+            for (const f of s.datos.fotos) {
+                await bot.telegram.sendPhoto(destino.id, f);
+                await bot.telegram.sendPhoto(CANALES.Central.id, f);
+            }
+            await bot.telegram.sendMessage(destino.id, ficha);
+            await bot.telegram.sendMessage(CANALES.Central.id, ficha);
 
-            guardarReporteMapa(s.datos);
-            db.usuarios[ctx.from.id].puntos += 25;
-            db.usuarios[ctx.from.id].reportes += 1;
-            guardarDB();
-
-            ctx.reply(`✅ REPORTE ENVIADO AL RADAR.\nGanaste +25 XP.\nRango: ${obtenerRango(db.usuarios[ctx.from.id].puntos)}`, menuPrincipal());
-        } catch (e) { ctx.reply("⚠️ Interferencia en la señal (Error al publicar)."); }
-        delete sesiones[ctx.from.id];
-    }
-});
-
-bot.launch();
+            // Guardar para el mapa
+            let puntos =
