@@ -84,22 +84,15 @@
 <script src="https://leaflet.github.io/Leaflet.heat/dist/leaflet-heat.js"></script>
 
 <script>
-    // --- 1. Verificación de token ---
-    const urlParams = new URLSearchParams(window.location.search);
-    const authToken = urlParams.get('auth');
-
-    if (!authToken) {
-        document.body.innerHTML = '<div style="color:red; font-family: monospace; display:flex; justify-content:center; align-items:center; height:100vh;">❌ ACCESO NO AUTORIZADO</div>';
-        throw new Error("Acceso denegado: no hay token");
-    }
-
-    // --- 2. Inicializar Mapa ---
+    // 1. Inicializar Mapa centrado en Uruguay/Cono Sur
     var map = L.map('map', { zoomControl: false }).setView([-32.522779, -55.765835], 6);
 
+    // 2. Estilo Cartográfico Claro (Evita el fondo negro aburrido)
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         attribution: 'AIFU TACTICAL NETWORK'
     }).addTo(map);
 
+    // Capa para el mapa de calor ajustada a la estética AIFU
     var heatLayer = L.heatLayer([], {
         radius: 35,
         blur: 20,
@@ -107,28 +100,38 @@
         gradient: {0.4: 'cyan', 0.6: 'lime', 0.8: 'yellow', 1.0: 'red'}
     }).addTo(map);
 
+    // Icono personalizado con resplandor
     var ovniIcon = L.divIcon({
         className: 'ovni-glow',
         iconSize: [12, 12],
         iconAnchor: [6, 6]
     });
 
-    // --- 3. Función para cargar reportes con token ---
+    // 3. Función para cargar reportes
     async function cargarDatos() {
         try {
-            const response = await fetch('/api/reportes?auth=' + encodeURIComponent(authToken));
-            if (!response.ok) throw new Error("Token inválido o acceso denegado");
+            // El bot sirve los reportes en esta ruta
+            const response = await fetch('/api/reportes'); 
             const data = await response.json();
-
+            
+            // Actualizar contador del panel
             document.getElementById('stat-count').innerText = "REPORTES HOY: " + data.length;
 
+            // Limpiar marcadores previos para no duplicar
             map.eachLayer((layer) => {
-                if (layer instanceof L.Marker || layer instanceof L.CircleMarker) map.removeLayer(layer);
+                if (layer instanceof L.Marker || layer instanceof L.CircleMarker) {
+                    map.removeLayer(layer);
+                }
             });
 
-            const puntosHeat = data.filter(d => d.lat && d.lng).map(d => [d.lat, d.lng, 0.6]);
+            // Convertimos datos a formato [lat, lng, intensidad]
+            const puntosHeat = data
+                .filter(d => d.lat && d.lng)
+                .map(d => [d.lat, d.lng, 0.6]);
+            
             heatLayer.setLatLngs(puntosHeat);
 
+            // Agregar marcadores individuales con el efecto neón
             data.forEach(d => {
                 if(d.lat && d.lng) {
                     L.marker([d.lat, d.lng], { icon: ovniIcon })
@@ -141,15 +144,15 @@
                     `);
                 }
             });
+
         } catch (e) {
-            document.body.innerHTML = '<div style="color:red; font-family: monospace; display:flex; justify-content:center; align-items:center; height:100vh;">❌ ACCESO NO AUTORIZADO</div>';
-            console.error("Error en radar:", e);
+            console.error("Error en enlace de radar:", e);
         }
     }
 
+    // Carga inicial y bucle de actualización rápida
     cargarDatos();
-    setInterval(cargarDatos, 10000);
+    setInterval(cargarDatos, 10000); // Actualiza cada 10 segundos para tiempo real
 </script>
-
 </body>
 </html>
