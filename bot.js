@@ -10,53 +10,46 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ==========================================
-// 1. CONFIGURACIÓN DE ENLACES TÁCTICOS (HASH)
+// 1. CONFIGURACIÓN (IDs Tácticos y Enlaces)
 // ==========================================
 const TOKEN = process.env.TELEGRAM_TOKEN;
 const LOCATION_IQ_KEY = process.env.LOCATION_IQ_KEY;
 const PUBLIC_URL = process.env.PUBLIC_URL; 
 
 const RED_AIFU = {
-    // Canal Central VIP para Reportes Completos con Multimedia
-    RADAR_CONO_SUR: "https://t.me/+2nE_9Wsh_p9jZTRh", 
+    // ID Interno para que el Bot envíe Multimedia (NO TOCAR)
+    ID_CONO_SUR: "-1002425624773", 
     
-    // Grupos Regionales y Global
-    GLOBAL: "https://t.me/+r5XfcJma3g03MWZh",
-    AR: "https://t.me/+QpErPk26SY05OGIx",
-    CH: "https://t.me/+VP2T47eLvIowNmYx",
-    UY: "https://t.me/+nCVD4NsOihIyNGFh"
+    // Enlaces de Invitación Actualizados
+    LINK_CONO_SUR: "https://t.me/+YqA6d3VpKv9mZjU5", // El nuevo link que pasaste
+    LINK_GLOBAL: "https://t.me/+r5XfcJma3g03MWZh",
+    LINK_AR: "https://t.me/+QpErPk26SY05OGIx",
+    LINK_CH: "https://t.me/+VP2T47eLvIowNmYx",
+    LINK_UY: "https://t.me/+nCVD4NsOihIyNGFh"
 };
 
-// Disco Persistente en Render
+// Configuración de Disco Persistente (Plan Starter)
 const DATA_DIR = "/opt/render/project/src/data";
 const DB_PATH = path.join(DATA_DIR, "aifucito_db.json");
-
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 let DB = { agentes: {}, reportes: [] };
 if (fs.existsSync(DB_PATH)) {
     try { DB = JSON.parse(fs.readFileSync(DB_PATH, "utf8")); } 
-    catch (e) { console.error("⚠️ Error cargando DB"); }
+    catch (e) { console.error("⚠️ Error cargando Base de Datos"); }
 }
-
 const guardarDB = () => fs.writeFileSync(DB_PATH, JSON.stringify(DB, null, 4));
 
 const bot = new Telegraf(TOKEN);
 bot.use(session());
 
 // ==========================================
-// 2. SISTEMA DE JERARQUÍA (ID CONFIRMADO)
+// 2. JERARQUÍA DE MANDOS
 // ==========================================
 function obtenerRango(usuario, id) {
-    // ID Oficial de Damián configurado
     if (id == 7662736311) return "🛸 COMANDANTE INTERGALÁCTICO"; 
-    
     const r = usuario.reportes || 0;
     if (r >= 120) return "🌠 Almirante de la Flota del Mate";
-    if (r >= 80)  return "🛡️ Guardaespalda de Alf";
-    if (r >= 50)  return "👨‍🚀 Reclutador de Marcianos Arrepentidos";
-    if (r >= 30)  return "🛰️ Guía Turístico de la Vía Láctea";
-    if (r >= 15)  return "🥩 Parrillero de Vacas Abducidas";
     if (r >= 5)   return "🔦 Cebador de Mate del Área 51";
     return "🧻 Fajinador de Retretes Espaciales";
 }
@@ -67,7 +60,7 @@ const menuPrincipal = () => Markup.keyboard([
 ]).resize();
 
 // ==========================================
-// 3. COMANDOS Y SEGURIDAD
+// 3. OPERACIONES DE NODO
 // ==========================================
 bot.start((ctx) => {
     const id = ctx.from.id;
@@ -75,47 +68,55 @@ bot.start((ctx) => {
         DB.agentes[id] = { 
             nombre: ctx.from.first_name, 
             reportes: 0, 
-            token: crypto.randomBytes(8).toString('hex') 
+            token: crypto.randomBytes(8).toString('hex'),
+            vip: (id == 7662736311)
         };
         guardarDB();
     }
-    ctx.reply(`🛰️ NODO AIFUCITO ONLINE\n\nBienvenido Comandante ${ctx.from.first_name}.\nSistema AIFU: Avistamiento e Investigación de Fenómenos Uruguayos listo.`, menuPrincipal());
+    ctx.reply(`🛰️ NODO AIFUCITO ONLINE\n\nBienvenido Comandante Damián. Los sistemas de vigilancia están activos.`, menuPrincipal());
 });
 
 bot.hears("⭐ MI PERFIL", (ctx) => {
     const u = DB.agentes[ctx.from.id];
-    if (!u) return;
-    ctx.reply(`🪪 PERFIL DE AGENTE\n\n👤 Nombre: ${u.nombre}\n🎖️ Rango: ${obtenerRango(u, ctx.from.id)}\n📊 Reportes: ${u.reportes}\n🆔 ID: ${ctx.from.id}`, { parse_mode: "Markdown" });
+    if (!u) return ctx.reply("Inicia con /start");
+    ctx.reply(`🪪 PERFIL DE AGENTE\n\n👤 Nombre: ${u.nombre}\n🎖️ Rango: ${obtenerRango(u, ctx.from.id)}\n📊 Reportes: ${u.reportes}\n🆔 ID: ${ctx.from.id}`);
 });
 
 bot.hears("🌍 VER RADAR", (ctx) => {
     const u = DB.agentes[ctx.from.id];
     const authUrl = `${PUBLIC_URL}/?auth=${u.token}`;
-    ctx.reply(`🛰️ ACCESO AL RADAR SEGURO:`, Markup.inlineKeyboard([
-        [Markup.button.url("ABRIR MAPA 🛰️", authUrl)]
-    ]));
+    ctx.reply(`🛰️ ACCESO AL RADAR SEGURO:`, Markup.inlineKeyboard([[Markup.button.url("ABRIR MAPA 🛰️", authUrl)]]));
 });
 
 bot.hears("🔗 UNIRSE A MI GRUPO", (ctx) => {
-    ctx.reply("Selecciona tu unidad regional:", 
-        Markup.inlineKeyboard([
-            [Markup.button.url("Uruguay 🇺🇾", RED_AIFU.UY), Markup.button.url("Argentina 🇦🇷", RED_AIFU.AR)],
-            [Markup.button.url("Chile 🇨🇱", RED_AIFU.CH), Markup.button.url("Global 👽", RED_AIFU.GLOBAL)]
-        ])
-    );
+    const botones = [
+        [Markup.button.url("Uruguay 🇺🇾", RED_AIFU.LINK_UY), Markup.button.url("Argentina 🇦🇷", RED_AIFU.LINK_AR)],
+        [Markup.button.url("Chile 🇨🇱", RED_AIFU.LINK_CH), Markup.button.url("Global 👽", RED_AIFU.LINK_GLOBAL)]
+    ];
+    // Acceso VIP al Cono Sur solo para el Comandante
+    if (ctx.from.id == 7662736311) {
+        botones.push([Markup.button.url("🔥 RADAR CONO SUR (VIP)", RED_AIFU.LINK_CONO_SUR)]);
+    }
+    ctx.reply("Selecciona la unidad regional de despliegue:", Markup.inlineKeyboard(botones));
 });
 
 // ==========================================
-// 4. REPORTES (UAP/FANI)
+// 4. PROTOCOLO DE REPORTE (FANI/UAP)
 // ==========================================
 bot.hears("🛸 GENERAR REPORTE", (ctx) => {
+    ctx.session = ctx.session || {};
     ctx.session.reporte = { paso: "ubicacion" };
     ctx.reply("🛰️ UBICACIÓN DEL AVISTAMIENTO:", Markup.keyboard([["📍 GPS ACTUAL", "⌨️ MANUAL"], ["❌ CANCELAR"]]).resize());
 });
 
+bot.hears("❌ CANCELAR", (ctx) => {
+    ctx.session.reporte = null;
+    ctx.reply("Misión abortada.", menuPrincipal());
+});
+
 bot.on(["location", "text", "photo", "video"], async (ctx) => {
+    if (!ctx.session?.reporte) return;
     const r = ctx.session.reporte;
-    if (!r) return;
 
     if (r.paso === "ubicacion") {
         if (ctx.message.location) {
@@ -125,8 +126,8 @@ bot.on(["location", "text", "photo", "video"], async (ctx) => {
                 r.pais = res.data.address.country; r.ciudad = res.data.address.city || res.data.address.town;
                 r.barrio = res.data.address.suburb || "Zona Rural";
                 r.paso = "int_1";
-                return ctx.reply(`📍 ${r.barrio}, ${r.ciudad}.\n¿Qué viste en el cielo?`, Markup.removeKeyboard());
-            } catch (e) { return ctx.reply("⚠️ Error de GPS. Escribe el PAÍS manualmente:"); }
+                return ctx.reply(`📍 ${r.barrio}, ${r.ciudad}.\n¿Qué tipo de objeto divisaste?`, Markup.removeKeyboard());
+            } catch (e) { return ctx.reply("Error GPS. Escribe el PAÍS:"); }
         }
         if (ctx.message.text === "⌨️ MANUAL") { r.paso = "m_pais"; return ctx.reply("Escribe el PAÍS:", Markup.removeKeyboard()); }
     }
@@ -137,11 +138,11 @@ bot.on(["location", "text", "photo", "video"], async (ctx) => {
 
     if (r.paso === "int_1") {
         r.desc = ctx.message.text; r.paso = "int_2";
-        return ctx.reply("¿Se movía de forma inteligente?", Markup.keyboard([["SÍ", "NO", "Errático/Zig-zag"]]).resize());
+        return ctx.reply("¿El movimiento era inteligente?", Markup.keyboard([["SÍ", "NO", "Errático"]]).resize());
     }
     if (r.paso === "int_2") {
         r.mov = ctx.message.text; r.paso = "multimedia";
-        return ctx.reply("📸 ENVÍA FOTO O VIDEO HD.\nO usa /saltar", Markup.removeKeyboard());
+        return ctx.reply("📸 ENVÍA EVIDENCIA (FOTO O VIDEO HD).\nO usa /saltar para reporte solo texto.", Markup.removeKeyboard());
     }
 
     if (r.paso === "multimedia") {
@@ -153,46 +154,40 @@ bot.on(["location", "text", "photo", "video"], async (ctx) => {
     }
 });
 
-bot.command("saltar", async (ctx) => { if (ctx.session.reporte?.paso === "multimedia") await finalizarReporte(ctx, ctx.session.reporte); });
+bot.command("saltar", async (ctx) => { if (ctx.session?.reporte?.paso === "multimedia") await finalizarReporte(ctx, ctx.session.reporte); });
 
 async function finalizarReporte(ctx, r) {
-    const u = DB.agentes[ctx.from.id]; u.reportes++;
+    const u = DB.agentes[ctx.from.id]; 
+    u.reportes++;
     DB.reportes.push({ lat: r.lat, lng: r.lng, pais: r.pais, ciudad: r.ciudad, fecha: new Date(), tipo: r.desc });
     guardarDB();
 
-    const p = r.pais.toUpperCase();
     const txtVIP = `🚨 REPORTE CENTRAL AIFU\n📍 ${r.barrio}, ${r.ciudad} (${r.pais})\n👤 Agente: ${u.nombre} [${obtenerRango(u, ctx.from.id)}]\n📝 ${r.desc}\n🚀 Mov: ${r.mov}`;
     
-    // Envío directo al Radar Cono Sur usando el enlace de invitación como destino
     try {
         if (r.fileId) {
-            if (r.tipo === "foto") await ctx.telegram.sendPhoto(RED_AIFU.RADAR_CONO_SUR, r.fileId, { caption: txtVIP });
-            else await ctx.telegram.sendVideo(RED_AIFU.RADAR_CONO_SUR, r.fileId, { caption: txtVIP });
+            if (r.tipo === "foto") await ctx.telegram.sendPhoto(RED_AIFU.ID_CONO_SUR, r.fileId, { caption: txtVIP });
+            else await ctx.telegram.sendVideo(RED_AIFU.ID_CONO_SUR, r.fileId, { caption: txtVIP });
         } else {
-            await ctx.telegram.sendMessage(RED_AIFU.RADAR_CONO_SUR, txtVIP);
+            await ctx.telegram.sendMessage(RED_AIFU.ID_CONO_SUR, txtVIP);
         }
-    } catch (e) { console.error("Error envío canal"); }
+    } catch (e) { console.error("Error envío canal VIP"); }
 
-    ctx.reply("✅ Reporte enviado con éxito al Radar.", menuPrincipal());
+    ctx.reply("✅ Reporte procesado y enviado al Radar Cono Sur.", menuPrincipal());
     ctx.session.reporte = null;
 }
 
 // ==========================================
-// 5. SERVIDOR WEB
+// 5. SERVIDOR Y MAPA
 // ==========================================
 const app = express();
 app.use(express.static('public'));
-
 app.get("/", (req, res) => {
     const token = req.query.auth;
     const esValido = Object.values(DB.agentes).some(a => a.token === token);
-    if (esValido) {
-        res.sendFile(path.join(__dirname, "public", "index.html"));
-    } else {
-        res.status(403).send("<h1>🚫 Acceso Denegado</h1>");
-    }
+    if (esValido) res.sendFile(path.join(__dirname, "public", "index.html"));
+    else res.status(403).send("Acceso denegado");
 });
-
 app.get("/api/reportes", (req, res) => res.json(DB.reportes));
 
 bot.launch();
