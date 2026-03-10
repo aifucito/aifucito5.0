@@ -60,7 +60,6 @@ const menuPrincipal = () => Markup.keyboard([
 ]).resize();
 
 // --- COMANDOS ---
-
 bot.start((ctx) => {
     const id = ctx.from.id;
     if (!DB.agentes[id]) {
@@ -97,7 +96,6 @@ bot.hears("🔗 UNIRSE A MI GRUPO", (ctx) => {
 });
 
 // --- SISTEMA DE REPORTES ---
-
 bot.hears("🛸 GENERAR REPORTE", (ctx) => {
     ctx.session = { reporte: { paso: "ubicacion", lat: -34.9011, lng: -56.1645 } }; 
     ctx.reply("📍 ¿Dónde ocurrió el avistamiento?", Markup.keyboard([
@@ -111,53 +109,36 @@ bot.hears("❌ CANCELAR", (ctx) => {
     ctx.reply("Reporte cancelado.", menuPrincipal());
 });
 
-// --- BLOQUE DE UBICACIÓN Y GEOLOCALIZACIÓN MEJORADO ---
+// --- BLOQUE DE UBICACIÓN Y GEOLOCALIZACIÓN ---
 bot.on(["location", "text", "photo", "video"], async (ctx) => {
     if (!ctx.session?.reporte) return;
     const r = ctx.session.reporte;
 
-    // --- 1. UBICACIÓN ---
     if (r.paso === "ubicacion") {
-
-        // CASO GPS
         if (ctx.message?.location) {
             r.lat = ctx.message.location.latitude;
             r.lng = ctx.message.location.longitude;
             try {
                 const res = await axios.get(`https://us1.locationiq.com/v1/reverse.php`, {
-                    params: {
-                        key: LOCATION_IQ_KEY,
-                        lat: r.lat,
-                        lon: r.lng,
-                        format: "json"
-                    }
+                    params: { key: LOCATION_IQ_KEY, lat: r.lat, lon: r.lng, format: "json" }
                 });
-
                 r.pais = res.data.address.country || "Uruguay";
                 r.ciudad = res.data.address.city || res.data.address.town || res.data.address.village || "Desconocida";
                 r.paso = "int_1";
-
-                console.log("DEBUG GPS:", r.lat, r.lng, r.ciudad, r.pais);
-
                 return ctx.reply(`📍 Ubicación detectada: ${r.ciudad}, ${r.pais}.\n\n¿Qué viste en el cielo? Descríbelo:`, Markup.removeKeyboard());
-
             } catch (e) {
-                console.error("Error reverse geocoding GPS:", e);
                 r.paso = "m_pais";
                 return ctx.reply("⚠️ No pudimos obtener tu ubicación exacta. Por favor escribe el PAÍS manualmente:", Markup.removeKeyboard());
             }
         }
 
-        // CASO MANUAL
         if (ctx.message?.text?.includes("ESCRIBIR CIUDAD")) {
             r.paso = "m_pais";
             return ctx.reply("Escribe el PAÍS del avistamiento:", Markup.removeKeyboard());
         }
-
         return;
     }
 
-    // --- 2. PASOS MANUALES ---
     if (r.paso === "m_pais" && ctx.message?.text) {
         r.pais = ctx.message.text.trim();
         r.paso = "m_ciudad";
@@ -167,38 +148,25 @@ bot.on(["location", "text", "photo", "video"], async (ctx) => {
     if (r.paso === "m_ciudad" && ctx.message?.text) {
         r.ciudad = ctx.message.text.trim();
         r.paso = "int_1";
-
         try {
             const query = `${r.ciudad}, ${r.pais}`;
             const geoRes = await axios.get(`https://us1.locationiq.com/v1/search.php`, {
-                params: {
-                    key: LOCATION_IQ_KEY,
-                    q: query,
-                    format: "json",
-                    limit: 1
-                }
+                params: { key: LOCATION_IQ_KEY, q: query, format: "json", limit: 1 }
             });
-
             if (geoRes.data && geoRes.data.length > 0) {
                 r.lat = parseFloat(geoRes.data[0].lat);
                 r.lng = parseFloat(geoRes.data[0].lon);
             } else {
                 r.lat = -34.9011;
                 r.lng = -56.1645;
-                console.warn("No se encontraron coordenadas, usando fallback Montevideo.");
             }
-
-            console.log("DEBUG ciudad manual:", r.lat, r.lng, r.ciudad, r.pais);
         } catch (e) {
-            console.error("Error geolocalizando ciudad manual:", e);
             r.lat = -34.9011;
             r.lng = -56.1645;
         }
-
         return ctx.reply("¿Qué viste en el cielo? (Luz, objeto, forma, etc.)");
     }
 
-    // --- 3. DESCRIPCIÓN Y MOVIMIENTO ---
     if (r.paso === "int_1" && ctx.message?.text) {
         r.desc = ctx.message.text.trim();
         r.paso = "int_2";
@@ -215,7 +183,6 @@ bot.on(["location", "text", "photo", "video"], async (ctx) => {
         ]).resize());
     }
 
-    // --- 4. MULTIMEDIA Y FINALIZACIÓN ---
     if (r.paso === "multimedia") {
         if (ctx.message?.text === "🚫 SIN EVIDENCIA (SOLO TEXTO)" || ctx.message?.photo || ctx.message?.video) {
             if (ctx.message?.photo) {
@@ -268,7 +235,14 @@ async function finalizarReporte(ctx, r) {
 const app = express();
 app.use(express.static('public'));
 app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
-app.get("/api/reportes", (req, res) => res.json(DB.reportes));
+
+// RUTA /api/reportes CON AUTORIZACIÓN
+app.get("/api/reportes", (req, res) => {
+    const token = req.query.auth;
+    const agente = Object.values(DB.agentes).find(a => a.token === token);
+    if (!agente) return res.status(403).json({ error: "Acceso no autorizado" });
+    res.json(DB.reportes);
+});
 
 // LANZAMIENTO
 bot.launch();
