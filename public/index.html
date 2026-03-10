@@ -1,45 +1,78 @@
-var markersLayer = L.layerGroup().addTo(map);
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>AIFUCITO OMEGA - Radar Táctico</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <style>
+        body, html { margin:0; padding:0; height:100%; width:100%; background: #0b0d10; }
+        #map { height:100vh; width:100vw; }
+        /* Estilo táctico para el popup */
+        .leaflet-popup-content-wrapper { background: #1a1c20; color: #00ff00; border: 1px solid #00ff00; }
+        .leaflet-popup-tip { background: #1a1c20; }
+    </style>
+</head>
+<body>
+<div id="map"></div>
 
-async function cargarDatos() {
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://leaflet.github.io/Leaflet.heat/dist/leaflet-heat.js"></script>
 
-    try {
+<script>
+    // 1. Inicializar Mapa (Centrado en el Cono Sur)
+    var map = L.map('map', { zoomControl: false }).setView([-34.6, -58.4], 5);
 
-        const response = await fetch('/reportes.json');
-        const data = await response.json();
+    // Cambiamos el estilo Dark por un Light Táctico (Positron de CartoDB)
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    attribution: 'AIFUCITO OMEGA v5.5'
+}).addTo(map);
 
-        markersLayer.clearLayers();
+    // Capa para el mapa de calor
+    var heatLayer = L.heatLayer([], {
+        radius: 25,
+        blur: 15,
+        maxZoom: 10,
+        gradient: {0.2: 'blue', 0.4: 'cyan', 0.6: 'lime', 0.8: 'yellow', 1.0: 'red'}
+    }).addTo(map);
 
-        const puntosHeat = data
-            .filter(d => d.lat && d.lng)
-            .map(d => [d.lat, d.lng, 0.5]);
+    // 3. Función para cargar reportes
+    async function cargarDatos() {
+        try {
+            // Buscamos el JSON generado por el bot
+            const response = await fetch('/reportes.json');
+            const data = await response.json();
+            
+            // Convertimos datos a formato [lat, lng, intensidad]
+            const puntosHeat = data
+                .filter(d => d.lat && d.lng)
+                .map(d => [d.lat, d.lng, 0.5]);
+            
+            // Actualizar capa de calor
+            heatLayer.setLatLngs(puntosHeat);
 
-        heatLayer.setLatLngs(puntosHeat);
+            // Opcional: Agregar marcadores individuales
+            data.forEach(d => {
+                if(d.lat && d.lng) {
+                    L.circleMarker([d.lat, d.lng], {
+                        radius: 5,
+                        color: '#00ff00',
+                        fillOpacity: 0.8
+                    }).addTo(map).bindPopup(`<b>Avistamiento:</b><br>${d.desc || 'Sin descripción'}`);
+                }
+            });
 
-        data.forEach(d => {
-
-            if(d.lat && d.lng) {
-
-                L.circleMarker([d.lat, d.lng], {
-                    radius: 5,
-                    color: '#00ff00',
-                    fillOpacity: 0.8
-                })
-                .addTo(markersLayer)
-                .bindPopup(`<b>Avistamiento:</b><br>${d.descripcion || 'Sin descripción'}`);
-
-            }
-
-        });
-
-        if (puntosHeat.length > 0) {
-            var bounds = puntosHeat.map(p => [p[0], p[1]]);
-            map.fitBounds(bounds, { padding: [40,40] });
+        } catch (e) {
+            console.error("Error en radar:", e);
         }
-
-    } catch (e) {
-
-        console.error("Error en radar:", e);
-
     }
 
-}
+    // Auto-ubicación del agente al abrir
+    map.locate({setView: true, maxZoom: 8});
+
+    // Carga inicial y bucle
+    cargarDatos();
+    setInterval(cargarDatos, 20000); // Actualiza cada 20 segundos
+</script>
+</body>
+</html>
