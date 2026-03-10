@@ -4,7 +4,6 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import fetch from 'node-fetch';
 import 'dotenv/config';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -15,137 +14,207 @@ const PORT = process.env.PORT || 3000;
 const DB_FILE = './base_datos_aifu.json';
 const MAP_FILE = './reportes.json';
 
-/* --- PERSISTENCIA Y RANGOS --- */
-let db = { usuarios: {} };
-if (fs.existsSync(DB_FILE)) db = JSON.parse(fs.readFileSync(DB_FILE));
+// Inicialización de DB con soporte para Historias VIP
+let db = { usuarios: {}, historias_vip: [] };
+if (fs.existsSync(DB_FILE)) {
+    const data = JSON.parse(fs.readFileSync(DB_FILE));
+    db = { ...db, ...data };
+}
 const guardarDB = () => fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
 
-const obtenerRango = (p) => {
-    if (p < 30) return "🧽 Fajinador de Retretes Espaciales";
-    if (p < 100) return "🧉 Cebador de Mate Intergaláctico";
-    if (p < 250) return "👽 Traductor de Dialectos Marcianos";
-    if (p < 500) return "🔭 Cazador de Luces de Boliche";
-    if (p < 1000) return "🛸 Piloto de Plato Volador a Pedal";
-    return "👨‍🚀 COMANDANTE ESPACIAL AIFULOGO";
+const obtenerRango = (puntos) => {
+    if (puntos < 30) return { nombre: "🧻 Fajinador de Retretes Espaciales", sig: 30 - puntos };
+    if (puntos < 100) return { nombre: "🧉 Cebador de Mate Intergaláctico", sig: 100 - puntos };
+    if (puntos < 250) return { nombre: "👽 Traductor de Dialectos Marcianos", sig: 250 - puntos };
+    if (puntos < 500) return { nombre: "🔭 Cazador de Luces de Boliche", sig: 500 - puntos };
+    if (puntos < 1000) return { nombre: "🛸 Piloto de Plato Volador a Pedal", sig: 1000 - puntos };
+    return { nombre: "👨‍🚀 COMANDANTE ESPACIAL AIFULOGO", sig: 0 };
 };
 
-/* --- SERVIDOR WEB (Ruta del Respaldo) --- */
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('/reportes.json', (req, res) => {
-    res.json(fs.existsSync(MAP_FILE) ? JSON.parse(fs.readFileSync(MAP_FILE)) : []);
+    if (fs.existsSync(MAP_FILE)) res.json(JSON.parse(fs.readFileSync(MAP_FILE)));
+    else res.json([]);
 });
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 RADAR AIFU ACTIVO EN PUERTO ${PORT}`));
 
-/* --- GEOLOCALIZACIÓN INVERSA --- */
-async function obtenerDireccion(lat, lon) {
-    try {
-        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`, {
-            headers: { 'User-Agent': 'AIFU_Bot_Uruguay' }
-        });
-        const data = await response.json();
-        return data.display_name || "Ubicación detectada";
-    } catch (e) { return "Coordenadas GPS"; }
-}
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 AIFUCITO 5.0 - RADAR ACTIVO`));
 
-/* --- BOT Y CANALES --- */
 const bot = new Telegraf(process.env.TELEGRAM_TOKEN);
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-const CANALES = {
-    "Uruguay": { id: "-1003826671445", link: "https://t.me/+nCVD4NsOihIyNGFh" },
-    "Argentina": { id: "-1003750025728", link: "https://t.me/+QpErPk26SY05OGIx" },
-    "Chile": { id: "-1003811532520", link: "https://t.me/+VP2T47eLvIowNmYx" },
-    "Global": { id: "-1003820597313", link: "https://t.me/+r5XfcJma3g03MWZh" },
-    "Central": { id: "-1003759731798" }
-};
+const model = genAI.getGenerativeModel({ 
+    model: "gemini-1.5-flash",
+    systemInstruction: "Eres AIFUCITO, asistente de AIFU Uruguay. Si es una historia, genera un TÍTULO corto y misterioso. Si es avistamiento, analiza Nave/Luz/Paranormal."
+});
 
 let sesiones = {};
+let chatsIA = {}; 
 
 const menuPrincipal = () => Markup.keyboard([
     ['🛸 Reportar Avistamiento', '🗺️ Ver Mapa Táctico'],
-    ['🎖️ Mi Rango de Investigador', '🔗 Red de Canales'],
+    ['🎖️ Mi Rango de Investigador', '👽 Charlar con AIFUCITO'],
+    ['💳 Hazte Socio / VIP', '🔗 Red de Canales'],
     ['ℹ️ Sobre AIFU']
 ]).resize();
 
 bot.start((ctx) => {
-    if (!db.usuarios[ctx.from.id]) db.usuarios[ctx.from.id] = { nombre: ctx.from.first_name, puntos: 0, reportes: 0 };
+    const id = ctx.from.id;
+    if (!db.usuarios[id]) db.usuarios[id] = { nombre: ctx.from.first_name, puntos: 0, reportes: 0 };
     guardarDB();
-    ctx.reply(`🛸 AIFUCITO 5.0 Conectado.\nInvestigador: ${ctx.from.first_name}`, menuPrincipal());
+    const r = obtenerRango(db.usuarios[id].puntos);
+    ctx.reply(`¡Hola! 👋 Soy AIFUCITO.\n\nTu rango: ${r.nombre}.`, menuPrincipal());
 });
 
 bot.hears('🔗 Red de Canales', (ctx) => {
-    ctx.reply(`🌍 **RED DE TELEGRAM AIFU:**\n\n🇺🇾 [Uruguay](${CANALES.Uruguay.link})\n🇦🇷 [Argentina](${CANALES.Argentina.link})\n🇨🇱 [Chile](${CANALES.Chile.link})\n🌐 [Global](${CANALES.Global.link})`, { parse_mode: 'Markdown' });
+    const redMsg = "🌍 **RED DE MONITOREO AIFU:**\n\n" +
+                  "🇺🇾 [AIFU Uruguay](https://t.me/AIFU_Uruguay)\n" +
+                  "🇦🇷 [AIFU Argentina](https://t.me/AIFU_Argentina)\n" +
+                  "🇨🇱 [AIFU Chile](https://t.me/AIFU_Chile)\n" +
+                  "🌐 [AIFU Global](https://t.me/AIFU_Global)\n" +
+                  "🛰️ **[RADAR CENTRAL](https://t.me/RadarConoSur)**";
+    ctx.reply(redMsg, { parse_mode: 'Markdown', disable_web_page_preview: true });
 });
 
-bot.hears('🗺️ Ver Mapa Táctico', (ctx) => {
-    ctx.reply(`🛰️ ACCESO AL RADAR:\nhttps://aifucito5-0.onrender.com`);
+bot.hears('💳 Hazte Socio / VIP', (ctx) => {
+    ctx.reply("🌟 **ZONA VIP**", Markup.keyboard([
+        ['📖 Contar mi Historia', '📚 Bóveda de Historias'],
+        ['🕵️ Reporte Anónimo (VIP)', '⬅️ Volver al Menú']
+    ]).resize());
 });
 
-bot.hears('🛸 Reportar Avistamiento', (ctx) => {
-    sesiones[ctx.from.id] = { paso: 'pais', datos: { fotos: [] } };
-    ctx.reply("🌎 ¿País del evento?", Markup.keyboard([['Uruguay', 'Argentina', 'Chile'], ['Otro'], ['❌ Cancelar']]).resize());
+bot.hears('📚 Bóveda de Historias', (ctx) => {
+    if (db.historias_vip.length === 0) return ctx.reply("La bóveda está cerrada. No hay historias aún.");
+    let lista = "📂 **ARCHIVOS VIP CLASIFICADOS**\n\n";
+    db.historias_vip.forEach((h, i) => lista += `${i + 1}. 🛸 ${h.titulo}\n`);
+    lista += "\nEscribí el número para leer el relato completo:";
+    sesiones[ctx.from.id] = { paso: 'leyendo_vip' };
+    ctx.reply(lista);
+});
+
+bot.hears('🕵️ Reporte Anónimo (VIP)', (ctx) => {
+    sesiones[ctx.from.id] = { paso: 'ubicacion_tipo', datos: { fotos: [], anonimo: true, esHistoria: false } };
+    ctx.reply("🕵️ **MODO ANÓNIMO**\n¿GPS o escribís lugar?", Markup.keyboard([['📍 Enviar GPS', '✍️ Escribir lugar'], ['❌ Cancelar']]).resize());
+});
+
+bot.hears('📖 Contar mi Historia', (ctx) => {
+    sesiones[ctx.from.id] = { paso: 'descripcion', datos: { fotos: [], anonimo: true, esHistoria: true } };
+    ctx.reply("📖 **TU HISTORIA VIP**\nContame tu experiencia (Máx 500 palabras):");
 });
 
 bot.on(['text', 'location', 'photo'], async (ctx, next) => {
-    const s = sesiones[ctx.from.id];
+    const id = ctx.from.id;
+    const s = sesiones[id];
     if (!s) return next();
     const txt = ctx.message.text;
 
-    if (txt === '❌ Cancelar') { delete sesiones[ctx.from.id]; return ctx.reply("Abortado.", menuPrincipal()); }
-
-    if (s.paso === 'pais') {
-        s.datos.pais = txt; s.paso = 'gps';
-        return ctx.reply("📍 Mandá ubicación GPS para el mapa:", Markup.keyboard([[Markup.button.locationRequest('📍 ENVIAR UBICACIÓN')], ['Omitir GPS']]).resize());
+    if (txt === '❌ Cancelar' || txt === '⬅️ Volver al Menú') { 
+        delete sesiones[id]; delete chatsIA[id];
+        return ctx.reply("Volvemos al inicio.", menuPrincipal()); 
     }
 
-    if (s.paso === 'gps') {
-        if (ctx.message.location) {
-            s.datos.lat = ctx.message.location.latitude;
-            s.datos.lng = ctx.message.location.longitude;
-            s.datos.direccion = await obtenerDireccion(s.datos.lat, s.datos.lng);
-            ctx.reply(`✅ Localizado: ${s.datos.direccion}`);
-        } else { s.datos.direccion = "Ubicación manual"; }
-        s.paso = 'descripcion';
-        return ctx.reply("👁️ ¿Qué viste? (Descripción):", Markup.removeKeyboard());
+    if (s.paso === 'leyendo_vip') {
+        const index = parseInt(txt) - 1;
+        if (db.historias_vip[index]) {
+            const h = db.historias_vip[index];
+            await ctx.reply(`✨ **${h.titulo}**\n\n${h.relato}`);
+            delete sesiones[id];
+            return ctx.reply("¿Querés leer otra?", menuPrincipal());
+        }
     }
+
+    if (s.paso === 'ubicacion_tipo') {
+        if (txt === '📍 Enviar GPS') {
+            s.paso = 'esperando_gps';
+            return ctx.reply("Mandame el GPS:", Markup.keyboard([[Markup.button.locationRequest('📍 MANDAR UBICACIÓN')]]).resize());
+        } else {
+            s.paso = 'pais';
+            return ctx.reply("¿País?", Markup.keyboard([['Uruguay', 'Argentina', 'Chile'], ['Otro (Global)']]).resize());
+        }
+    }
+
+    if (s.paso === 'esperando_gps' && ctx.message.location) {
+        const { latitude: lat, longitude: lng } = ctx.message.location;
+        s.datos.lat = lat; s.datos.lng = lng;
+        if (lat < -30 && lat > -35 && lng < -59 && lng > -53) s.datos.pais = "Uruguay";
+        else if (lat < -21 && lat > -55 && lng < -73 && lng > -53) s.datos.pais = "Argentina";
+        else if (lat < -17 && lat > -56 && lng < -76 && lng > -66) s.datos.pais = "Chile";
+        else s.datos.pais = "Otro (Global)";
+        s.datos.ciudad = "Ubicación GPS"; s.paso = 'descripcion';
+        return ctx.reply(`✅ Localizado en: ${s.datos.pais}.\n👁️ **¿Qué viste?**`);
+    }
+
+    if (s.paso === 'pais') { s.datos.pais = txt; s.paso = 'ciudad'; return ctx.reply("📌 **Departamento/Provincia:**"); }
+    if (s.paso === 'ciudad') { s.datos.ciudad = txt; s.paso = 'barrio'; return ctx.reply("🏘️ **Barrio:**"); }
+    if (s.paso === 'barrio') { s.datos.barrio = txt; s.paso = 'descripcion'; return ctx.reply("👁️ **¿Qué viste?**"); }
 
     if (s.paso === 'descripcion') {
+        if (s.datos.esHistoria && txt.split(/\s+/).length > 500) {
+            return ctx.reply("⚠️ La historia es muy larga (máx 500 palabras). Resumila un poco.");
+        }
         s.datos.descripcion = txt;
-        const res = await model.generateContent(`Analiza este reporte OVNI de forma breve: ${txt}`);
-        s.datos.analisis = res.response.text().trim();
-        s.paso = 'fotos';
-        return ctx.reply(`${s.datos.analisis}\n\n📸 Mandá fotos y tocá '🚀 FINALIZAR'.`, Markup.keyboard([['🚀 FINALIZAR']]).resize());
-    }
-
-    if (ctx.message.photo && s.paso === 'fotos') {
-        s.datos.fotos.push(ctx.message.photo.pop().file_id);
-        return ctx.reply("✅ Foto añadida.");
-    }
-
-    if (txt === '🚀 FINALIZAR') {
-        const destino = CANALES[s.datos.pais] || CANALES.Global;
-        const ficha = `🛸 **REPORTE AIFU**\n📍 ${s.datos.direccion}\n📝 ${s.datos.descripcion}\n🔍 ${s.datos.analisis}`;
+        await ctx.sendChatAction('typing');
+        const promptIA = s.datos.esHistoria ? `Genera un título corto y atrapante para esta historia: "${txt}"` : `Analiza brevemente: "${txt}". Clasifica como Nave, Luz o Paranormal.`;
+        const res = await model.generateContent(promptIA);
+        s.datos.analisis_ia = res.response.text().trim();
         
-        try {
-            for (const f of s.datos.fotos) {
-                await bot.telegram.sendPhoto(destino.id, f);
-                await bot.telegram.sendPhoto(CANALES.Central.id, f);
-            }
-            await bot.telegram.sendMessage(destino.id, ficha);
-            await bot.telegram.sendMessage(CANALES.Central.id, ficha);
+        if (s.datos.esHistoria) {
+            s.paso = 'confirmacion_vip';
+            return ctx.reply(`📝 **Título sugerido:** ${s.datos.analisis_ia}\n\n¿Guardamos esta historia en la Bóveda VIP?`, Markup.keyboard([['✅ GUARDAR EN BÓVEDA', '❌ DESCARTAR']]).resize());
+        } else {
+            s.paso = 'multimedia';
+            return ctx.reply(`${s.datos.analisis_ia}\n\n📸 Mandá fotos y tocá '🚀 REVISAR'.`, Markup.keyboard([['🚀 REVISAR'], ['❌ Cancelar']]).resize());
+        }
+    }
 
-            let puntos = fs.existsSync(MAP_FILE) ? JSON.parse(fs.readFileSync(MAP_FILE)) : [];
-            puntos.push({ lat: s.datos.lat || -34.6, lng: s.datos.lng || -58.4, lugar: s.datos.direccion, descripcion: s.datos.descripcion });
-            fs.writeFileSync(MAP_FILE, JSON.stringify(puntos));
+    if (ctx.message.photo && s.paso === 'multimedia') {
+        s.datos.fotos.push(ctx.message.photo[ctx.message.photo.length - 1].file_id);
+        return ctx.reply("✅ Foto recibida.");
+    }
 
-            db.usuarios[ctx.from.id].puntos += 20;
-            guardarDB();
-            ctx.reply(`✅ ENVIADO AL CANAL ${s.datos.pais.toUpperCase()}.\nTu rango: ${obtenerRango(db.usuarios[ctx.from.id].puntos)}`, menuPrincipal());
-        } catch (e) { ctx.reply("Error al enviar."); }
-        delete sesiones[ctx.from.id];
+    if (txt === '🚀 REVISAR') {
+        s.paso = 'confirmacion';
+        const resumen = `📋 **FICHA REPORTE**\n📍 ${s.datos.pais}\n👁️ ${s.datos.descripcion}\n🧠 ${s.datos.analisis_ia}`;
+        return ctx.reply(resumen, Markup.keyboard([['✅ CONFIRMAR Y ENVIAR', '❌ DESCARTAR']]).resize());
+    }
+
+    if (txt === '✅ GUARDAR EN BÓVEDA' && s.paso === 'confirmacion_vip') {
+        db.historias_vip.push({ titulo: s.datos.analisis_ia, relato: s.datos.descripcion, id_user: id });
+        guardarDB();
+        delete sesiones[id];
+        return ctx.reply("🚀 **RELATO GUARDADO.** Ya está disponible en la Bóveda para los socios.", menuPrincipal());
+    }
+
+    if (txt === '✅ CONFIRMAR Y ENVIAR') {
+        ctx.reply("🚀 Subiendo reporte...");
+        if (!db.usuarios[id]) db.usuarios[id] = { nombre: ctx.from.first_name, puntos: 0, reportes: 0 };
+        db.usuarios[id].puntos += 10; db.usuarios[id].reportes += 1; guardarDB();
+        await publicarYGuardar(s.datos, ctx);
+        delete sesiones[id];
+        ctx.reply(`✅ **¡ENVIADO AL RADAR!**`, menuPrincipal());
     }
 });
+
+async function publicarYGuardar(datos, ctx) {
+    if (datos.esHistoria) return; // Las historias NO van a los canales
+    const CANALES = { "Uruguay": "-1003826671445", "Argentina": "-1003750025728", "Chile": "-1003811532520", "Otro (Global)": "-1003820597313", "RadarConoSur": "-1003759731798" };
+    const canal = CANALES[datos.pais] || CANALES["Otro (Global)"];
+    const autor = datos.anonimo ? "Testigo Anónimo 🕵️" : ctx.from.first_name;
+    const ficha = `🛸 **REPORTE AIFU**\n👤 ${autor}\n📍 ${datos.pais} - ${datos.ciudad}\n👁️ ${datos.descripcion}\n🔍 ${datos.analisis_ia}`;
+
+    let puntosMap = [];
+    if (fs.existsSync(MAP_FILE)) puntosMap = JSON.parse(fs.readFileSync(MAP_FILE));
+    puntosMap.push({ lat: datos.lat || -34.8, lng: datos.lng || -56.1, desc: `${datos.ciudad}: ${datos.descripcion.substring(0,30)}` });
+    fs.writeFileSync(MAP_FILE, JSON.stringify(puntosMap));
+
+    try {
+        for (const f of datos.fotos) { 
+            await bot.telegram.sendPhoto(canal, f);
+            await bot.telegram.sendPhoto(CANALES["RadarConoSur"], f);
+            await new Promise(r => setTimeout(r, 1000)); 
+        }
+        await bot.telegram.sendMessage(canal, ficha);
+        await bot.telegram.sendMessage(CANALES["RadarConoSur"], ficha);
+    } catch (e) { console.log("Error:", e); }
+}
 
 bot.launch();
