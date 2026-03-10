@@ -78,7 +78,7 @@ bot.hears("🔗 UNIRSE A MI GRUPO", (ctx) => {
 // 4. PROTOCOLO DE REPORTE (PASO A PASO)
 // ==========================================
 bot.hears("🛸 GENERAR REPORTE", (ctx) => {
-    ctx.session = { reporte: { paso: "ubicacion" } };
+    ctx.session = { reporte: { paso: "ubicacion", lat: 0, lng: 0 } }; // Coordenadas por defecto para evitar errores
     ctx.reply("📍 ¿Dónde ocurrió el avistamiento?", Markup.keyboard([["📍 ENVIAR MI GPS", "⌨️ ESCRIBIR CIUDAD"], ["❌ CANCELAR"]]).resize());
 });
 
@@ -94,16 +94,24 @@ bot.on(["location", "text", "photo", "video"], async (ctx) => {
     // A. UBICACION
     if (r.paso === "ubicacion") {
         if (ctx.message.location) {
-            r.lat = ctx.message.location.latitude; r.lng = ctx.message.location.longitude;
+            r.lat = ctx.message.location.latitude; 
+            r.lng = ctx.message.location.longitude;
             try {
                 const res = await axios.get(`https://us1.locationiq.com/v1/reverse.php?key=${LOCATION_IQ_KEY}&lat=${r.lat}&lon=${r.lng}&format=json`);
-                r.pais = res.data.address.country; r.ciudad = res.data.address.city || res.data.address.town || "Desconocida";
+                r.pais = res.data.address.country || "Uruguay";
+                r.ciudad = res.data.address.city || res.data.address.town || "Desconocida";
                 r.barrio = res.data.address.suburb || "Zona Rural";
                 r.paso = "int_1";
                 return ctx.reply(`📍 Detectado en: ${r.ciudad}.\n\n¿Qué viste en el cielo? (Descríbelo brevemente)`, Markup.removeKeyboard());
-            } catch (e) { r.paso = "m_pais"; return ctx.reply("Error GPS. Escribe el PAÍS manualmente:"); }
+            } catch (e) { 
+                r.paso = "m_pais"; 
+                return ctx.reply("⚠️ Error de GPS. Escribe el PAÍS manualmente:", Markup.removeKeyboard()); 
+            }
         }
-        if (ctx.message.text === "⌨️ ESCRIBIR CIUDAD") { r.paso = "m_pais"; return ctx.reply("Escribe el PAÍS:", Markup.removeKeyboard()); }
+        if (ctx.message.text === "⌨️ ESCRIBIR CIUDAD") { 
+            r.paso = "m_pais"; 
+            return ctx.reply("Escribe el PAÍS:", Markup.removeKeyboard()); 
+        }
     }
 
     // PASOS MANUALES
@@ -135,8 +143,17 @@ bot.on(["location", "text", "photo", "video"], async (ctx) => {
 
 async function finalizarReporte(ctx, r) {
     const u = DB.agentes[ctx.from.id]; 
-    u.reportes++;
-    DB.reportes.push({ lat: r.lat, lng: r.lng, pais: r.pais, ciudad: r.ciudad, fecha: new Date(), tipo: r.desc });
+    if (u) u.reportes++;
+
+    // Guardar en Base de Datos para el Mapa
+    DB.reportes.push({ 
+        lat: r.lat || -34.9011, // Si es manual y no hay lat, ponemos Montevideo por defecto o 0
+        lng: r.lng || -56.1645, 
+        pais: r.pais || "Uruguay", 
+        ciudad: r.ciudad || "Manual", 
+        fecha: new Date(), 
+        tipo: r.desc 
+    });
     guardarDB();
 
     const txtVIP = `🚨 NUEVO REPORTE AIFU\n📍 ${r.ciudad}, ${r.pais}\n👤 Agente: ${u.nombre}\n🚀 Mov: ${r.mov}\n📝 ${r.desc}`;
@@ -148,9 +165,10 @@ async function finalizarReporte(ctx, r) {
         } else {
             await ctx.telegram.sendMessage(RED_AIFU.ID_CONO_SUR, txtVIP);
         }
-    } catch (e) { console.error("Error envío canal"); }
+    } catch (e) { console.error("Error envío canal:", e); }
 
-    await ctx.reply(`✅ REPORTE RECIBIDO\n\nGracias Agente ${u.nombre}. Tu reporte ha sido subido al Radar Cono Sur y sumado a tu perfil.`, menuPrincipal());
+    // MENSAJE DE ÉXITO FINAL
+    await ctx.reply(`✅ REPORTE RECIBIDO\n\nGracias Agente ${u.nombre}. Tu informe ha sido publicado en el Radar y sumado a tu historial.`, menuPrincipal());
     ctx.session = null;
 }
 
