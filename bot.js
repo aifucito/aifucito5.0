@@ -111,82 +111,117 @@ bot.hears("❌ CANCELAR", (ctx) => {
     ctx.reply("Reporte cancelado.", menuPrincipal());
 });
 
+// --- BLOQUE DE UBICACIÓN Y GEOLOCALIZACIÓN MEJORADO ---
 bot.on(["location", "text", "photo", "video"], async (ctx) => {
     if (!ctx.session?.reporte) return;
     const r = ctx.session.reporte;
 
-    // 1. MANEJO DE UBICACIÓN
+    // --- 1. UBICACIÓN ---
     if (r.paso === "ubicacion") {
+
         // CASO GPS
-        if (ctx.message.location) {
+        if (ctx.message?.location) {
             r.lat = ctx.message.location.latitude;
             r.lng = ctx.message.location.longitude;
             try {
-                const res = await axios.get(`https://us1.locationiq.com/v1/reverse.php?key=${LOCATION_IQ_KEY}&lat=${r.lat}&lon=${r.lng}&format=json`);
+                const res = await axios.get(`https://us1.locationiq.com/v1/reverse.php`, {
+                    params: {
+                        key: LOCATION_IQ_KEY,
+                        lat: r.lat,
+                        lon: r.lng,
+                        format: "json"
+                    }
+                });
+
                 r.pais = res.data.address.country || "Uruguay";
                 r.ciudad = res.data.address.city || res.data.address.town || res.data.address.village || "Desconocida";
                 r.paso = "int_1";
+
+                console.log("DEBUG GPS:", r.lat, r.lng, r.ciudad, r.pais);
+
                 return ctx.reply(`📍 Ubicación detectada: ${r.ciudad}, ${r.pais}.\n\n¿Qué viste en el cielo? Descríbelo:`, Markup.removeKeyboard());
+
             } catch (e) {
+                console.error("Error reverse geocoding GPS:", e);
                 r.paso = "m_pais";
-                return ctx.reply("⚠️ Error de GPS. Escribe el PAÍS manualmente:", Markup.removeKeyboard());
+                return ctx.reply("⚠️ No pudimos obtener tu ubicación exacta. Por favor escribe el PAÍS manualmente:", Markup.removeKeyboard());
             }
         }
+
         // CASO MANUAL
-        if (ctx.message.text === "⌨️ ESCRIBIR CIUDAD") {
+        if (ctx.message?.text?.includes("ESCRIBIR CIUDAD")) {
             r.paso = "m_pais";
             return ctx.reply("Escribe el PAÍS del avistamiento:", Markup.removeKeyboard());
         }
+
+        return;
     }
 
-    // PASOS MANUALES (CON GEOLOCALIZACIÓN POR TEXTO)
-    if (r.paso === "m_pais") { 
-        r.pais = ctx.message.text; 
-        r.paso = "m_ciudad"; 
-        return ctx.reply("Escribe la CIUDAD:"); 
+    // --- 2. PASOS MANUALES ---
+    if (r.paso === "m_pais" && ctx.message?.text) {
+        r.pais = ctx.message.text.trim();
+        r.paso = "m_ciudad";
+        return ctx.reply("Escribe la CIUDAD:");
     }
-    
-    if (r.paso === "m_ciudad") { 
-        r.ciudad = ctx.message.text; 
-        r.paso = "int_1"; 
-        
-        // Buscar coordenadas exactas de la ciudad escrita
+
+    if (r.paso === "m_ciudad" && ctx.message?.text) {
+        r.ciudad = ctx.message.text.trim();
+        r.paso = "int_1";
+
         try {
             const query = `${r.ciudad}, ${r.pais}`;
-            const geoRes = await axios.get(`https://us1.locationiq.com/v1/search.php?key=${LOCATION_IQ_KEY}&q=${encodeURIComponent(query)}&format=json&limit=1`);
+            const geoRes = await axios.get(`https://us1.locationiq.com/v1/search.php`, {
+                params: {
+                    key: LOCATION_IQ_KEY,
+                    q: query,
+                    format: "json",
+                    limit: 1
+                }
+            });
+
             if (geoRes.data && geoRes.data.length > 0) {
                 r.lat = parseFloat(geoRes.data[0].lat);
                 r.lng = parseFloat(geoRes.data[0].lon);
+            } else {
+                r.lat = -34.9011;
+                r.lng = -56.1645;
+                console.warn("No se encontraron coordenadas, usando fallback Montevideo.");
             }
-        } catch (e) { console.error("Error geolocalizando ciudad manual."); }
 
-        return ctx.reply("¿Qué viste en el cielo? (Luz, objeto, forma, etc.)"); 
+            console.log("DEBUG ciudad manual:", r.lat, r.lng, r.ciudad, r.pais);
+        } catch (e) {
+            console.error("Error geolocalizando ciudad manual:", e);
+            r.lat = -34.9011;
+            r.lng = -56.1645;
+        }
+
+        return ctx.reply("¿Qué viste en el cielo? (Luz, objeto, forma, etc.)");
     }
 
-    // 2. DESCRIPCIÓN Y MOVIMIENTO
-    if (r.paso === "int_1" && ctx.message.text) {
-        r.desc = ctx.message.text;
+    // --- 3. DESCRIPCIÓN Y MOVIMIENTO ---
+    if (r.paso === "int_1" && ctx.message?.text) {
+        r.desc = ctx.message.text.trim();
         r.paso = "int_2";
         return ctx.reply("¿El objeto tenía movimiento inteligente o errático?", Markup.keyboard([
             ["SÍ", "NO", "ERRÁTICO"]
         ]).oneTime().resize());
     }
 
-    if (r.paso === "int_2" && ctx.message.text) {
-        r.mov = ctx.message.text;
+    if (r.paso === "int_2" && ctx.message?.text) {
+        r.mov = ctx.message.text.trim();
         r.paso = "multimedia";
         return ctx.reply("📸 ¿Tienes evidencia? Envía la FOTO o VIDEO ahora.\n\nSi no tienes, presiona el botón:", Markup.keyboard([
             ["🚫 SIN EVIDENCIA (SOLO TEXTO)"], ["❌ CANCELAR"]
         ]).resize());
     }
 
-    // 3. CAPTURA DE ARCHIVOS Y FINALIZACIÓN
+    // --- 4. MULTIMEDIA Y FINALIZACIÓN ---
     if (r.paso === "multimedia") {
-        if (ctx.message.text === "🚫 SIN EVIDENCIA (SOLO TEXTO)" || ctx.message.photo || ctx.message.video) {
-            if (ctx.message.photo) {
+        if (ctx.message?.text === "🚫 SIN EVIDENCIA (SOLO TEXTO)" || ctx.message?.photo || ctx.message?.video) {
+            if (ctx.message?.photo) {
                 r.fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
                 r.tipo = "foto";
-            } else if (ctx.message.video) {
+            } else if (ctx.message?.video) {
                 r.fileId = ctx.message.video.file_id;
                 r.tipo = "video";
             }
@@ -195,6 +230,7 @@ bot.on(["location", "text", "photo", "video"], async (ctx) => {
     }
 });
 
+// --- FINALIZAR REPORTE ---
 async function finalizarReporte(ctx, r) {
     const u = DB.agentes[ctx.from.id];
     if (u) u.reportes++;
@@ -213,7 +249,6 @@ async function finalizarReporte(ctx, r) {
     DB.reportes.push(nuevoReporte);
     guardarDB();
 
-    // Notificación al canal VIP de la Red AIFU
     const txtCanal = `🚨 NUEVO INFORME DE AVISTAMIENTO\n\n📍 Ubicación: ${nuevoReporte.ciudad}, ${nuevoReporte.pais}\n👤 Agente: ${nuevoReporte.agente}\n🚀 Movimiento: ${nuevoReporte.movimiento}\n📝 Descripción: ${nuevoReporte.tipo}`;
     
     try {
