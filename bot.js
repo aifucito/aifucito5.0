@@ -2,253 +2,495 @@ import { Telegraf, Markup, session } from "telegraf";
 import express from "express";
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from 'url';
+import { fileURLToPath } from "url";
 import axios from "axios";
 import crypto from "crypto";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// CONFIGURACIÓN DE VARIABLES DE ENTORNO
+/* ================================
+   VARIABLES DE ENTORNO
+================================ */
+
 const TOKEN = process.env.TELEGRAM_TOKEN;
 const LOCATION_IQ_KEY = process.env.LOCATION_IQ_KEY;
-const PUBLIC_URL = process.env.PUBLIC_URL; 
+
+/* ================================
+   RED DE CANALES AIFU
+================================ */
 
 const RED_AIFU = {
-    ID_CONO_SUR: "-1002425624773", 
+
+    // Canal central (recibe TODO con multimedia)
+    ID_CONO_SUR: "-1002388657640",
+
+    // Canales regionales (solo texto)
+    ID_UY: "-1002347230353",
+    ID_AR: "-1002410312674",
+    ID_CH: "-1002283925519",
+
+    // Otros países
+    ID_GLOBAL: "-1002414775486",
+
+    // Enlaces para que los usuarios se unan
     LINK_CONO_SUR: "https://t.me/+YqA6d3VpKv9mZjU5",
     LINK_GLOBAL: "https://t.me/+r5XfcJma3g03MWZh",
+    LINK_UY: "https://t.me/+nCVD4NsOihIyNGFh",
     LINK_AR: "https://t.me/+QpErPk26SY05OGIx",
-    LINK_CH: "https://t.me/+VP2T47eLvIowNmYx",
-    LINK_UY: "https://t.me/+nCVD4NsOihIyNGFh"
+    LINK_CH: "https://t.me/+VP2T47eLvIowNmYx"
 };
 
-// PERSISTENCIA DE DATOS EN RENDER
+/* ================================
+   BASE DE DATOS PERSISTENTE
+================================ */
+
 const DATA_DIR = "/opt/render/project/src/data";
 const DB_PATH = path.join(DATA_DIR, "aifucito_db.json");
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-let DB = { agentes: {}, reportes: [] };
-if (fs.existsSync(DB_PATH)) {
-    try { 
-        const data = fs.readFileSync(DB_PATH, "utf8");
-        DB = JSON.parse(data); 
-    } catch (e) { console.error("Error cargando DB:", e); }
+if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-const guardarDB = () => {
-    try {
-        fs.writeFileSync(DB_PATH, JSON.stringify(DB, null, 4));
-    } catch (e) { console.error("Error guardando DB:", e); }
+let DB = {
+    agentes: {},
+    reportes: []
 };
+
+if (fs.existsSync(DB_PATH)) {
+    try {
+        DB = JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
+    } catch {
+        console.log("DB nueva creada");
+    }
+}
+
+function guardarDB() {
+    fs.writeFileSync(DB_PATH, JSON.stringify(DB, null, 4));
+}
+
+/* ================================
+   BOT TELEGRAM
+================================ */
 
 const bot = new Telegraf(TOKEN);
 bot.use(session());
 
-// LÓGICA DE RANGOS AIFU
 function obtenerRango(usuario, id) {
-    if (id == 7662736311) return "🛸 COMANDANTE INTERGALÁCTICO"; 
+
+    if (id == 7662736311) return "🛸 COMANDANTE INTERGALÁCTICO";
+
     const r = usuario.reportes || 0;
+
     if (r >= 10) return "👽 Investigador Senior";
     if (r >= 5) return "🔦 Cebador de Mate del Área 51";
+
     return "🧻 Fajinador de Retretes Espaciales";
 }
+
+function obtenerCanalPais(pais) {
+
+    const p = pais.toLowerCase();
+
+    if (p.includes("uruguay")) return RED_AIFU.ID_UY;
+    if (p.includes("argentina")) return RED_AIFU.ID_AR;
+    if (p.includes("chile")) return RED_AIFU.ID_CH;
+
+    return RED_AIFU.ID_GLOBAL;
+}
+
+/* ================================
+   MENÚ PRINCIPAL
+================================ */
 
 const menuPrincipal = () => Markup.keyboard([
     ["🛸 GENERAR REPORTE", "🌍 VER RADAR"],
     ["🔗 UNIRSE A MI GRUPO", "⭐ MI PERFIL"]
 ]).resize();
 
-// --- COMANDOS ---
+/* ================================
+   COMANDO START
+================================ */
+
 bot.start((ctx) => {
+
     const id = ctx.from.id;
+
     if (!DB.agentes[id]) {
-        DB.agentes[id] = { 
-            nombre: ctx.from.first_name, 
-            reportes: 0, 
-            token: crypto.randomBytes(8).toString('hex') 
+
+        DB.agentes[id] = {
+            nombre: ctx.from.first_name,
+            reportes: 0,
+            token: crypto.randomBytes(8).toString("hex")
         };
+
         guardarDB();
     }
-    ctx.reply(`🛰️ NODO AIFUCITO ONLINE\n\nBienvenido al sistema de reporte de la AIFU.`, menuPrincipal());
+
+    ctx.reply("🛰️ NODO AIFUCITO ONLINE", menuPrincipal());
 });
+
+/* ================================
+   PERFIL
+================================ */
 
 bot.hears("⭐ MI PERFIL", (ctx) => {
+
     const u = DB.agentes[ctx.from.id];
-    if (!u) return ctx.reply("Por favor, usa /start para registrarte.");
-    ctx.reply(`🪪 PERFIL DE AGENTE\n\n👤 Nombre: ${u.nombre}\n🎖️ Rango: ${obtenerRango(u, ctx.from.id)}\n📊 Reportes: ${u.reportes}\n🆔 ID: ${ctx.from.id}`);
+
+    ctx.reply(
+`🪪 PERFIL DE AGENTE
+
+👤 Nombre: ${u.nombre}
+🎖️ Rango: ${obtenerRango(u, ctx.from.id)}
+📊 Reportes: ${u.reportes}`
+    );
+
 });
+
+/* ================================
+   VER RADAR
+================================ */
 
 bot.hears("🌍 VER RADAR", (ctx) => {
-    const u = DB.agentes[ctx.from.id];
-    if (!u) return ctx.reply("Usa /start primero.");
-    const authUrl = `${PUBLIC_URL}/?auth=${u.token}`;
-    ctx.reply(`🛰️ ACCESO AL RADAR SEGURO:`, Markup.inlineKeyboard([[Markup.button.url("ABRIR MAPA EN VIVO 🛰️", authUrl)]]));
+
+    ctx.reply(
+        "🛰️ Radar AIFU en vivo",
+        Markup.inlineKeyboard([
+            [Markup.button.url("ABRIR RADAR 🛰️", process.env.PUBLIC_URL)]
+        ])
+    );
+
 });
+
+/* ================================
+   UNIRSE A CANALES
+================================ */
 
 bot.hears("🔗 UNIRSE A MI GRUPO", (ctx) => {
-    const botones = [
-        [Markup.button.url("Uruguay 🇺🇾", RED_AIFU.LINK_UY), Markup.button.url("Argentina 🇦🇷", RED_AIFU.LINK_AR)],
-        [Markup.button.url("Chile 🇨🇱", RED_AIFU.LINK_CH), Markup.button.url("Global 👽", RED_AIFU.LINK_GLOBAL)]
-    ];
-    if (ctx.from.id == 7662736311) botones.push([Markup.button.url("🔥 RADAR CONO SUR (VIP)", RED_AIFU.LINK_CONO_SUR)]);
-    ctx.reply("Selecciona tu zona de operación:", Markup.inlineKeyboard(botones));
+
+    ctx.reply("Selecciona tu zona:",
+
+        Markup.inlineKeyboard([
+
+            [
+                Markup.button.url("Uruguay 🇺🇾", RED_AIFU.LINK_UY),
+                Markup.button.url("Argentina 🇦🇷", RED_AIFU.LINK_AR)
+            ],
+
+            [
+                Markup.button.url("Chile 🇨🇱", RED_AIFU.LINK_CH),
+                Markup.button.url("Global 👽", RED_AIFU.LINK_GLOBAL)
+            ],
+
+            [
+                Markup.button.url("Radar Cono Sur 🛰️", RED_AIFU.LINK_CONO_SUR)
+            ]
+
+        ])
+
+    );
+
 });
 
-// --- SISTEMA DE REPORTES ---
+/* ================================
+   GENERAR REPORTE
+================================ */
+
 bot.hears("🛸 GENERAR REPORTE", (ctx) => {
-    ctx.session = { reporte: { paso: "ubicacion", lat: -34.9011, lng: -56.1645 } }; 
-    ctx.reply("📍 ¿Dónde ocurrió el avistamiento?", Markup.keyboard([
-        ["📍 ENVIAR MI GPS", "⌨️ ESCRIBIR CIUDAD"], 
-        ["❌ CANCELAR"]
-    ]).resize());
+
+    ctx.session = { reporte: { paso: "ubicacion" } };
+
+    ctx.reply(
+        "📍 ¿Dónde ocurrió el avistamiento?",
+        Markup.keyboard([
+            [Markup.button.locationRequest("📍 ENVIAR MI GPS")],
+            ["⌨️ ESCRIBIR CIUDAD"],
+            ["❌ CANCELAR"]
+        ]).resize()
+    );
+
 });
+
+/* ================================
+   CANCELAR
+================================ */
 
 bot.hears("❌ CANCELAR", (ctx) => {
+
     ctx.session = null;
     ctx.reply("Reporte cancelado.", menuPrincipal());
+
 });
 
-// --- BLOQUE DE UBICACIÓN Y GEOLOCALIZACIÓN ---
-bot.on(["location", "text", "photo", "video"], async (ctx) => {
-    if (!ctx.session?.reporte) return;
+/* ================================
+   FLUJO DE REPORTE
+================================ */
+
+bot.on(["location","text","photo","video"], async (ctx)=>{
+
+    if(!ctx.session?.reporte) return;
+
     const r = ctx.session.reporte;
 
-    if (r.paso === "ubicacion") {
-        if (ctx.message?.location) {
+    /* UBICACION GPS */
+
+    if(r.paso === "ubicacion"){
+
+        if(ctx.message.location){
+
             r.lat = ctx.message.location.latitude;
             r.lng = ctx.message.location.longitude;
-            try {
-                const res = await axios.get(`https://us1.locationiq.com/v1/reverse.php`, {
-                    params: { key: LOCATION_IQ_KEY, lat: r.lat, lon: r.lng, format: "json" }
-                });
-                r.pais = res.data.address.country || "Uruguay";
-                r.ciudad = res.data.address.city || res.data.address.town || res.data.address.village || "Desconocida";
-                r.paso = "int_1";
-                return ctx.reply(`📍 Ubicación detectada: ${r.ciudad}, ${r.pais}.\n\n¿Qué viste en el cielo? Descríbelo:`, Markup.removeKeyboard());
-            } catch (e) {
-                r.paso = "m_pais";
-                return ctx.reply("⚠️ No pudimos obtener tu ubicación exacta. Por favor escribe el PAÍS manualmente:", Markup.removeKeyboard());
+
+            try{
+
+                const geo = await axios.get(
+                    `https://us1.locationiq.com/v1/reverse.php`,
+                    {
+                        params:{
+                            key:LOCATION_IQ_KEY,
+                            lat:r.lat,
+                            lon:r.lng,
+                            format:"json"
+                        }
+                    }
+                );
+
+                r.pais = geo.data.address.country || "Desconocido";
+                r.ciudad = geo.data.address.city ||
+                           geo.data.address.town ||
+                           geo.data.address.village ||
+                           "Zona rural";
+
+            }catch{
+
+                r.pais = "Desconocido";
+                r.ciudad = "Coordenadas GPS";
+
             }
+
+            r.paso="descripcion";
+
+            return ctx.reply("¿Qué viste en el cielo?",Markup.removeKeyboard());
+
         }
 
-        if (ctx.message?.text?.includes("ESCRIBIR CIUDAD")) {
-            r.paso = "m_pais";
-            return ctx.reply("Escribe el PAÍS del avistamiento:", Markup.removeKeyboard());
+        if(ctx.message.text?.includes("ESCRIBIR")){
+
+            r.paso="pais";
+            return ctx.reply("Escribe el PAÍS:",Markup.removeKeyboard());
+
         }
-        return;
+
     }
 
-    if (r.paso === "m_pais" && ctx.message?.text) {
-        r.pais = ctx.message.text.trim();
-        r.paso = "m_ciudad";
-        return ctx.reply("Escribe la CIUDAD:");
+    if(r.paso==="pais"){
+
+        r.pais = ctx.message.text;
+        r.paso="ciudad";
+
+        return ctx.reply("Escribe la CIUDAD");
+
     }
 
-    if (r.paso === "m_ciudad" && ctx.message?.text) {
-        r.ciudad = ctx.message.text.trim();
-        r.paso = "int_1";
-        try {
-            const query = `${r.ciudad}, ${r.pais}`;
-            const geoRes = await axios.get(`https://us1.locationiq.com/v1/search.php`, {
-                params: { key: LOCATION_IQ_KEY, q: query, format: "json", limit: 1 }
-            });
-            if (geoRes.data && geoRes.data.length > 0) {
-                r.lat = parseFloat(geoRes.data[0].lat);
-                r.lng = parseFloat(geoRes.data[0].lon);
-            } else {
-                r.lat = -34.9011;
-                r.lng = -56.1645;
-            }
-        } catch (e) {
-            r.lat = -34.9011;
-            r.lng = -56.1645;
+    if(r.paso==="ciudad"){
+
+        r.ciudad = ctx.message.text;
+
+        try{
+
+            const g = await axios.get(
+                "https://us1.locationiq.com/v1/search.php",
+                {
+                    params:{
+                        key:LOCATION_IQ_KEY,
+                        q:`${r.ciudad}, ${r.pais}`,
+                        format:"json",
+                        limit:1
+                    }
+                }
+            );
+
+            r.lat = parseFloat(g.data[0].lat);
+            r.lng = parseFloat(g.data[0].lon);
+
+        }catch{
+
+            r.lat=-34.9;
+            r.lng=-56.16;
+
         }
-        return ctx.reply("¿Qué viste en el cielo? (Luz, objeto, forma, etc.)");
+
+        r.paso="descripcion";
+
+        return ctx.reply("¿Qué viste en el cielo?");
+
     }
 
-    if (r.paso === "int_1" && ctx.message?.text) {
-        r.desc = ctx.message.text.trim();
-        r.paso = "int_2";
-        return ctx.reply("¿El objeto tenía movimiento inteligente o errático?", Markup.keyboard([
-            ["SÍ", "NO", "ERRÁTICO"]
-        ]).oneTime().resize());
+    if(r.paso==="descripcion"){
+
+        r.desc = ctx.message.text;
+        r.paso="mov";
+
+        return ctx.reply(
+            "¿Movimiento?",
+            Markup.keyboard([["SÍ","NO","ERRÁTICO"]]).resize()
+        );
+
     }
 
-    if (r.paso === "int_2" && ctx.message?.text) {
-        r.mov = ctx.message.text.trim();
-        r.paso = "multimedia";
-        return ctx.reply("📸 ¿Tienes evidencia? Envía la FOTO o VIDEO ahora.\n\nSi no tienes, presiona el botón:", Markup.keyboard([
-            ["🚫 SIN EVIDENCIA (SOLO TEXTO)"], ["❌ CANCELAR"]
-        ]).resize());
+    if(r.paso==="mov"){
+
+        r.mov = ctx.message.text;
+        r.paso="media";
+
+        return ctx.reply(
+            "Envía FOTO o VIDEO. O presiona:",
+            Markup.keyboard([["🚫 SIN EVIDENCIA"]]).resize()
+        );
+
     }
 
-    if (r.paso === "multimedia") {
-        if (ctx.message?.text === "🚫 SIN EVIDENCIA (SOLO TEXTO)" || ctx.message?.photo || ctx.message?.video) {
-            if (ctx.message?.photo) {
-                r.fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
-                r.tipo = "foto";
-            } else if (ctx.message?.video) {
-                r.fileId = ctx.message.video.file_id;
-                r.tipo = "video";
-            }
-            return await finalizarReporte(ctx, r);
+    if(r.paso==="media"){
+
+        if(ctx.message.photo){
+
+            r.fileId = ctx.message.photo.pop().file_id;
+            r.tipo="foto";
+
         }
+
+        if(ctx.message.video){
+
+            r.fileId = ctx.message.video.file_id;
+            r.tipo="video";
+
+        }
+
+        if(ctx.message.text==="🚫 SIN EVIDENCIA"){}
+
+        return finalizarReporte(ctx,r);
+
     }
+
 });
 
-// --- FINALIZAR REPORTE ---
-async function finalizarReporte(ctx, r) {
-    const u = DB.agentes[ctx.from.id];
-    if (u) u.reportes++;
+/* ================================
+   FINALIZAR REPORTE
+================================ */
 
-    const nuevoReporte = {
-        lat: r.lat,
-        lng: r.lng,
-        pais: r.pais || "Uruguay",
-        ciudad: r.ciudad || "Manual",
-        fecha: new Date(),
-        tipo: r.desc,
-        movimiento: r.mov,
-        agente: u ? u.nombre : "Agente Anónimo"
+async function finalizarReporte(ctx,r){
+
+    const u = DB.agentes[ctx.from.id];
+
+    if(u) u.reportes++;
+
+    const nuevo = {
+
+        lat:r.lat,
+        lng:r.lng,
+        pais:r.pais,
+        ciudad:r.ciudad,
+        fecha:new Date().toISOString(),
+        descripcion:r.desc,
+        movimiento:r.mov,
+        agente:u?.nombre || "Anónimo"
+
     };
 
-    DB.reportes.push(nuevoReporte);
+    DB.reportes.push(nuevo);
     guardarDB();
 
-    const txtCanal = `🚨 NUEVO INFORME DE AVISTAMIENTO\n\n📍 Ubicación: ${nuevoReporte.ciudad}, ${nuevoReporte.pais}\n👤 Agente: ${nuevoReporte.agente}\n🚀 Movimiento: ${nuevoReporte.movimiento}\n📝 Descripción: ${nuevoReporte.tipo}`;
-    
-    try {
-        if (r.fileId) {
-            if (r.tipo === "foto") await ctx.telegram.sendPhoto(RED_AIFU.ID_CONO_SUR, r.fileId, { caption: txtCanal });
-            else await ctx.telegram.sendVideo(RED_AIFU.ID_CONO_SUR, r.fileId, { caption: txtCanal });
-        } else {
-            await ctx.telegram.sendMessage(RED_AIFU.ID_CONO_SUR, txtCanal);
-        }
-    } catch (e) { console.error("Error al notificar al canal:", e); }
+    const txtCentral =
+`🚨 NUEVO AVISTAMIENTO
 
-    ctx.session = null;
-    return ctx.reply(`✅ REPORTE FINALIZADO\n\nGracias Agente ${u.nombre}. Tu informe ha sido integrado al Radar AIFU y subido a la base de datos central.`, menuPrincipal());
+📍 ${nuevo.ciudad}, ${nuevo.pais}
+👤 Agente: ${nuevo.agente}
+🚀 Movimiento: ${nuevo.movimiento}
+
+📝 ${nuevo.descripcion}`;
+
+    const txtPais =
+`📡 REPORTE AIFU
+
+📍 ${nuevo.ciudad}, ${nuevo.pais}
+👤 Agente: ${nuevo.agente}
+
+📝 ${nuevo.descripcion}`;
+
+    try{
+
+        if(r.fileId){
+
+            if(r.tipo==="foto")
+                await ctx.telegram.sendPhoto(RED_AIFU.ID_CONO_SUR,r.fileId,{caption:txtCentral});
+
+            else
+                await ctx.telegram.sendVideo(RED_AIFU.ID_CONO_SUR,r.fileId,{caption:txtCentral});
+
+        }else{
+
+            await ctx.telegram.sendMessage(RED_AIFU.ID_CONO_SUR,txtCentral);
+
+        }
+
+    }catch(e){
+
+        console.log("Error enviando a Cono Sur");
+
+    }
+
+    try{
+
+        const canalPais = obtenerCanalPais(nuevo.pais);
+        await ctx.telegram.sendMessage(canalPais,txtPais);
+
+    }catch{
+
+        console.log("Error canal país");
+
+    }
+
+    ctx.session=null;
+
+    return ctx.reply("✅ Reporte integrado al Radar AIFU.",menuPrincipal());
+
 }
 
-// --- SERVIDOR WEB ---
-const app = express();
-app.use(express.static('public'));
-app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
+/* ================================
+   SERVIDOR WEB
+================================ */
 
-// RUTA /api/reportes CON AUTORIZACIÓN
-app.get("/api/reportes", (req, res) => {
-    const token = req.query.auth;
-    const agente = Object.values(DB.agentes).find(a => a.token === token);
-    if (!agente) return res.status(403).json({ error: "Acceso no autorizado" });
+const app = express();
+
+app.use(express.static("public"));
+
+app.get("/api/reportes",(req,res)=>{
+
     res.json(DB.reportes);
+
 });
 
-// LANZAMIENTO
-bot.launch();
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, '0.0.0.0', () => console.log(`AIFUCITO activo en puerto ${PORT}`));
+app.get("/",(req,res)=>{
 
-// Manejo de cierre limpio
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+    res.sendFile(path.join(__dirname,"public","index.html"));
+
+});
+
+/* ================================
+   LANZAMIENTO
+================================ */
+
+bot.launch().then(()=>{
+
+    console.log("AIFUCITO ONLINE");
+
+});
+
+const PORT = process.env.PORT || 10000;
+
+app.listen(PORT,()=>{
+
+    console.log("Servidor activo en puerto "+PORT);
+
+});
