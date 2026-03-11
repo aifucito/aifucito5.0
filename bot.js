@@ -127,7 +127,7 @@ bot.start((ctx) => {
         guardarDB();
     }
 
-    ctx.reply("🛰️ NODO AIFUCITO ONLINE", menuPrincipal());
+    ctx.reply("🛰️ AIFUCITO ONLINE", menuPrincipal());
 });
 
 /* ================================
