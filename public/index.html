@@ -1,158 +1,67 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>RADAR TÁCTICO AIFU - CONO SUR</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-    <style>
-        /* Estética General */
-        body, html { margin:0; padding:0; height:100%; width:100%; background: #c2c2c2; font-family: 'Courier New', monospace; }
-        #map { height:100vh; width:100vw; }
+// 1. Inicializar Mapa - Añadimos 'tap: false' para mejor respuesta en móviles
+var map = L.map('map', { 
+    zoomControl: false,
+    tap: false 
+}).setView([-32.522779, -55.765835], 6);
 
-        /* Panel Superior Estilo AIFU */
-        .ui-panel {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            z-index: 1000;
-            background: rgba(10, 25, 10, 0.9);
-            border: 2px solid #0f0;
-            color: #0f0;
-            padding: 15px;
-            border-radius: 4px;
-            box-shadow: 0 0 20px rgba(0, 255, 0, 0.2);
-            min-width: 220px;
-            pointer-events: none;
-        }
-        .ui-header { font-weight: bold; font-size: 1.1em; border-bottom: 1px solid #0f0; padding-bottom: 5px; margin-bottom: 8px; }
-        .ui-stat { font-size: 1em; color: #8f8; margin: 3px 0; }
-        .ui-label { font-size: 0.85em; color: #ccc; text-transform: uppercase; }
+// Capa de marcadores para poder limpiarlos fácilmente sin tocar el fondo
+var markersLayer = L.layerGroup().addTo(map);
 
-        /* Efecto de Resplandor Neón para los Puntos */
-        .ovni-glow {
-            background-color: rgba(0, 255, 0, 0.7);
-            border: 2px solid #fff;
-            border-radius: 50%;
-            box-shadow: 0 0 15px 8px rgba(0, 255, 0, 0.6);
-            animation: pulse 2s infinite;
-        }
+// 2. Estilo Cartográfico (Tu elección de Carto Light es muy buena para resaltar el neón)
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    attribution: 'AIFU TACTICAL NETWORK'
+}).addTo(map);
 
-        @keyframes pulse {
-            0% { transform: scale(1); opacity: 1; }
-            50% { transform: scale(1.2); opacity: 0.7; }
-            100% { transform: scale(1); opacity: 1; }
-        }
+var heatLayer = L.heatLayer([], {
+    radius: 35,
+    blur: 20,
+    gradient: {0.4: 'cyan', 0.6: 'lime', 0.8: 'yellow', 1.0: 'red'}
+}).addTo(map);
 
-        /* Estilo Táctico para el Popup */
-        .leaflet-popup-content-wrapper { 
-            background: rgba(5, 15, 5, 0.95); 
-            color: #0f0; 
-            border: 1px solid #0f0; 
-            font-family: monospace;
-            border-radius: 0;
-        }
-        .leaflet-popup-tip { background: #0f0; }
+// Icono con corrección de anclaje
+var ovniIcon = L.divIcon({
+    className: 'ovni-glow',
+    iconSize: [12, 12],
+    iconAnchor: [6, 6], // Esto lo clava al suelo
+    popupAnchor: [0, -10]
+});
 
-        /* Barra de Intensidad (Leyenda) */
-        .intensity-bar {
-            margin-top: 10px;
-            height: 8px;
-            background: linear-gradient(to right, blue, cyan, lime, yellow, red);
-            border: 1px solid #555;
-        }
-    </style>
-</head>
-<body>
+async function cargarDatos() {
+    try {
+        const response = await fetch('/api/reportes'); 
+        const data = await response.json();
+        
+        document.getElementById('stat-count').innerText = "REPORTES HOY: " + data.length;
 
-<div class="ui-panel">
-    <div class="ui-header">🛰️ RADAR TÁCTICO AIFU</div>
-    <div id="stat-count" class="ui-stat">REPORTES HOY: 0</div>
-    <div class="ui-label">ESTADO: <span style="color:#0f0">ACTIVO - ALTA DENSIDAD</span></div>
-    <div class="ui-label">REGIÓN: CONO SUR</div>
-    <div class="ui-label" style="margin-top:8px;">INTENSIDAD</div>
-    <div class="intensity-bar"></div>
-    <div style="display:flex; justify-content: space-between; font-size: 0.7em;">
-        <span>Bajo</span>
-        <span>Alto</span>
-    </div>
-</div>
+        // Limpiar solo los marcadores, no el mapa base
+        markersLayer.clearLayers();
 
-<div id="map"></div>
+        const puntosHeat = data
+            .filter(d => d.lat && d.lng)
+            .map(d => [parseFloat(d.lat), parseFloat(d.lng), 0.6]);
+        
+        heatLayer.setLatLngs(puntosHeat);
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://leaflet.github.io/Leaflet.heat/dist/leaflet-heat.js"></script>
+        data.forEach(d => {
+            if(d.lat && d.lng) {
+                L.marker([parseFloat(d.lat), parseFloat(d.lng)], { icon: ovniIcon })
+                .addTo(markersLayer)
+                .bindPopup(`
+                    <div style="border-bottom: 1px solid #0f0; margin-bottom:5px;">
+                        <b>ALERTA FANI: ${d.ciudad || 'No especificado'}</b>
+                    </div>
+                    <b>AGENTE:</b> ${d.agente}<br>
+                    <b>MOVIMIENTO:</b> ${d.movimiento || 'Estático'}<br>
+                    <b>DESCRIPCIÓN:</b> ${d.descripcion || 'Sin datos'}<br>
+                    <span style="color:#8f8; font-size:0.8em;">-- ORIGEN AIFU --</span>
+                `);
+            }
+        });
 
-<script>
-    // 1. Inicializar Mapa centrado en Uruguay/Cono Sur
-    var map = L.map('map', { zoomControl: false }).setView([-32.522779, -55.765835], 6);
-
-    // 2. Estilo Cartográfico Claro (Evita el fondo negro aburrido)
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        attribution: 'AIFU TACTICAL NETWORK'
-    }).addTo(map);
-
-    // Capa para el mapa de calor ajustada a la estética AIFU
-    var heatLayer = L.heatLayer([], {
-        radius: 35,
-        blur: 20,
-        maxZoom: 10,
-        gradient: {0.4: 'cyan', 0.6: 'lime', 0.8: 'yellow', 1.0: 'red'}
-    }).addTo(map);
-
-    // Icono personalizado con resplandor
-    var ovniIcon = L.divIcon({
-        className: 'ovni-glow',
-        iconSize: [12, 12],
-        iconAnchor: [6, 6]
-    });
-
-    // 3. Función para cargar reportes
-    async function cargarDatos() {
-        try {
-            // El bot sirve los reportes en esta ruta
-            const response = await fetch('/api/reportes'); 
-            const data = await response.json();
-            
-            // Actualizar contador del panel
-            document.getElementById('stat-count').innerText = "REPORTES HOY: " + data.length;
-
-            // Limpiar marcadores previos para no duplicar
-            map.eachLayer((layer) => {
-                if (layer instanceof L.Marker || layer instanceof L.CircleMarker) {
-                    map.removeLayer(layer);
-                }
-            });
-
-            // Convertimos datos a formato [lat, lng, intensidad]
-            const puntosHeat = data
-                .filter(d => d.lat && d.lng)
-                .map(d => [d.lat, d.lng, 0.6]);
-            
-            heatLayer.setLatLngs(puntosHeat);
-
-            // Agregar marcadores individuales con el efecto neón
-            data.forEach(d => {
-                if(d.lat && d.lng) {
-                    L.marker([d.lat, d.lng], { icon: ovniIcon })
-                    .addTo(map)
-                    .bindPopup(`
-                        <div style="border-bottom: 1px solid #0f0; margin-bottom:5px;"><b>IDENTIFICADO: ${d.tipo}</b></div>
-                        <b>AGENTE:</b> ${d.agente}<br>
-                        <b>FECHA:</b> ${d.fecha || 'Reciente'}<br>
-                        <span style="color:#8f8; font-size:0.8em;">-- ORIGEN AIFU --</span>
-                    `);
-                }
-            });
-
-        } catch (e) {
-            console.error("Error en enlace de radar:", e);
-        }
+    } catch (e) {
+        console.error("Error en radar:", e);
     }
+}
 
-    // Carga inicial y bucle de actualización rápida
-    cargarDatos();
-    setInterval(cargarDatos, 10000); // Actualiza cada 10 segundos para tiempo real
-</script>
-</body>
-</html>
+cargarDatos();
+setInterval(cargarDatos, 15000); // 15 segundos es ideal para no saturar el servidor Render
