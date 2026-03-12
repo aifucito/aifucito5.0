@@ -22,18 +22,14 @@ const LOCATION_IQ_KEY = process.env.LOCATION_IQ_KEY;
 
 const RED_AIFU = {
 
-    // Canal central (recibe TODO con multimedia)
     ID_CONO_SUR: "-1002388657640",
 
-    // Canales regionales (solo texto)
     ID_UY: "-1002347230353",
     ID_AR: "-1002410312674",
     ID_CH: "-1002283925519",
 
-    // Otros países
     ID_GLOBAL: "-1002414775486",
 
-    // Enlaces para que los usuarios se unan
     LINK_CONO_SUR: "https://t.me/+YqA6d3VpKv9mZjU5",
     LINK_GLOBAL: "https://t.me/+r5XfcJma3g03MWZh",
     LINK_UY: "https://t.me/+nCVD4NsOihIyNGFh",
@@ -42,7 +38,7 @@ const RED_AIFU = {
 };
 
 /* ================================
-   BASE DE DATOS PERSISTENTE
+   BASE DE DATOS
 ================================ */
 
 const DATA_DIR = "/opt/render/project/src/data";
@@ -100,7 +96,7 @@ function obtenerCanalPais(pais) {
 }
 
 /* ================================
-   MENÚ PRINCIPAL
+   MENÚ
 ================================ */
 
 const menuPrincipal = () => Markup.keyboard([
@@ -109,7 +105,7 @@ const menuPrincipal = () => Markup.keyboard([
 ]).resize();
 
 /* ================================
-   COMANDO START
+   START
 ================================ */
 
 bot.start((ctx) => {
@@ -149,7 +145,7 @@ bot.hears("⭐ MI PERFIL", (ctx) => {
 });
 
 /* ================================
-   VER RADAR
+   RADAR
 ================================ */
 
 bot.hears("🌍 VER RADAR", (ctx) => {
@@ -164,7 +160,7 @@ bot.hears("🌍 VER RADAR", (ctx) => {
 });
 
 /* ================================
-   UNIRSE A CANALES
+   UNIRSE
 ================================ */
 
 bot.hears("🔗 UNIRSE A MI GRUPO", (ctx) => {
@@ -224,7 +220,7 @@ bot.hears("❌ CANCELAR", (ctx) => {
 });
 
 /* ================================
-   FLUJO DE REPORTE
+   FLUJO REPORTE
 ================================ */
 
 bot.on(["location","text","photo","video"], async (ctx)=>{
@@ -232,8 +228,6 @@ bot.on(["location","text","photo","video"], async (ctx)=>{
     if(!ctx.session?.reporte) return;
 
     const r = ctx.session.reporte;
-
-    /* UBICACION GPS */
 
     if(r.paso === "ubicacion"){
 
@@ -256,11 +250,23 @@ bot.on(["location","text","photo","video"], async (ctx)=>{
                     }
                 );
 
-                r.pais = geo.data.address.country || "Desconocido";
-                r.ciudad = geo.data.address.city ||
-                           geo.data.address.town ||
-                           geo.data.address.village ||
-                           "Zona rural";
+                const addr = geo.data.address || {};
+
+                r.pais =
+                    addr.country ||
+                    addr.country_name ||
+                    "Desconocido";
+
+                r.ciudad =
+                    addr.city ||
+                    addr.town ||
+                    addr.village ||
+                    addr.municipality ||
+                    addr.county ||
+                    addr.state ||
+                    addr.region ||
+                    addr.hamlet ||
+                    "Zona rural";
 
             }catch{
 
@@ -367,8 +373,6 @@ bot.on(["location","text","photo","video"], async (ctx)=>{
 
         }
 
-        if(ctx.message.text==="🚫 SIN EVIDENCIA"){}
-
         return finalizarReporte(ctx,r);
 
     }
@@ -424,7 +428,6 @@ async function finalizarReporte(ctx,r){
 
             if(r.tipo==="foto")
                 await ctx.telegram.sendPhoto(RED_AIFU.ID_CONO_SUR,r.fileId,{caption:txtCentral});
-
             else
                 await ctx.telegram.sendVideo(RED_AIFU.ID_CONO_SUR,r.fileId,{caption:txtCentral});
 
@@ -434,22 +437,14 @@ async function finalizarReporte(ctx,r){
 
         }
 
-    }catch(e){
-
-        console.log("Error enviando a Cono Sur");
-
-    }
+    }catch{}
 
     try{
 
         const canalPais = obtenerCanalPais(nuevo.pais);
         await ctx.telegram.sendMessage(canalPais,txtPais);
 
-    }catch{
-
-        console.log("Error canal país");
-
-    }
+    }catch{}
 
     ctx.session=null;
 
@@ -466,15 +461,11 @@ const app = express();
 app.use(express.static("public"));
 
 app.get("/api/reportes",(req,res)=>{
-
     res.json(DB.reportes);
-
 });
 
 app.get("/",(req,res)=>{
-
     res.sendFile(path.join(__dirname,"public","index.html"));
-
 });
 
 /* ================================
@@ -482,15 +473,11 @@ app.get("/",(req,res)=>{
 ================================ */
 
 bot.launch().then(()=>{
-
     console.log("AIFUCITO ONLINE");
-
 });
 
 const PORT = process.env.PORT || 10000;
 
 app.listen(PORT,()=>{
-
     console.log("Servidor activo en puerto "+PORT);
-
 });
