@@ -99,7 +99,7 @@ bot.hears("🔗 UNIRSE A MI GRUPO", (ctx) => {
 });
 
 /* ================================
-   FLUJO DE REPORTE
+   FLUJO DE REPORTE (CORREGIDO)
 ================================ */
 bot.hears("🛸 GENERAR REPORTE", (ctx) => {
     ctx.session = { reporte: { paso: "ubicacion" } };
@@ -118,45 +118,41 @@ bot.hears("❌ CANCELAR", (ctx) => {
 bot.on(["location", "text", "photo", "video"], async (ctx) => {
     if (!ctx.session?.reporte) return;
     const r = ctx.session.reporte;
+    const msg = ctx.message.text;
 
-    // GPS
-    if (r.paso === "ubicacion" && ctx.message.location) {
-        r.lat = ctx.message.location.latitude;
-        r.lng = ctx.message.location.longitude;
-        try {
-            const geo = await axios.get(`https://us1.locationiq.com/v1/reverse.php`, {
-                params: { key: LOCATION_IQ_KEY, lat: r.lat, lon: r.lng, format: "json" }
-            });
-            const addr = geo.data.address || {};
-            r.pais = addr.country || "Desconocido";
-            r.ciudad = addr.city || addr.town || addr.village || "Zona rural";
-            r.barrio = addr.suburb || addr.neighbourhood || "";
-        } catch { r.pais = "Desconocido"; r.ciudad = "Coordenadas GPS"; }
-        r.paso = "descripcion";
-        return ctx.reply("📍 Ubicación fijada. ¿Qué viste en el cielo?", Markup.removeKeyboard());
+    // INTERRUPTOR DE PRIORIDAD: EL BOTÓN FINAL
+    if (msg === "🚀 FINALIZAR Y PUBLICAR EN CANALES") {
+        return finalizarReporte(ctx, r);
     }
 
-    // MANUAL: PAÍS
-    if (r.paso === "ubicacion" && ctx.message.text?.includes("ESCRIBIR")) {
-        r.paso = "pais";
-        return ctx.reply("Escribe el PAÍS:", Markup.removeKeyboard());
-    }
-    if (r.paso === "pais" && ctx.message.text) {
-        r.pais = ctx.message.text;
-        r.paso = "ciudad";
-        return ctx.reply("Escribe la CIUDAD:");
+    // 1. PASO UBICACIÓN
+    if (r.paso === "ubicacion") {
+        if (ctx.message.location) {
+            r.lat = ctx.message.location.latitude;
+            r.lng = ctx.message.location.longitude;
+            try {
+                const geo = await axios.get(`https://us1.locationiq.com/v1/reverse.php`, {
+                    params: { key: LOCATION_IQ_KEY, lat: r.lat, lon: r.lng, format: "json" }
+                });
+                const addr = geo.data.address || {};
+                r.pais = addr.country || "Desconocido";
+                r.ciudad = addr.city || addr.town || addr.village || "Zona rural";
+                r.barrio = addr.suburb || addr.neighbourhood || "";
+            } catch { r.pais = "Desconocido"; r.ciudad = "GPS"; }
+            r.paso = "descripcion";
+            return ctx.reply("📍 Ubicación fijada. ¿Qué viste en el cielo?", Markup.removeKeyboard());
+        }
+        if (msg?.includes("ESCRIBIR")) {
+            r.paso = "pais";
+            return ctx.reply("Escribe el PAÍS:", Markup.removeKeyboard());
+        }
     }
 
-    // MANUAL: CIUDAD -> BARRIO
-    if (r.paso === "ciudad" && ctx.message.text) {
-        r.ciudad = ctx.message.text;
-        r.paso = "barrio";
-        return ctx.reply("Escribe el BARRIO o ZONA (O escribe 'No'):");
-    }
-
-    // BARRIO -> BUSCAR COORDENADAS
-    if (r.paso === "barrio" && ctx.message.text) {
-        r.barrio = ctx.message.text.toLowerCase() === "no" ? "" : ctx.message.text;
+    // MANUAL: PAÍS -> CIUDAD -> BARRIO
+    if (r.paso === "pais" && msg) { r.pais = msg; r.paso = "ciudad"; return ctx.reply("Escribe la CIUDAD:"); }
+    if (r.paso === "ciudad" && msg) { r.ciudad = msg; r.paso = "barrio"; return ctx.reply("Escribe el BARRIO o ZONA (O escribe 'No'):"); }
+    if (r.paso === "barrio" && msg) {
+        r.barrio = msg.toLowerCase() === "no" ? "" : msg;
         try {
             const q = r.barrio ? `${r.barrio}, ${r.ciudad}, ${r.pais}` : `${r.ciudad}, ${r.pais}`;
             const g = await axios.get("https://us1.locationiq.com/v1/search.php", {
@@ -170,44 +166,35 @@ bot.on(["location", "text", "photo", "video"], async (ctx) => {
     }
 
     // DESCRIPCIÓN -> MOVIMIENTO
-    if (r.paso === "descripcion" && ctx.message.text) {
-        r.desc = ctx.message.text;
-        r.paso = "mov";
+    if (r.paso === "descripcion" && msg) {
+        r.desc = msg; r.paso = "mov";
         return ctx.reply("¿Tenía movimiento?", Markup.keyboard([["SÍ", "NO", "ERRÁTICO"]]).resize());
     }
 
     // MOVIMIENTO -> MEDIA
-    if (r.paso === "mov" && ctx.message.text) {
-        r.mov = ctx.message.text;
-        r.paso = "media";
+    if (r.paso === "mov" && msg) {
+        r.mov = msg; r.paso = "media";
         return ctx.reply("Envía FOTO, VIDEO o pulsa el botón:", Markup.keyboard([["🚫 SIN EVIDENCIA"]]).resize());
     }
 
-    // MEDIA -> CONFIRMACIÓN FINAL
+    // MEDIA -> CONFIRMACIÓN
     if (r.paso === "media") {
-        if (ctx.message.text === "🚫 SIN EVIDENCIA") {
+        if (msg === "🚫 SIN EVIDENCIA") {
             r.fileId = null;
         } else if (ctx.message.photo) {
             r.fileId = ctx.message.photo.pop().file_id; r.tipo = "foto";
         } else if (ctx.message.video) {
             r.fileId = ctx.message.video.file_id; r.tipo = "video";
-        } else {
-            return; // Esperar entrada válida
-        }
-        
-        r.paso = "confirmar";
-        return ctx.reply("✅ Todo listo para el reporte.", 
-            Markup.keyboard([["🚀 FINALIZAR Y PUBLICAR EN CANALES"], ["❌ CANCELAR"]]).resize());
-    }
+        } else { return; }
 
-    // BOTÓN FINAL DE PUBLICACIÓN
-    if (r.paso === "confirmar" && ctx.message.text === "🚀 FINALIZAR Y PUBLICAR EN CANALES") {
-        return finalizarReporte(ctx, r);
+        r.paso = "confirmar";
+        return ctx.reply("✅ Información lista para el despliegue.", 
+            Markup.keyboard([["🚀 FINALIZAR Y PUBLICAR EN CANALES"], ["❌ CANCELAR"]]).resize());
     }
 });
 
 /* ================================
-   FINALIZAR Y PUBLICAR MULTICANAL
+   FINALIZAR Y PUBLICAR (MOTOR DE ENVÍO)
 ================================ */
 async function finalizarReporte(ctx, r) {
     const u = DB.agentes[ctx.from.id];
@@ -230,7 +217,7 @@ async function finalizarReporte(ctx, r) {
     const locFinal = nuevo.barrio ? `${nuevo.barrio}, ${nuevo.ciudad}, ${nuevo.pais}` : `${nuevo.ciudad}, ${nuevo.pais}`;
     const mensaje = `🚨 NUEVO AVISTAMIENTO\n\n📍 ${locFinal}\n👤 Agente: ${nuevo.agente}\n🚀 Movimiento: ${nuevo.movimiento}\n\n📝 ${nuevo.descripcion}`;
 
-    // --- LÓGICA DE RUTEO ---
+    // RUTEO EXCLUSIVO AIFU
     const paisL = nuevo.pais.toLowerCase();
     let destinos = [RED_AIFU.ID_CONO_SUR]; // Siempre Cono Sur
 
@@ -247,7 +234,7 @@ async function finalizarReporte(ctx, r) {
             } else {
                 await ctx.telegram.sendMessage(id, mensaje);
             }
-        } catch (e) { console.log(`Error en canal ${id}`); }
+        } catch (e) { console.log(`Error enviando a canal ${id}`); }
     }
 
     ctx.session = null;
@@ -255,7 +242,7 @@ async function finalizarReporte(ctx, r) {
 }
 
 /* ================================
-   SERVER
+   SERVIDOR
 ================================ */
 const app = express();
 app.use(express.static("public"));
