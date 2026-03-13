@@ -32,7 +32,6 @@ const RED_AIFU = {
 /* ================================
    BASE DE DATOS Y PERSISTENCIA
 ================================ */
-// Ruta específica para que Render no borre los datos al reiniciar
 const DATA_DIR = "/opt/render/project/src/data"; 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const DB_PATH = path.join(DATA_DIR, "reportes.json");
@@ -56,16 +55,24 @@ function obtenerRango(usuario, id) {
 }
 
 /* ================================
-   SERVIDOR EXPRESS Y RADAR
+   SERVIDOR EXPRESS Y RADAR (CON FIX DE PANTALLA BLANCA)
 ================================ */
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
+
+// SERVIMOS LA CARPETA PUBLIC
+const publicPath = path.join(__dirname, "public");
+app.use(express.static(publicPath));
+
+// --- ESTE ES EL FIX PARA LA PANTALLA BLANCA ---
+app.get("/", (req, res) => {
+    res.sendFile(path.join(publicPath, "index.html"));
+});
+// ----------------------------------------------
 
 let radarClientes = [];
 
-// Latido (Ping) para mantener activa la conexión SSE en el vivo
 setInterval(() => {
     radarClientes.forEach(c => { try { c.write(": ping\n\n"); } catch (e) {} });
 }, 20000);
@@ -116,7 +123,7 @@ bot.hears("⭐ MI PERFIL", (ctx) => {
 
 bot.hears("🌍 VER RADAR", (ctx) => {
     ctx.reply("Accede al Radar Táctico:", Markup.inlineKeyboard([
-        [Markup.button.url("ABRIR MAPA 🛰️", process.env.PUBLIC_URL || "https://tu-app.onrender.com")]
+        [Markup.button.url("ABRIR MAPA 🛰️", "https://aifucito5-0.onrender.com")]
     ]));
 });
 
@@ -203,7 +210,7 @@ async function finalizarReporte(ctx, r) {
 
     DB.reportes.push(nuevo);
     guardarDB();
-    emitirRadar(nuevo); // <--- ESTO ENVÍA EL PUNTO AL MAPA AL INSTANTE
+    emitirRadar(nuevo);
 
     const mensaje = `🚨 <b>NUEVO AVISTAMIENTO</b>\n\n📍 ${nuevo.barrio ? nuevo.barrio + ', ' : ''}${nuevo.ciudad}, ${nuevo.pais}\n👤 Agente: ${nuevo.agente}\n🚀 Movimiento: ${nuevo.movimiento}\n\n📝 ${nuevo.descripcion}`;
 
