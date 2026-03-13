@@ -32,18 +32,41 @@ const RED_AIFU = {
 };
 
 /* ================================
-   BASE DE DATOS (Mantiene el Radar vivo)
+   BASE DE DATOS
 ================================ */
 const DATA_DIR = "/opt/render/project/src/data";
 const DB_PATH = path.join(DATA_DIR, "aifucito_db.json");
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
 let DB = { agentes: {}, reportes: [] };
+
 if (fs.existsSync(DB_PATH)) {
-    try { DB = JSON.parse(fs.readFileSync(DB_PATH, "utf8")); } catch { console.log("DB Iniciada"); }
+    try {
+        DB = JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
+    } catch {
+        console.log("DB iniciada vacía");
+    }
 }
 
-function guardarDB() { fs.writeFileSync(DB_PATH, JSON.stringify(DB, null, 4)); }
+function guardarDB() {
+    fs.writeFileSync(DB_PATH, JSON.stringify(DB, null, 4));
+}
+
+/* ================================
+   RADAR EN VIVO (SSE)
+================================ */
+
+let radarClientes = [];
+
+function emitirRadar(reporte) {
+    const data = `data: ${JSON.stringify(reporte)}\n\n`;
+    radarClientes.forEach(cliente => {
+        try {
+            cliente.write(data);
+        } catch {}
+    });
+}
 
 /* ================================
    LÓGICA DE RANGOS
@@ -57,7 +80,7 @@ function obtenerRango(usuario, id) {
 }
 
 /* ================================
-   INICIO DEL BOT
+   BOT
 ================================ */
 const bot = new Telegraf(TOKEN);
 bot.use(session());
@@ -96,10 +119,12 @@ bot.hears("🔗 UNIRSE A MI GRUPO", (ctx) => {
 });
 
 /* ================================
-   FLUJO DE REPORTE (OPTIMIZADO)
+   FLUJO DE REPORTE
 ================================ */
+
 bot.hears("🛸 GENERAR REPORTE", (ctx) => {
     ctx.session = { reporte: { paso: "ubicacion" } };
+
     ctx.reply("📍 ¿Cómo quieres indicar la ubicación?", Markup.keyboard([
         [Markup.button.locationRequest("📍 ENVIAR MI GPS")],
         ["⌨️ MANUAL (Escribir)"],
@@ -108,79 +133,157 @@ bot.hears("🛸 GENERAR REPORTE", (ctx) => {
 });
 
 bot.on(["location", "text"], async (ctx) => {
+
     if (!ctx.session?.reporte) return;
+
     const r = ctx.session.reporte;
     const msg = ctx.message.text;
 
-    if (msg === "❌ CANCELAR") { ctx.session = null; return ctx.reply("Reporte cancelado.", menuPrincipal()); }
-    if (msg === "🚀 FINALIZAR Y PUBLICAR") return finalizarReporte(ctx, r);
+    if (msg === "❌ CANCELAR") {
+        ctx.session = null;
+        return ctx.reply("Reporte cancelado.", menuPrincipal());
+    }
 
-    // 1. UBICACIÓN
+    if (msg === "🚀 FINALIZAR Y PUBLICAR") {
+        return finalizarReporte(ctx, r);
+    }
+
     if (r.paso === "ubicacion") {
+
         if (ctx.message.location) {
+
             r.lat = ctx.message.location.latitude;
             r.lng = ctx.message.location.longitude;
+
             try {
-                const g = await axios.get(`https://us1.locationiq.com/v1/reverse.php?key=${LOCATION_IQ_KEY}&lat=${r.lat}&lon=${r.lng}&format=json`);
+
+                const g = await axios.get(
+                    `https://us1.locationiq.com/v1/reverse.php?key=${LOCATION_IQ_KEY}&lat=${r.lat}&lon=${r.lng}&format=json`
+                );
+
                 r.pais = g.data.address.country || "Desconocido";
                 r.ciudad = g.data.address.city || g.data.address.town || "S/D";
                 r.barrio = g.data.address.suburb || "";
-            } catch { r.pais = "Desconocido"; }
+
+            } catch {
+                r.pais = "Desconocido";
+            }
+
             r.paso = "descripcion";
+
             return ctx.reply("📍 Ubicación fijada. ¿Qué viste en el cielo?", Markup.removeKeyboard());
         }
-        if (msg === "⌨️ MANUAL (Escribir)") { r.paso = "pais"; return ctx.reply("Escribe el PAÍS:", Markup.removeKeyboard()); }
+
+        if (msg === "⌨️ MANUAL (Escribir)") {
+            r.paso = "pais";
+            return ctx.reply("Escribe el PAÍS:", Markup.removeKeyboard());
+        }
     }
 
-    // 2. MANUAL
-    if (r.paso === "pais") { r.pais = msg; r.paso = "ciudad"; return ctx.reply("Escribe la CIUDAD:"); }
-    if (r.paso === "ciudad") { r.ciudad = msg; r.paso = "barrio"; return ctx.reply("Escribe el BARRIO (o pon 'No'):"); }
+    if (r.paso === "pais") {
+        r.pais = msg;
+        r.paso = "ciudad";
+        return ctx.reply("Escribe la CIUDAD:");
+    }
+
+    if (r.paso === "ciudad") {
+        r.ciudad = msg;
+        r.paso = "barrio";
+        return ctx.reply("Escribe el BARRIO (o 'No'):");
+    }
+
     if (r.paso === "barrio") {
+
         r.barrio = msg.toLowerCase() === "no" ? "" : msg;
+
         try {
+
             const q = `${r.barrio} ${r.ciudad} ${r.pais}`;
-            const g = await axios.get(`https://us1.locationiq.com/v1/search.php?key=${LOCATION_IQ_KEY}&q=${q}&format=json&limit=1`);
-            r.lat = g.data[0].lat; r.lng = g.data[0].lon;
-        } catch { r.lat = -34.6; r.lng = -58.4; }
+
+            const g = await axios.get(
+                `https://us1.locationiq.com/v1/search.php?key=${LOCATION_IQ_KEY}&q=${q}&format=json&limit=1`
+            );
+
+            r.lat = g.data[0].lat;
+            r.lng = g.data[0].lon;
+
+        } catch {
+            r.lat = -34.6;
+            r.lng = -58.4;
+        }
+
         r.paso = "descripcion";
+
         return ctx.reply("¿Qué viste en el cielo?");
     }
 
-    // 3. DESCRIPCIÓN -> MOVIMIENTO
     if (r.paso === "descripcion" && msg) {
-        r.desc = msg; r.paso = "movimiento";
-        return ctx.reply("¿Tenía movimiento?", Markup.keyboard([["SÍ", "NO", "ERRÁTICO"]]).resize());
+        r.desc = msg;
+        r.paso = "movimiento";
+
+        return ctx.reply("¿Tenía movimiento?", Markup.keyboard([
+            ["SÍ", "NO", "ERRÁTICO"]
+        ]).resize());
     }
 
-    // 4. PASO FINAL
     if (r.paso === "movimiento" && msg) {
+
         r.mov = msg;
         r.paso = "confirmar";
-        return ctx.reply("✅ Todo listo para el despliegue.", 
-            Markup.keyboard([["🚀 FINALIZAR Y PUBLICAR"], ["❌ CANCELAR"]]).resize());
+
+        return ctx.reply("✅ Todo listo para el despliegue.",
+            Markup.keyboard([
+                ["🚀 FINALIZAR Y PUBLICAR"],
+                ["❌ CANCELAR"]
+            ]).resize());
     }
+
 });
 
 /* ================================
-   FINALIZAR Y PUBLICAR
+   FINALIZAR REPORTE
 ================================ */
+
 async function finalizarReporte(ctx, r) {
+
     const u = DB.agentes[ctx.from.id] || { nombre: ctx.from.first_name };
     u.reportes = (u.reportes || 0) + 1;
 
     const nuevo = {
-        lat: parseFloat(r.lat), lng: parseFloat(r.lng),
-        pais: r.pais || "Desconocido", ciudad: r.ciudad || "S/D", barrio: r.barrio || "",
-        fecha: new Date().toISOString(), descripcion: r.desc, movimiento: r.mov, agente: u.nombre
+
+        lat: parseFloat(r.lat),
+        lng: parseFloat(r.lng),
+
+        pais: r.pais || "Desconocido",
+        ciudad: r.ciudad || "S/D",
+        barrio: r.barrio || "",
+
+        fecha: new Date().toISOString(),
+
+        descripcion: r.desc,
+        movimiento: r.mov,
+        agente: u.nombre
     };
 
     DB.reportes.push(nuevo);
     guardarDB();
 
-    const mensaje = `🚨 <b>NUEVO AVISTAMIENTO</b>\n\n📍 ${nuevo.barrio ? nuevo.barrio + ', ' : ''}${nuevo.ciudad}, ${nuevo.pais}\n👤 Agente: ${nuevo.agente}\n🚀 Movimiento: ${nuevo.movimiento}\n\n📝 ${nuevo.descripcion}`;
+    /* ENVÍA AL RADAR EN TIEMPO REAL */
+    emitirRadar(nuevo);
+
+    const mensaje =
+`🚨 <b>NUEVO AVISTAMIENTO</b>
+
+📍 ${nuevo.barrio ? nuevo.barrio + ', ' : ''}${nuevo.ciudad}, ${nuevo.pais}
+👤 Agente: ${nuevo.agente}
+🚀 Movimiento: ${nuevo.movimiento}
+
+📝 ${nuevo.descripcion}`;
 
     let destinos = [RED_AIFU.ID_CONO_SUR];
+
     const p = nuevo.pais.toLowerCase();
+
     if (p.includes("uruguay")) destinos.push(RED_AIFU.ID_UY);
     else if (p.includes("argentina")) destinos.push(RED_AIFU.ID_AR);
     else if (p.includes("chile")) destinos.push(RED_AIFU.ID_CH);
@@ -189,20 +292,47 @@ async function finalizarReporte(ctx, r) {
     for (const id of destinos) {
         try {
             await bot.telegram.sendMessage(id, mensaje, { parse_mode: 'HTML' });
-        } catch (e) { console.error("Error en canal " + id); }
+        } catch {}
     }
 
     ctx.session = null;
+
     return ctx.reply("✅ Reporte publicado en la red AIFU.", menuPrincipal());
 }
 
 /* ================================
-   SERVER Y RADAR API
+   SERVER API
 ================================ */
+
 const app = express();
+
 app.use(express.static("public"));
-app.get("/api/reportes", (req, res) => res.json(DB.reportes));
+
+app.get("/api/reportes", (req, res) => {
+    res.json(DB.reportes);
+});
+
+/* CANAL EN VIVO DEL RADAR */
+app.get("/api/live", (req, res) => {
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+
+    res.flushHeaders();
+
+    radarClientes.push(res);
+
+    req.on("close", () => {
+        radarClientes = radarClientes.filter(c => c !== res);
+    });
+
+});
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log("AIFUCITO ONLINE EN PUERTO " + PORT));
+
+app.listen(PORT, () => {
+    console.log("AIFUCITO ONLINE EN PUERTO " + PORT);
+});
+
 bot.launch();
