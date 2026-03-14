@@ -1,183 +1,165 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RADAR AIFU TÁCTICO - EN VIVO</title>
+<meta charset="utf-8">
+<title>RADAR TÁCTICO AIFU</title>
 
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    
-    <style>
-        /* ESTILO GENERAL */
-        body, html { 
-            margin: 0; 
-            padding: 0; 
-            height: 100%; 
-            background: #000; 
-            overflow: hidden;
-        }
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
-        /* EL CONTENEDOR DEL MAPA */
-        #map { 
-            width: 100%; 
-            height: 100vh; 
-        }
+<style>
 
-        /* CUADRO DE ESTADÍSTICAS (ARRIBA DERECHA) */
-        #stat-count {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 1000;
-            background: rgba(0, 20, 0, 0.9);
-            color: #00ff00;
-            padding: 15px;
-            font-family: 'Courier New', Courier, monospace;
-            border: 2px solid #00ff00;
-            border-radius: 5px;
-            box-shadow: 0 0 15px #00ff00;
-            text-transform: uppercase;
-            font-weight: bold;
-        }
+html,body{
+margin:0;
+padding:0;
+height:100%;
+background:#000;
+font-family:Arial;
+}
 
-        /* EFECTO DE BRILLO PARA LOS OVNIS */
-        .ovni-glow {
-            background: #00ff00;
-            border-radius: 50%;
-            box-shadow: 0 0 10px #00ff00, 0 0 20px #00ff00;
-            border: 1px solid white;
-        }
+#map{
+width:100%;
+height:100%;
+}
 
-        /* MARCA DE AGUA (ARRIBA IZQUIERDA) */
-        #watermark {
-            position: fixed;
-            top: 20px;
-            left: 20px;
-            z-index: 1000;
-            color: rgba(0, 255, 0, 0.5);
-            font-family: monospace;
-            pointer-events: none;
-        }
-    </style>
+/* PANEL RADAR */
+
+.radarPanel{
+position:absolute;
+top:20px;
+left:20px;
+background:rgba(0,0,0,0.7);
+border:1px solid #00ff99;
+padding:15px;
+color:#00ff99;
+width:260px;
+border-radius:8px;
+box-shadow:0 0 15px #00ff99;
+}
+
+.radarPanel h2{
+margin:0;
+font-size:18px;
+}
+
+.barra{
+height:8px;
+background:linear-gradient(to right,#0af,#0f0);
+margin-top:8px;
+border-radius:4px;
+}
+
+/* ICONO OVNI */
+
+.ovniIcon{
+font-size:22px;
+color:#00ff99;
+text-shadow:0 0 10px #00ff99;
+}
+
+</style>
 </head>
+
 <body>
 
-    <div id="watermark">SISTEMA AIFU V5.0 // RADAR ACTIVO</div>
-    <div id="stat-count">REPORTES HOY: 0</div>
-    <div id="map"></div>
+<div id="map"></div>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+<div class="radarPanel">
 
-    <script>
-        /* 1. INICIALIZAR EL MAPA EN EL CONO SUR */
-        var map = L.map('map', { 
-            zoomControl: false, 
-            tap: false 
-        }).setView([-34.6037, -58.3816], 5);
+<h2>RADAR TÁCTICO AIFU</h2>
 
-        /* 2. CAPA DE MAPA OSCURO (TÁCTICO) */
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-            attribution: 'AIFU TACTICAL'
-        }).addTo(map);
+<div>REPORTES HOY: <span id="count">0</span></div>
 
-        var markersLayer = L.layerGroup().addTo(map);
-        
-        /* 3. CAPA DE CALOR (ZONAS CALIENTES) */
-        var heatLayer = L.heatLayer([], {
-            radius: 35,
-            blur: 20,
-            gradient: {0.4: 'cyan', 0.6: 'lime', 0.8: 'yellow', 1.0: 'red'}
-        }).addTo(map);
+<div>ESTADO: <span id="estado">ANALIZANDO</span></div>
 
-        /* 4. ICONO PERSONALIZADO */
-        var ovniIcon = L.divIcon({
-            className: 'ovni-glow',
-            iconSize: [12, 12],
-            iconAnchor: [6, 6],
-            popupAnchor: [0, -10]
-        });
+<div style="margin-top:10px;">INTENSIDAD</div>
 
-        let puntosHeat = [];
+<div class="barra"></div>
 
-        /* 5. FUNCIÓN PARA CARGAR REPORTES ANTERIORES */
-        async function cargarDatos(){
-            try {
-                const response = await fetch('/api/reportes?nocache=' + Date.now());
-                const data = await response.json();
+</div>
 
-                document.getElementById('stat-count').innerText = "REPORTES HOY: " + data.length;
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
 
-                markersLayer.clearLayers();
-                puntosHeat = [];
+<script>
 
-                data.forEach(d => {
-                    if(d.lat && d.lng){
-                        const lat = Number(d.lat);
-                        const lng = Number(d.lng);
-                        puntosHeat.push([lat, lng, 0.6]);
+const map = L.map('map',{zoomControl:false}).setView([-34.6,-58.4],5);
 
-                        L.marker([lat, lng], {icon: ovniIcon})
-                        .addTo(markersLayer)
-                        .bindPopup(`
-                            <div style="color:black">
-                                <b>🚨 FANI DETECTADO</b><br>
-                                <b>Lugar:</b> ${d.ciudad || 'S/D'}, ${d.pais || ''}<br>
-                                <b>Agente:</b> ${d.agente || 'Anónimo'}<br>
-                                <hr>
-                                <i>"${d.descripcion || 'Sin descripción'}"</i>
-                            </div>
-                        `);
-                    }
-                });
-                heatLayer.setLatLngs(puntosHeat);
-            } catch (e) {
-                console.error("Error cargando histórico:", e);
-            }
-        }
+/* MAPA BASE OSCURO */
 
-        cargarDatos();
+L.tileLayer(
+'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+{ attribution:'' }
+).addTo(map);
 
-        /* 6. ESCUCHAR REPORTES EN TIEMPO REAL (SSE) */
-        const eventos = new EventSource('/api/live');
+let heatLayer = L.heatLayer([],{
+radius:35,
+blur:25,
+maxZoom:8,
+gradient:{
+0.2:'#00ffff',
+0.4:'#00ff99',
+0.6:'#00ff00',
+0.8:'#ffff00',
+1:'#ff0000'
+}
+}).addTo(map);
 
-        eventos.onmessage = function(event) {
-            const d = JSON.parse(event.data);
-            if(d.lat && d.lng) {
-                const lat = Number(d.lat);
-                const lng = Number(d.lng);
+let ovnis = [];
 
-                // Agregar al calor
-                puntosHeat.push([lat, lng, 0.7]);
-                heatLayer.setLatLngs(puntosHeat);
+async function actualizarRadar(){
 
-                // Agregar marcador con sonido visual (popup abierto)
-                L.marker([lat, lng], {icon: ovniIcon})
-                .addTo(markersLayer)
-                .bindPopup(`
-                    <div style="color:black">
-                        <b>🛸 ¡NUEVO AVISTAMIENTO!</b><br>
-                        <b>Lugar:</b> ${d.ciudad || 'S/D'}<br>
-                        <b>Agente:</b> ${d.agente}<br>
-                        <hr>
-                        <i>"${d.descripcion}"</i>
-                    </div>
-                `)
-                .openPopup();
+try{
 
-                // Mover la cámara suavemente al nuevo punto
-                map.flyTo([lat, lng], 8, { duration: 2 });
-                
-                // Actualizar el contador
-                cargarDatos(); 
-            }
-        };
+const res = await fetch('/radar');
 
-        // Reconexión automática si se cae la red
-        eventos.onerror = function() {
-            console.log("Reconectando radar...");
-        };
+const data = await res.json();
 
-    </script>
+document.getElementById("count").innerText=data.length;
+
+if(data.length>25)
+document.getElementById("estado").innerText="ACTIVO - ALTA DENSIDAD";
+else
+document.getElementById("estado").innerText="ACTIVO";
+
+let puntos=[];
+
+/* LIMPIAR ICONOS */
+
+ovnis.forEach(o=>map.removeLayer(o));
+ovnis=[];
+
+data.forEach(r=>{
+
+puntos.push([r.lat,r.lon,r.peso||0.5]);
+
+const icon=L.divIcon({
+className:'ovniIcon',
+html:'🛸'
+});
+
+const marker=L.marker([r.lat,r.lon],{icon}).addTo(map);
+
+ovnis.push(marker);
+
+});
+
+heatLayer.setLatLngs(puntos);
+
+}catch(e){
+
+console.log("Radar error",e);
+
+}
+
+}
+
+/* ACTUALIZACIÓN AUTOMÁTICA */
+
+actualizarRadar();
+
+setInterval(actualizarRadar,30000);
+
+</script>
+
 </body>
 </html>
