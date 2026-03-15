@@ -1,63 +1,72 @@
 <!DOCTYPE html>
-<html lang="es">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>AIFUCITO - Mapa de Calor</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+    <title>RADAR AIFU</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body, html { margin:0; padding:0; height:100%; width:100%; }
-        #map { height:100%; width:100%; }
+        body { margin: 0; padding: 0; background: #e3e3e3; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #map { height: 100vh; width: 100vw; z-index: 1; }
+
+        /* PANEL SIEMPRE AL FRENTE (Z-INDEX 9999) */
+        .radar-panel {
+            position: absolute; top: 10px; left: 10px;
+            width: 240px; background: rgba(0, 26, 13, 0.9);
+            border: 2px solid #00ff88; border-radius: 12px;
+            padding: 15px; color: #00ff88; z-index: 9999;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            pointer-events: none;
+        }
+        .radar-panel h2 { margin: 0; font-size: 16px; border-bottom: 1px solid #00ff88; padding-bottom: 5px; }
+        .stat { font-size: 20px; font-weight: bold; margin: 10px 0; }
+        .bar { height: 6px; background: linear-gradient(to right, #0044ff, #00ff88); border-radius: 3px; }
     </style>
 </head>
 <body>
-<div id="map"></div>
 
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/heatmapjs@2.0.5/heatmap.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/leaflet-heatmap/leaflet-heatmap.js"></script>
+    <div class="radar-panel">
+        <h2>🛰️ RADAR TÁCTICO AIFU</h2>
+        <div class="stat"><span id="count">0</span> REPORTES</div>
+        <div class="bar"></div>
+        <div style="font-size: 10px; margin-top: 5px; display: flex; justify-content: space-between;">
+            <span>BAJO</span><span>ALTO</span>
+        </div>
+    </div>
 
-<script>
-    // Configurar mapa
-    var map = L.map('map').setView([-32.5, -55.9], 6);
+    <div id="map"></div>
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
-
-    // Configuración del heatmap
-    var cfg = {
-        radius: 25,
-        maxOpacity: 0.8,
-        scaleRadius: true,
-        useLocalExtrema: false,
-        latField: 'lat',
-        lngField: 'lng',
-        valueField: 'count'
-    };
-
-    var heatmapLayer = new HeatmapOverlay(cfg);
-    heatmapLayer.addTo(map);
-
-    // Función para cargar reportes desde el servidor
-    async function cargarDatos() {
-        try {
-            // Cambiado a la ruta que sí existe en tu bot
-            const response = await fetch('/reportes.json');
-            const data = await response.json();
-            const puntos = data.map(d => ({
-                lat: d.lat || -32.5,
-                lng: d.lng || -55.9,
-                count: 1
-            }));
-            heatmapLayer.setData({ max: 10, data: puntos });
-        } catch (e) {
-            console.error("Error cargando datos del heatmap:", e);
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // BLOQUEO DE ENLACE: Si no detecta el inicio de Telegram WebApp, borra todo.
+        if (!window.Telegram.WebApp.initData) {
+            document.body.innerHTML = "<div style='display:flex; height:100vh; align-items:center; justify-content:center; background:black; color:white; text-align:center; padding:20px;'><h1>⚠️ ACCESO DENEGADO<br><br>Este radar solo es accesible desde el Bot Oficial de AIFU.</h1></div>";
         }
-    }
 
-    // Primera carga y actualización cada 15 segundos
-    cargarDatos();
-    setInterval(cargarDatos, 15000);
-</script>
+        // Estilo de mapa claro (Topográfico/HOT) como tu imagen
+        var map = L.map('map', { zoomControl: false }).setView([-34.8, -56.1], 8);
+        L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png').addTo(map);
+
+        function agregarPunto(lat, lon, esVip) {
+            var color = esVip ? '#00ff88' : '#00ccff';
+            var marker = L.circleMarker([lat, lon], {
+                radius: 12, fillColor: color, color: "#fff", weight: 2, fillOpacity: 0.8
+            }).addTo(map);
+            
+            // Efecto de pulso
+            marker.getElement().style.filter = "drop-shadow(0 0 8px " + color + ")";
+        }
+
+        fetch('/radar-data')
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('count').innerText = data.length;
+                data.forEach(p => agregarPunto(p.lat, p.lon, p.vip));
+            });
+
+        window.Telegram.WebApp.ready();
+        window.Telegram.WebApp.expand(); // Abre la WebApp en pantalla completa
+    </script>
 </body>
 </html>
