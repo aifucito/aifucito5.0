@@ -3,59 +3,57 @@
 <head>
     <title>RADAR TÁCTICO AIFU - CONO SUR</title>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
     <style>
-        body { margin: 0; padding: 0; background: #1a1a1a; font-family: 'Courier New', Courier, monospace; }
+        body { margin: 0; padding: 0; background: #e3e3e3; font-family: 'Courier New', Courier, monospace; overflow: hidden; }
         #map { height: 100vh; width: 100vw; z-index: 1; }
 
-        /* PANEL DE ESTADÍSTICAS - AHORA SIEMPRE AL FRENTE */
+        /* PANEL SIEMPRE AL FRENTE */
         .radar-panel {
             position: absolute;
             top: 20px;
             left: 20px;
-            width: 280px;
-            background: rgba(0, 20, 10, 0.85); /* Fondo oscuro traslúcido tipo militar */
+            width: 260px;
+            background: rgba(0, 20, 10, 0.9);
             border: 2px solid #00ff88;
             border-radius: 10px;
             padding: 15px;
             color: #00ff88;
-            z-index: 9999; /* Valor altísimo para que nada lo tape */
+            z-index: 9999; /* Bloquea que los puntos pasen por delante */
             box-shadow: 0 0 15px rgba(0, 255, 136, 0.5);
-            pointer-events: none; /* Para que puedas mover el mapa por debajo si quieres */
+            pointer-events: none;
         }
 
-        .radar-panel h2 { margin: 0 0 10px 0; font-size: 18px; text-transform: uppercase; border-bottom: 1px solid #00ff88; }
-        .stat { margin: 5px 0; font-size: 14px; }
+        .radar-panel h2 { margin: 0 0 10px 0; font-size: 16px; text-transform: uppercase; border-bottom: 1px solid #00ff88; }
+        .stat { margin: 5px 0; font-size: 14px; font-weight: bold; }
         .intensidad-bar {
-            height: 10px;
-            background: linear-gradient(to right, blue, cyan, lime, green);
+            height: 8px;
+            background: linear-gradient(to right, #0044ff, #00ff88);
             margin-top: 10px;
             border-radius: 5px;
         }
 
-        /* EFECTO DE PULSO PARA LOS OVNIS */
+        /* EFECTO NEÓN PARA LOS PUNTOS */
         .ufo-icon {
-            background: rgba(0, 255, 136, 0.3);
-            border-radius: 50%;
-            border: 2px solid #00ff88;
-            box-shadow: 0 0 10px #00ff88;
+            filter: drop-shadow(0 0 5px #00ff88);
         }
     </style>
 </head>
 <body>
 
-    <div class="radar-panel">
+    <div class="radar-panel" id="ui-panel">
         <h2>🛰️ RADAR TÁCTICO AIFU</h2>
-        <div class="stat">REPORTES HOY: <span id="count">30</span></div>
-        <div class="stat">ESTADO: <span style="color: #00ff88; font-weight: bold;">ACTIVO - ALTA DENSIDAD</span></div>
-        <div class="stat">INTENSIDAD</div>
+        <div class="stat">REPORTES: <span id="count">0</span></div>
+        <div class="stat" id="status-text">SISTEMA ACTIVO</div>
         <div class="intensidad-bar"></div>
-        <div style="display: flex; justify-content: space-between; font-size: 10px; margin-top: 5px;">
-            <span>Bajo</span>
-            <span>Alta</span>
+        <div style="display: flex; justify-content: space-between; font-size: 9px; margin-top: 5px;">
+            <span>DENSIDAD BAJA</span>
+            <span>ALTA</span>
         </div>
     </div>
 
@@ -63,37 +61,69 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // INICIALIZAR MAPA
-        // Usamos un estilo "Light" o "Terrain" para que no sea negro
-        var map = L.map('map').setView([-34.6037, -58.3816], 5); // Centrado en BsAs/Uruguay
+        // --- BLOQUEO DE SEGURIDAD ---
+        // Si no detecta que se abrió desde el bot, limpia la pantalla
+        if (!window.Telegram.WebApp.initData) {
+            document.body.innerHTML = `
+                <div style="background:black; color:white; height:100vh; display:flex; align-items:center; justify-content:center; text-align:center; padding:20px;">
+                    <div>
+                        <h1 style="color:#00ff88;">⚠️ ACCESO RESTRINGIDO</h1>
+                        <p>Este radar es propiedad de AIFU.<br>Solo accesible desde el Bot oficial.</p>
+                    </div>
+                </div>`;
+            throw new Error("Acceso no autorizado");
+        }
 
-        // ESTILO DEL MAPA (Aquí cambiamos el color a uno claro como el de tu foto)
+        // --- INICIALIZAR TELEGRAM WEBAPP ---
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand(); // Abre el radar a pantalla completa automáticamente
+
+        // --- CONFIGURACIÓN DEL MAPA ---
+        // Centrado inicial en el Cono Sur (Uruguay/Argentina)
+        var map = L.map('map', { zoomControl: false }).setView([-34.7, -56.1], 8);
+
+        // Estilo "HOT" (Claro y topográfico como tu foto)
         L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
             maxZoom: 19,
             attribution: 'AIFU TACTICAL'
         }).addTo(map);
 
-        // FUNCIÓN PARA AGREGAR LOS PUNTOS (Simulada para el ejemplo)
+        // Función para pintar puntos
         function agregarPunto(lat, lon, esVip) {
-            var color = esVip ? '#00ff88' : '#00ffff';
-            var pulseMarker = L.circleMarker([lat, lon], {
-                radius: 15,
-                color: color,
+            var color = esVip ? '#00ff88' : '#00ffff'; // Verde para VIP, Celeste para normal
+            L.circleMarker([lat, lon], {
+                radius: 12,
+                color: '#ffffff',
+                weight: 2,
                 fillColor: color,
-                fillOpacity: 0.5,
-                className: 'ufo-icon' // Aplica el brillo del CSS
+                fillOpacity: 0.8,
+                className: 'ufo-icon'
             }).addTo(map);
         }
 
-        // Cargar datos del servidor
+        // --- CARGA DE DATOS ---
+        // Pedimos los datos a la ruta segura del bot
         fetch('/radar-data')
             .then(res => res.json())
             .then(data => {
                 document.getElementById('count').innerText = data.length;
+                
+                // Si hay muchos reportes, cambiamos el estado visual
+                if(data.length > 10) {
+                    document.getElementById('status-text').style.color = "#ff3300";
+                    document.getElementById('status-text').innerText = "ALTA ACTIVIDAD DETECTADA";
+                }
+
                 data.forEach(p => {
-                    agregarPunto(p.lat, p.lon, p.vip);
+                    // Verificamos que existan coordenadas válidas
+                    if(p.lat && p.lon) {
+                        agregarPunto(p.lat, p.lon, p.vip);
+                    }
                 });
-            });
+            })
+            .catch(err => console.error("Error cargando radar:", err));
+
     </script>
 </body>
 </html>
