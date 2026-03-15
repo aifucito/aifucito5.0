@@ -1,165 +1,99 @@
 <!DOCTYPE html>
-<html lang="es">
+<html>
 <head>
-<meta charset="utf-8">
-<title>RADAR TÁCTICO AIFU</title>
+    <title>RADAR TÁCTICO AIFU - CONO SUR</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        body { margin: 0; padding: 0; background: #1a1a1a; font-family: 'Courier New', Courier, monospace; }
+        #map { height: 100vh; width: 100vw; z-index: 1; }
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+        /* PANEL DE ESTADÍSTICAS - AHORA SIEMPRE AL FRENTE */
+        .radar-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            width: 280px;
+            background: rgba(0, 20, 10, 0.85); /* Fondo oscuro traslúcido tipo militar */
+            border: 2px solid #00ff88;
+            border-radius: 10px;
+            padding: 15px;
+            color: #00ff88;
+            z-index: 9999; /* Valor altísimo para que nada lo tape */
+            box-shadow: 0 0 15px rgba(0, 255, 136, 0.5);
+            pointer-events: none; /* Para que puedas mover el mapa por debajo si quieres */
+        }
 
-<style>
+        .radar-panel h2 { margin: 0 0 10px 0; font-size: 18px; text-transform: uppercase; border-bottom: 1px solid #00ff88; }
+        .stat { margin: 5px 0; font-size: 14px; }
+        .intensidad-bar {
+            height: 10px;
+            background: linear-gradient(to right, blue, cyan, lime, green);
+            margin-top: 10px;
+            border-radius: 5px;
+        }
 
-html,body{
-margin:0;
-padding:0;
-height:100%;
-background:#000;
-font-family:Arial;
-}
-
-#map{
-width:100%;
-height:100%;
-}
-
-/* PANEL RADAR */
-
-.radarPanel{
-position:absolute;
-top:20px;
-left:20px;
-background:rgba(0,0,0,0.7);
-border:1px solid #00ff99;
-padding:15px;
-color:#00ff99;
-width:260px;
-border-radius:8px;
-box-shadow:0 0 15px #00ff99;
-}
-
-.radarPanel h2{
-margin:0;
-font-size:18px;
-}
-
-.barra{
-height:8px;
-background:linear-gradient(to right,#0af,#0f0);
-margin-top:8px;
-border-radius:4px;
-}
-
-/* ICONO OVNI */
-
-.ovniIcon{
-font-size:22px;
-color:#00ff99;
-text-shadow:0 0 10px #00ff99;
-}
-
-</style>
+        /* EFECTO DE PULSO PARA LOS OVNIS */
+        .ufo-icon {
+            background: rgba(0, 255, 136, 0.3);
+            border-radius: 50%;
+            border: 2px solid #00ff88;
+            box-shadow: 0 0 10px #00ff88;
+        }
+    </style>
 </head>
-
 <body>
 
-<div id="map"></div>
+    <div class="radar-panel">
+        <h2>🛰️ RADAR TÁCTICO AIFU</h2>
+        <div class="stat">REPORTES HOY: <span id="count">30</span></div>
+        <div class="stat">ESTADO: <span style="color: #00ff88; font-weight: bold;">ACTIVO - ALTA DENSIDAD</span></div>
+        <div class="stat">INTENSIDAD</div>
+        <div class="intensidad-bar"></div>
+        <div style="display: flex; justify-content: space-between; font-size: 10px; margin-top: 5px;">
+            <span>Bajo</span>
+            <span>Alta</span>
+        </div>
+    </div>
 
-<div class="radarPanel">
+    <div id="map"></div>
 
-<h2>RADAR TÁCTICO AIFU</h2>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // INICIALIZAR MAPA
+        // Usamos un estilo "Light" o "Terrain" para que no sea negro
+        var map = L.map('map').setView([-34.6037, -58.3816], 5); // Centrado en BsAs/Uruguay
 
-<div>REPORTES HOY: <span id="count">0</span></div>
+        // ESTILO DEL MAPA (Aquí cambiamos el color a uno claro como el de tu foto)
+        L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: 'AIFU TACTICAL'
+        }).addTo(map);
 
-<div>ESTADO: <span id="estado">ANALIZANDO</span></div>
+        // FUNCIÓN PARA AGREGAR LOS PUNTOS (Simulada para el ejemplo)
+        function agregarPunto(lat, lon, esVip) {
+            var color = esVip ? '#00ff88' : '#00ffff';
+            var pulseMarker = L.circleMarker([lat, lon], {
+                radius: 15,
+                color: color,
+                fillColor: color,
+                fillOpacity: 0.5,
+                className: 'ufo-icon' // Aplica el brillo del CSS
+            }).addTo(map);
+        }
 
-<div style="margin-top:10px;">INTENSIDAD</div>
-
-<div class="barra"></div>
-
-</div>
-
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
-
-<script>
-
-const map = L.map('map',{zoomControl:false}).setView([-34.6,-58.4],5);
-
-/* MAPA BASE OSCURO */
-
-L.tileLayer(
-'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-{ attribution:'' }
-).addTo(map);
-
-let heatLayer = L.heatLayer([],{
-radius:35,
-blur:25,
-maxZoom:8,
-gradient:{
-0.2:'#00ffff',
-0.4:'#00ff99',
-0.6:'#00ff00',
-0.8:'#ffff00',
-1:'#ff0000'
-}
-}).addTo(map);
-
-let ovnis = [];
-
-async function actualizarRadar(){
-
-try{
-
-const res = await fetch('/radar');
-
-const data = await res.json();
-
-document.getElementById("count").innerText=data.length;
-
-if(data.length>25)
-document.getElementById("estado").innerText="ACTIVO - ALTA DENSIDAD";
-else
-document.getElementById("estado").innerText="ACTIVO";
-
-let puntos=[];
-
-/* LIMPIAR ICONOS */
-
-ovnis.forEach(o=>map.removeLayer(o));
-ovnis=[];
-
-data.forEach(r=>{
-
-puntos.push([r.lat,r.lon,r.peso||0.5]);
-
-const icon=L.divIcon({
-className:'ovniIcon',
-html:'🛸'
-});
-
-const marker=L.marker([r.lat,r.lon],{icon}).addTo(map);
-
-ovnis.push(marker);
-
-});
-
-heatLayer.setLatLngs(puntos);
-
-}catch(e){
-
-console.log("Radar error",e);
-
-}
-
-}
-
-/* ACTUALIZACIÓN AUTOMÁTICA */
-
-actualizarRadar();
-
-setInterval(actualizarRadar,30000);
-
-</script>
-
+        // Cargar datos del servidor
+        fetch('/radar-data')
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('count').innerText = data.length;
+                data.forEach(p => {
+                    agregarPunto(p.lat, p.lon, p.vip);
+                });
+            });
+    </script>
 </body>
 </html>
