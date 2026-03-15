@@ -1,17 +1,17 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>RADAR AIFU</title>
+    <title>RADAR AIFU 5.0</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body { margin: 0; padding: 0; background: #e3e3e3; font-family: 'Courier New', monospace; }
+        body { margin: 0; padding: 0; background: #000; font-family: 'Courier New', monospace; overflow: hidden; }
         #map { height: 100vh; width: 100vw; z-index: 1; }
 
         .radar-panel {
-            position: absolute; top: 15px; left: 15px; width: 250px;
+            position: absolute; top: 15px; left: 15px; width: 220px;
             background: rgba(0, 20, 10, 0.9); border: 2px solid #00ff88;
             border-radius: 12px; padding: 15px; color: #00ff88; z-index: 9999;
             box-shadow: 0 0 20px rgba(0, 255, 136, 0.4); pointer-events: none;
@@ -19,64 +19,95 @@
 
         .intensidad-bar { height: 8px; background: linear-gradient(to right, #0044ff, #00ff88, #ff0000); border-radius: 4px; margin: 10px 0; }
         
-        /* Estilo de los Popups (Globos de info) */
-        .leaflet-popup-content-wrapper { background: #001a0d; color: #00ff88; border: 1px solid #00ff88; font-family: 'Courier New', monospace; }
+        .leaflet-popup-content-wrapper { background: #001a0d; color: #00ff88; border: 1px solid #00ff88; }
         .leaflet-popup-tip { background: #001a0d; }
+
+        /* Pantalla de carga */
+        #loading {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: black; color: #00ff88; display: flex;
+            align-items: center; justify-content: center; z-index: 10000;
+            flex-direction: column;
+        }
     </style>
 </head>
 <body>
 
+    <div id="loading">
+        <h1>AIFUCITO 5.0</h1>
+        <p>AUTENTICANDO CON SATÉLITE...</p>
+    </div>
+
     <div class="radar-panel">
-        <h2 style="margin:0; font-size:16px; border-bottom:1px solid #00ff88;">🛰️ RADAR TÁCTICO</h2>
-        <div style="margin:10px 0; font-size:18px; font-weight:bold;">REPORTES: <span id="count">0</span></div>
-        <div id="alert-status" style="font-size:12px;">ESCANEANDO CIELO...</div>
+        <h2 style="margin:0; font-size:14px; border-bottom:1px solid #00ff88;">🛰️ RADAR TÁCTICO</h2>
+        <div style="margin:10px 0; font-size:18px; font-weight:bold;">AVISTAMIENTOS: <span id="count">0</span></div>
+        <div id="alert-status" style="font-size:11px;">ESCANEANDO CIELO...</div>
         <div class="intensidad-bar"></div>
-        <div style="display:flex; justify-content:space-between; font-size:9px;"><span>SILENCIO</span><span>AVISTAMIENTO</span></div>
+        <div style="display:flex; justify-content:space-between; font-size:9px;"><span>SILENCIO</span><span>ALERTA</span></div>
     </div>
 
     <div id="map"></div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        if (!window.Telegram.WebApp.initData) {
-            document.body.innerHTML = "<div style='background:black;color:white;height:100vh;display:flex;align-items:center;justify-content:center;'><h1>ACCESO DENEGADO</h1></div>";
-        }
-
         const tg = window.Telegram.WebApp;
-        tg.ready(); tg.expand();
 
-        var map = L.map('map', { zoomControl: false }).setView([-34.6, -56.2], 7);
-        L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png').addTo(map);
+        function iniciarApp() {
+            document.getElementById('loading').style.display = 'none';
+            tg.ready();
+            tg.expand();
 
-        var layerGroup = L.layerGroup().addTo(map);
+            var map = L.map('map', { zoomControl: false }).setView([-34.6, -56.2], 7);
+            
+            // Mapa estilo oscuro/nocturno
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                attribution: 'AIFU'
+            }).addTo(map);
 
-        function actualizarRadar() {
-            fetch('/radar-data')
-                .then(res => res.json())
-                .then(data => {
-                    layerGroup.clearLayers();
-                    document.getElementById('count').innerText = data.length;
-                    
-                    if(data.length > 5) {
-                        document.getElementById('alert-status').innerText = "⚠️ ACTIVIDAD DETECTADA";
-                        document.getElementById('alert-status').style.color = "#ffcc00";
-                    }
+            var layerGroup = L.layerGroup().addTo(map);
 
-                    data.forEach(p => {
-                        var color = p.vip ? '#00ff88' : '#00ffff';
-                        var m = L.circleMarker([p.lat, p.lon], {
-                            radius: 12, color: '#fff', weight: 2, fillColor: color, fillOpacity: 0.8
-                        });
+            function actualizarRadar() {
+                fetch('/radar-data')
+                    .then(res => res.json())
+                    .then(data => {
+                        layerGroup.clearLayers();
+                        document.getElementById('count').innerText = data.length;
                         
-                        // Añadimos la info del reporte al tocar el punto
-                        m.bindPopup(`<b>AGENTE:</b> ${p.agente}<br><b>DESC:</b> ${p.desc}`);
-                        m.addTo(layerGroup);
-                    });
-                });
+                        if(data.length > 5) {
+                            document.getElementById('alert-status').innerText = "⚠️ ACTIVIDAD DETECTADA";
+                            document.getElementById('alert-status').style.color = "#ffcc00";
+                        }
+
+                        data.forEach(p => {
+                            var color = p.vip ? '#00ff88' : '#00ffff';
+                            var m = L.circleMarker([p.lat, p.lon], {
+                                radius: 10, color: '#fff', weight: 1, fillColor: color, fillOpacity: 0.7
+                            });
+                            m.bindPopup(`<b>AGENTE:</b> ${p.agente}<br><b>DESC:</b> ${p.desc}`);
+                            m.addTo(layerGroup);
+                        });
+                    }).catch(err => console.error("Error radar:", err));
+            }
+
+            actualizarRadar();
+            setInterval(actualizarRadar, 15000);
         }
 
-        actualizarRadar();
-        setInterval(actualizarRadar, 20000); // Se actualiza cada 20 segundos solo
+        // --- LÓGICA DE ACCESO REFORZADA ---
+        const urlParams = new URLSearchParams(window.location.search);
+        const esAdmin = urlParams.get('admin') === '7662736311';
+
+        // Esperamos medio segundo para que Telegram inyecte sus datos
+        setTimeout(() => {
+            if (tg.initData || esAdmin) {
+                iniciarApp();
+            } else {
+                document.getElementById('loading').innerHTML = `
+                    <h1 style="color:red;">⚠️ ACCESO DENEGADO</h1>
+                    <p>SOLO PERSONAL DE AIFU</p>
+                `;
+            }
+        }, 600);
     </script>
 </body>
 </html>
