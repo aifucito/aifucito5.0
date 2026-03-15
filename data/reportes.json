@@ -1,1 +1,17 @@
-[]
+[][
+  {"lat": -34.9011, "lon": -56.1645, "ciudad": "Montevideo (Centro)", "pais": "Uruguay", "ts": 1741982400000, "vip": true, "descripcion": "Luz pulsante sobre la bahía."},
+  {"lat": -34.8833, "lon": -56.0667, "ciudad": "Carrasco", "pais": "Uruguay", "ts": 1741983000000, "vip": false, "descripcion": "Objeto discoidal a baja altura."},
+  {"lat": -34.7833, "lon": -55.9333, "ciudad": "El Pinar", "pais": "Uruguay", "ts": 1741983600000, "vip": true, "descripcion": "Formación en V sobre la costa."},
+  {"lat": -34.7667, "lon": -55.7500, "ciudad": "Atlantida", "pais": "Uruguay", "ts": 1741984200000, "vip": false, "descripcion": "Destellos erráticos naranja."},
+  {"lat": -34.7500, "lon": -55.6000, "ciudad": "Parque del Plata", "pais": "Uruguay", "ts": 1741984800000, "vip": true, "descripcion": "Esfera metálica estacionaria."},
+  {"lat": -34.5247, "lon": -56.2812, "ciudad": "Canelones", "pais": "Uruguay", "ts": 1741985400000, "vip": false, "descripcion": "Luces blancas en zigzag."},
+  {"lat": -34.3391, "lon": -56.7146, "ciudad": "San José de Mayo", "pais": "Uruguay", "ts": 1741986000000, "vip": true, "descripcion": "Evento Clase A detectado."},
+  {"lat": -34.7148, "lon": -56.0759, "ciudad": "Villa San José", "pais": "Uruguay", "ts": 1741986600000, "vip": false, "descripcion": "Zumbido y luces verdes."},
+  {"lat": -34.9361, "lon": -54.9378, "ciudad": "Punta del Este", "pais": "Uruguay", "ts": 1741987200000, "vip": true, "descripcion": "Objeto sumergiéndose en el océano."},
+  {"lat": -34.4635, "lon": -57.8346, "ciudad": "Colonia", "pais": "Uruguay", "ts": 1741987800000, "vip": false, "descripcion": "Tránsito rápido hacia el oeste."},
+  {"lat": -34.6037, "lon": -58.3816, "ciudad": "Buenos Aires", "pais": "Argentina", "ts": 1741988400000, "vip": true, "descripcion": "Múltiples esferas sobre el Obelisco."},
+  {"lat": -34.9205, "lon": -57.9536, "ciudad": "La Plata", "pais": "Argentina", "ts": 1741989000000, "vip": false, "descripcion": "Luz fija de gran intensidad."},
+  {"lat": -34.8000, "lon": -56.3000, "ciudad": "Santiago Vázquez", "pais": "Uruguay", "ts": 1741989600000, "vip": true, "descripcion": "Maniobras inteligentes sobre el río."},
+  {"lat": -34.6500, "lon": -56.2000, "ciudad": "Las Piedras", "pais": "Uruguay", "ts": 1741990200000, "vip": false, "descripcion": "Tres testigos confirman avistamiento."},
+  {"lat": -34.8500, "lon": -55.8500, "ciudad": "Salinas", "pais": "Uruguay", "ts": 1741990800000, "vip": true, "descripcion": "Pulso electromagnético detectado."}
+]
