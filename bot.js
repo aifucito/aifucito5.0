@@ -10,8 +10,10 @@ import { v4 as uuidv4 } from "uuid";
 /* ===============================
    CONFIGURACIÓN CENTRAL
    =============================== */
-const ADMIN_ID = "7662736311"; // ID de Damián
+const ADMIN_ID = "7662736311"; 
 const RADAR_CONO_SUR = "-1002447915570";
+const WEBAPP_URL = "https://aifucito5-0.onrender.com"; 
+
 const GRUPOS = {
     URUGUAY: "-1002341505345",
     ARGENTINA: "-1002319047243",
@@ -45,16 +47,8 @@ function rangoUsuario(r) {
     return "👤 Testigo";
 }
 
-let spamControl = [];
-function antiSpamGlobal() {
-    const now = Date.now();
-    spamControl = spamControl.filter(t => now - t < 60000);
-    spamControl.push(now);
-    return spamControl.length < 40;
-}
-
 /* ===============================
-   BASE DE DATOS (Ruta Persistente Render)
+   BASE DE DATOS (Persistencia Render)
    =============================== */
 const DATA_DIR = "/opt/render/project/src/data"; 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -74,10 +68,8 @@ cargarDB();
 
 function guardarDB() {
     try {
-        const t1 = AGENTES_PATH + ".tmp", t2 = REPORTES_PATH + ".tmp";
-        fs.writeFileSync(t1, JSON.stringify(DB_AGENTES));
-        fs.writeFileSync(t2, JSON.stringify(DB_REPORTES));
-        fs.renameSync(t1, AGENTES_PATH); fs.renameSync(t2, REPORTES_PATH);
+        fs.writeFileSync(AGENTES_PATH, JSON.stringify(DB_AGENTES));
+        fs.writeFileSync(REPORTES_PATH, JSON.stringify(DB_REPORTES));
     } catch { log("DB_ERR", "Error en el guardado."); }
 }
 setInterval(guardarDB, 30000);
@@ -91,41 +83,35 @@ function detectarOleada(rep) {
     return cercanos.length >= 3;
 }
 
-function detectarEventoClaseA(rep) {
-    const radio = 15, tiempo = 10 * 60 * 1000, ahora = Date.now();
-    const cercanos = DB_REPORTES.filter(r => r.idUser !== rep.idUser && ahora - r.ts < tiempo && distanciaKm(r.lat, r.lon, rep.lat, rep.lon) < radio);
-    return cercanos.length >= 2;
-}
-
 /* ===============================
-   FLUJO DE REPORTES E INTERFAZ
+   TECLADO E INTERFAZ
    =============================== */
 const teclado = Markup.keyboard([
-    ["🛸 GENERAR REPORTE", "🌍 VER RADAR"],
+    ["🛸 GENERAR REPORTE", Markup.button.webApp("🌍 VER RADAR", WEBAPP_URL)],
     ["⭐ MI PERFIL", "📊 ESTADÍSTICAS"],
     ["🧉 MATE INVESTIGADOR"]
 ]).resize();
 
 bot.start(ctx => {
-    const id = ctx.from.id;
-    if (!DB_AGENTES[id]) DB_AGENTES[id] = { nombre: ctx.from.first_name, reportes: 0, historial: [], vip: false };
-    ctx.reply(`🛸 ¡BIENVENIDO A AIFU!\n\nLa red de observadores está activa. CRIDOVNI vigila el cielo, nosotros también.`, teclado);
+    const id = ctx.from.id.toString();
+    if (!DB_AGENTES[id]) DB_AGENTES[id] = { nombre: ctx.from.first_name, reportes: 0, vip: false };
+    ctx.reply(`🛸 ¡BIENVENIDO A AIFU!\n\nLa red de observadores está activa.`, teclado);
 });
 
+/* ===============================
+   FLUJO DE REPORTES
+   =============================== */
 bot.hears("🛸 GENERAR REPORTE", ctx => {
-    if (!antiSpamGlobal()) return ctx.reply("⚠️ Señal saturada. Esperá un momento.");
-    const ahora = Date.now();
-    ctx.session.reporte = { id: uuidv4(), ts: ahora, expira: ahora + 300000 };
-    ctx.reply("📍 Enviá tu ubicación GPS para el radar.", Markup.keyboard([[Markup.button.locationRequest("📍 ENVIAR GPS")], ["❌ CANCELAR"]]).resize());
+    ctx.session.reporte = { id: uuidv4(), ts: Date.now() };
+    ctx.reply("📍 Enviá tu ubicación GPS.", Markup.keyboard([[Markup.button.locationRequest("📍 ENVIAR GPS")], ["❌ CANCELAR"]]).resize());
 });
 
 bot.on("location", async ctx => {
     if (!ctx.session?.reporte) return;
     const r = ctx.session.reporte;
     const { latitude, longitude } = ctx.message.location;
-    r.lat = latitude; r.lon = longitude; r.idUser = ctx.from.id;
+    r.lat = latitude; r.lon = longitude; r.idUser = ctx.from.id.toString();
 
-    ctx.reply("🔍 Analizando coordenadas...");
     try {
         const res = await axios.get("https://nominatim.openstreetmap.org/reverse", { params: { lat: latitude, lon: longitude, format: "json" }, headers: { "User-Agent": "AIFU" } });
         const addr = res.data.address || {};
@@ -137,19 +123,20 @@ bot.on("location", async ctx => {
     r.destinoPaisId = p.includes("uruguay") ? GRUPOS.URUGUAY : p.includes("argentina") ? GRUPOS.ARGENTINA : p.includes("chile") ? GRUPOS.CHILE : GRUPOS.GLOBAL;
 
     ctx.session.esperandoDesc = true;
-    ctx.reply(`📍 ${r.ciudad}\n\n¿DNI? ¡OVNI! Contame qué estás viendo ahora:`);
+    ctx.reply(`📍 ${r.ciudad}\n\n¿Qué estás viendo? Contame los detalles:`);
 });
 
 bot.on("text", async (ctx, next) => {
-    if (ctx.message.text === "❌ CANCELAR") { ctx.session = null; return ctx.reply("Reporte abortado.", teclado); }
+    if (ctx.message.text === "❌ CANCELAR") { ctx.session = null; return ctx.reply("Abortado.", teclado); }
     if (!ctx.session?.esperandoDesc) return next();
+    
     ctx.session.reporte.descripcion = limpiar(ctx.message.text).slice(0, 400);
     ctx.session.esperandoDesc = false;
 
-    // Solo ADMIN o VIP pueden mandar multimedia
-    if (ctx.from.id.toString() === ADMIN_ID || DB_AGENTES[ctx.from.id]?.vip) {
+    // Solo ADMIN o VIP mandan multimedia
+    if (ctx.from.id.toString() === ADMIN_ID || DB_AGENTES[ctx.from.id.toString()]?.vip) {
         ctx.session.esperandoMultimedia = true;
-        return ctx.reply("📸 ¿Tenés evidencia visual?", Markup.inlineKeyboard([[Markup.button.callback("📸 SÍ", "ev_si"), Markup.button.callback("FINALIZAR", "finalizar")]]));
+        return ctx.reply("📸 ¿Tenés evidencia?", Markup.inlineKeyboard([[Markup.button.callback("📸 SÍ", "ev_si"), Markup.button.callback("FINALIZAR", "finalizar")]]));
     }
     await enviarFinal(ctx);
 });
@@ -168,86 +155,74 @@ bot.on(["photo", "video"], async ctx => {
 async function enviarFinal(ctx) {
     if (!ctx.session?.reporte || ctx.session.reporte.enviado) return;
     const r = ctx.session.reporte; r.enviado = true;
+    
     DB_REPORTES.push(r);
-    DB_AGENTES[r.idUser].reportes++;
+    if (DB_AGENTES[r.idUser]) DB_AGENTES[r.idUser].reportes++;
     guardarDB();
 
-    if (detectarOleada(r)) bot.telegram.sendMessage(RADAR_CONO_SUR, `🚨 OLEADA EN ${r.ciudad.toUpperCase()}`);
-    if (detectarEventoClaseA(r)) bot.telegram.sendMessage(RADAR_CONO_SUR, `🛸 EVENTO CLASE A (Múltiples testigos) en ${r.ciudad}`);
+    if (detectarOleada(r)) bot.telegram.sendMessage(RADAR_CONO_SUR, `🚨 OLEADA DETECTADA EN ${r.ciudad.toUpperCase()}`);
 
     const txt = `🛸 REPORTE AIFU\n📍 ${r.ciudad}, ${r.pais}\n👤 ${ctx.from.first_name}\n📝 ${r.descripcion}`;
+    
     try {
         if (r.fileId) {
             if (r.msgType === "photo") await bot.telegram.sendPhoto(RADAR_CONO_SUR, r.fileId, { caption: txt });
             else await bot.telegram.sendVideo(RADAR_CONO_SUR, r.fileId, { caption: txt });
-        } else { await bot.telegram.sendMessage(RADAR_CONO_SUR, txt); }
+        } else { 
+            await bot.telegram.sendMessage(RADAR_CONO_SUR, txt); 
+        }
         await bot.telegram.sendMessage(r.destinoPaisId, txt);
     } catch (e) { log("ERR_SEND", e.message); }
 
-    ctx.reply("🚀 Reporte enviado. ¡Buen laburo Agente!", teclado);
+    ctx.reply("🚀 Reporte enviado al radar y grupos regionales.", teclado);
     ctx.session = null;
 }
 
 /* ===============================
-   COMANDOS DE ADMINISTRACIÓN VIP
+   COMANDOS ADMIN Y VIP
    =============================== */
-
-// Uso: /vip ID_DEL_USUARIO
 bot.command("vip", (ctx) => {
-    if (ctx.from.id.toString() !== ADMIN_ID) return ctx.reply("❌ Acceso denegado.");
-    const args = ctx.message.text.split(" ");
-    if (args.length !== 2) return ctx.reply("⚠️ Usá: /vip ID");
-    const targetId = args[1];
-    if (!DB_AGENTES[targetId]) return ctx.reply("❌ Usuario no encontrado.");
-    
-    DB_AGENTES[targetId].vip = true;
-    guardarDB();
-    ctx.reply(`✅ ${DB_AGENTES[targetId].nombre} ahora es VIP.`);
-    bot.telegram.sendMessage(targetId, "⭐ ¡Atención! Has sido ascendido a Investigador VIP. Ahora podés enviar fotos y videos.");
-});
-
-// Uso: /unvip ID_DEL_USUARIO
-bot.command("unvip", (ctx) => {
-    if (ctx.from.id.toString() !== ADMIN_ID) return ctx.reply("❌ Acceso denegado.");
-    const args = ctx.message.text.split(" ");
-    const targetId = args[1];
+    if (ctx.from.id.toString() !== ADMIN_ID) return;
+    const targetId = ctx.message.text.split(" ")[1];
     if (DB_AGENTES[targetId]) {
-        DB_AGENTES[targetId].vip = false;
+        DB_AGENTES[targetId].vip = true;
         guardarDB();
-        ctx.reply(`🚫 VIP revocado para ${DB_AGENTES[targetId].nombre}.`);
+        ctx.reply(`✅ ID ${targetId} ahora es VIP.`);
+        bot.telegram.sendMessage(targetId, "⭐ ¡Has sido ascendido a Investigador VIP!");
     }
 });
 
-/* ===============================
-   BOTONES SECUNDARIOS
-   =============================== */
-
 bot.hears("⭐ MI PERFIL", ctx => {
-    const u = DB_AGENTES[ctx.from.id] || { reportes: 0, vip: false };
-    ctx.reply(`🪪 **EXPEDIENTE DE AGENTE**\n\n🆔 Mi ID: \`${ctx.from.id}\`\n👤 Nombre: ${ctx.from.first_name}\n🛸 Reportes: ${u.reportes}\n🎖️ Rango: ${rangoUsuario(u.reportes)}\n${u.vip ? "⭐ ESTADO: INVESTIGADOR VIP" : "👁️ ESTADO: OBSERVADOR"}`);
+    const u = DB_AGENTES[ctx.from.id.toString()] || { reportes: 0, vip: false };
+    ctx.reply(`🪪 **EXPEDIENTE**\n\n🆔 ID: \`${ctx.from.id}\`\n🛸 Reportes: ${u.reportes}\n🎖️ Rango: ${rangoUsuario(u.reportes)}\n${u.vip ? "⭐ VIP" : "👁️ OBSERVADOR"}`);
 });
 
 bot.hears("📊 ESTADÍSTICAS", ctx => {
     const hoy = new Date().setHours(0,0,0,0);
     const reportesHoy = DB_REPORTES.filter(r => r.ts > hoy).length;
-    ctx.reply(`📊 **ACTIVIDAD DEL DÍA**\n\n🛸 Reportes hoy: ${reportesHoy}\n📈 Total en base de datos: ${DB_REPORTES.length}`);
+    ctx.reply(`📊 **ESTADO**\n\n🛸 Hoy: ${reportesHoy}\n📈 Total: ${DB_REPORTES.length}`);
 });
 
-bot.hears("🧉 MATE INVESTIGADOR", ctx => ctx.reply("🍃 Vigilancia nocturna activada. Ojos en el cielo y termo bajo el brazo."));
+bot.hears("🧉 MATE INVESTIGADOR", ctx => ctx.reply("🍃 Vigilancia nocturna activada. Termo y Baldo a mano."));
 
 /* ===============================
-   RADAR WEB Y ARRANQUE
+   API WEB (PARA EL RADAR)
    =============================== */
 const app = express();
 app.use(compression());
 app.use(express.static("public"));
+
 app.get("/radar-data", (req, res) => {
-    res.json(DB_REPORTES.slice(-200).map(r => ({ lat: r.lat, lon: r.lon, desc: r.descripcion?.slice(0, 80), ts: r.ts })));
+    res.json(DB_REPORTES.slice(-200).map(r => ({
+        lat: r.lat,
+        lon: r.lon,
+        desc: r.descripcion?.slice(0, 80),
+        agente: DB_AGENTES[r.idUser]?.nombre || "Anon",
+        vip: DB_AGENTES[r.idUser]?.vip || false
+    })));
 });
+
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => log("WEB", "Radar activo"));
+app.listen(PORT, () => log("WEB", "Radar API activa"));
 
 bot.launch().then(() => log("BOT", "AIFU OPERATIVO 📡"));
-
-process.once("SIGINT", () => { guardarDB(); bot.stop("SIGINT"); });
-process.once("SIGTERM", () => { guardarDB(); bot.stop("SIGTERM"); });
