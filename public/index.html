@@ -17,35 +17,79 @@
             box-shadow: 0 0 20px rgba(0, 255, 136, 0.4); pointer-events: none;
         }
         .intensidad-bar { height: 8px; background: linear-gradient(to right, #0044ff, #00ff88, #ff0000); border-radius: 4px; margin: 10px 0; }
+        /* Animación para que el radar parezca vivo */
+        .radar-pulse {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { stroke-width: 1; stroke-opacity: 1; }
+            100% { stroke-width: 20; stroke-opacity: 0; }
+        }
     </style>
 </head>
 <body>
     <div class="panel">
-        <h2 style="margin:0; font-size:14px; border-bottom:1px solid #00ff88;">🛰️ RADAR TÁCTICO</h2>
+        <h2 style="margin:0; font-size:14px; border-bottom:1px solid #00ff88;">🛰️ RADAR TÁCTICO AIFU</h2>
         <div style="margin:10px 0; font-size:18px; font-weight:bold;">REPORTES: <span id="count">0</span></div>
-        <div id="status" style="font-size:10px;">ESCANEANDO CIELO URUGUAYO...</div>
+        <div id="status" style="font-size:10px; transition: color 0.3s;">ESCANEANDO CIELO...</div>
         <div class="intensidad-bar"></div>
     </div>
     <div id="map"></div>
+
     <script>
         const tg = window.Telegram.WebApp;
         tg.ready(); tg.expand();
 
-        var map = L.map('map', { zoomControl: false }).setView([-34.7, -56.1], 8);
+        // Iniciamos el mapa centrado en Uruguay
+        var map = L.map('map', { zoomControl: false, attributionControl: false }).setView([-34.7, -56.1], 8);
+        
+        // Capa oscura para que resalten las luces del radar
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
+        
         var markers = L.layerGroup().addTo(map);
 
         function actualizar() {
-            fetch('/radar-data').then(res => res.json()).then(data => {
+            const statusLabel = document.getElementById('status');
+            
+            fetch('/radar-data')
+            .then(res => {
+                if (!res.ok) throw new Error("Error de red");
+                return res.json();
+            })
+            .then(data => {
                 markers.clearLayers();
                 document.getElementById('count').innerText = data.length;
+                statusLabel.innerText = "VIGILANCIA ACTIVA - CONO SUR";
+                statusLabel.style.color = "#00ff88";
+
                 data.forEach(p => {
-                    L.circleMarker([p.lat, p.lon], { radius: 10, color: '#fff', fillColor: '#00ff88', fillOpacity: 0.7 })
-                    .bindPopup(`<b>AGENTE:</b> ${p.agente}<br><b>DETALLE:</b> ${p.desc}`).addTo(markers);
+                    // Círculo táctico para cada avistamiento
+                    L.circleMarker([p.lat, p.lon], { 
+                        radius: 8, 
+                        color: '#00ff88', 
+                        fillColor: '#00ff88', 
+                        fillOpacity: 0.6,
+                        className: 'radar-pulse'
+                    })
+                    .bindPopup(`
+                        <div style="color:#000; font-family:monospace;">
+                            <b>🛰️ INVESTIGADOR:</b> ${p.agente}<br>
+                            <b>📝 DETALLE:</b> ${p.desc}
+                        </div>
+                    `)
+                    .addTo(markers);
                 });
-            }).catch(e => document.getElementById('status').innerText = "⚠️ SEÑAL INTERRUMPIDA");
+            })
+            .catch(e => {
+                console.error("Error al conectar:", e);
+                statusLabel.innerText = "⚠️ SEÑAL INTERRUMPIDA - RECONECTANDO";
+                statusLabel.style.color = "#ff4444";
+            });
         }
-        actualizar(); setInterval(actualizar, 20000);
+
+        // Ejecutar al cargar y cada 20 segundos
+        actualizar(); 
+        setInterval(actualizar, 20000);
     </script>
 </body>
 </html>
