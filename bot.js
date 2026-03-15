@@ -10,7 +10,7 @@ import { v4 as uuidv4 } from "uuid";
 /* ===============================
    CONFIGURACIÓN CENTRAL
    =============================== */
-const ADMIN_ID = "7662736311";
+const ADMIN_ID = "7662736311"; // ID de Damián
 const RADAR_CONO_SUR = "-1002447915570";
 const GRUPOS = {
     URUGUAY: "-1002341505345",
@@ -68,7 +68,7 @@ function cargarDB() {
     try {
         if (fs.existsSync(AGENTES_PATH)) DB_AGENTES = JSON.parse(fs.readFileSync(AGENTES_PATH));
         if (fs.existsSync(REPORTES_PATH)) DB_REPORTES = JSON.parse(fs.readFileSync(REPORTES_PATH));
-    } catch { log("DB", "Bases de datos listas."); }
+    } catch { log("DB", "Bases de datos inicializadas."); }
 }
 cargarDB();
 
@@ -98,7 +98,7 @@ function detectarEventoClaseA(rep) {
 }
 
 /* ===============================
-   FLUJO DE REPORTES
+   FLUJO DE REPORTES E INTERFAZ
    =============================== */
 const teclado = Markup.keyboard([
     ["🛸 GENERAR REPORTE", "🌍 VER RADAR"],
@@ -108,7 +108,7 @@ const teclado = Markup.keyboard([
 
 bot.start(ctx => {
     const id = ctx.from.id;
-    if (!DB_AGENTES[id]) DB_AGENTES[id] = { nombre: ctx.from.first_name, reportes: 0, historial: [] };
+    if (!DB_AGENTES[id]) DB_AGENTES[id] = { nombre: ctx.from.first_name, reportes: 0, historial: [], vip: false };
     ctx.reply(`🛸 ¡BIENVENIDO A AIFU!\n\nLa red de observadores está activa. CRIDOVNI vigila el cielo, nosotros también.`, teclado);
 });
 
@@ -145,8 +145,13 @@ bot.on("text", async (ctx, next) => {
     if (!ctx.session?.esperandoDesc) return next();
     ctx.session.reporte.descripcion = limpiar(ctx.message.text).slice(0, 400);
     ctx.session.esperandoDesc = false;
-    ctx.session.esperandoMultimedia = true;
-    ctx.reply("📸 ¿Tenés evidencia visual?", Markup.inlineKeyboard([[Markup.button.callback("📸 SÍ", "ev_si"), Markup.button.callback("FINALIZAR", "finalizar")]]));
+
+    // Solo ADMIN o VIP pueden mandar multimedia
+    if (ctx.from.id.toString() === ADMIN_ID || DB_AGENTES[ctx.from.id]?.vip) {
+        ctx.session.esperandoMultimedia = true;
+        return ctx.reply("📸 ¿Tenés evidencia visual?", Markup.inlineKeyboard([[Markup.button.callback("📸 SÍ", "ev_si"), Markup.button.callback("FINALIZAR", "finalizar")]]));
+    }
+    await enviarFinal(ctx);
 });
 
 bot.action("ev_si", ctx => { ctx.answerCbQuery(); ctx.reply("Subí la foto o video."); });
@@ -183,15 +188,55 @@ async function enviarFinal(ctx) {
     ctx.session = null;
 }
 
-bot.hears("⭐ MI PERFIL", ctx => {
-    const u = DB_AGENTES[ctx.from.id] || { reportes: 0 };
-    ctx.reply(`👤 PERFIL\nReportes: ${u.reportes}\nRango: ${rangoUsuario(u.reportes)}`);
+/* ===============================
+   COMANDOS DE ADMINISTRACIÓN VIP
+   =============================== */
+
+// Uso: /vip ID_DEL_USUARIO
+bot.command("vip", (ctx) => {
+    if (ctx.from.id.toString() !== ADMIN_ID) return ctx.reply("❌ Acceso denegado.");
+    const args = ctx.message.text.split(" ");
+    if (args.length !== 2) return ctx.reply("⚠️ Usá: /vip ID");
+    const targetId = args[1];
+    if (!DB_AGENTES[targetId]) return ctx.reply("❌ Usuario no encontrado.");
+    
+    DB_AGENTES[targetId].vip = true;
+    guardarDB();
+    ctx.reply(`✅ ${DB_AGENTES[targetId].nombre} ahora es VIP.`);
+    bot.telegram.sendMessage(targetId, "⭐ ¡Atención! Has sido ascendido a Investigador VIP. Ahora podés enviar fotos y videos.");
 });
 
-bot.hears("🧉 MATE INVESTIGADOR", ctx => ctx.reply("🍃 Vigilancia nocturna activada. Ojos en el cielo."));
+// Uso: /unvip ID_DEL_USUARIO
+bot.command("unvip", (ctx) => {
+    if (ctx.from.id.toString() !== ADMIN_ID) return ctx.reply("❌ Acceso denegado.");
+    const args = ctx.message.text.split(" ");
+    const targetId = args[1];
+    if (DB_AGENTES[targetId]) {
+        DB_AGENTES[targetId].vip = false;
+        guardarDB();
+        ctx.reply(`🚫 VIP revocado para ${DB_AGENTES[targetId].nombre}.`);
+    }
+});
 
 /* ===============================
-   RADAR WEB
+   BOTONES SECUNDARIOS
+   =============================== */
+
+bot.hears("⭐ MI PERFIL", ctx => {
+    const u = DB_AGENTES[ctx.from.id] || { reportes: 0, vip: false };
+    ctx.reply(`🪪 **EXPEDIENTE DE AGENTE**\n\n🆔 Mi ID: \`${ctx.from.id}\`\n👤 Nombre: ${ctx.from.first_name}\n🛸 Reportes: ${u.reportes}\n🎖️ Rango: ${rangoUsuario(u.reportes)}\n${u.vip ? "⭐ ESTADO: INVESTIGADOR VIP" : "👁️ ESTADO: OBSERVADOR"}`);
+});
+
+bot.hears("📊 ESTADÍSTICAS", ctx => {
+    const hoy = new Date().setHours(0,0,0,0);
+    const reportesHoy = DB_REPORTES.filter(r => r.ts > hoy).length;
+    ctx.reply(`📊 **ACTIVIDAD DEL DÍA**\n\n🛸 Reportes hoy: ${reportesHoy}\n📈 Total en base de datos: ${DB_REPORTES.length}`);
+});
+
+bot.hears("🧉 MATE INVESTIGADOR", ctx => ctx.reply("🍃 Vigilancia nocturna activada. Ojos en el cielo y termo bajo el brazo."));
+
+/* ===============================
+   RADAR WEB Y ARRANQUE
    =============================== */
 const app = express();
 app.use(compression());
@@ -203,3 +248,6 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => log("WEB", "Radar activo"));
 
 bot.launch().then(() => log("BOT", "AIFU OPERATIVO 📡"));
+
+process.once("SIGINT", () => { guardarDB(); bot.stop("SIGINT"); });
+process.once("SIGTERM", () => { guardarDB(); bot.stop("SIGTERM"); });
