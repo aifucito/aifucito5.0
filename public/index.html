@@ -1,73 +1,51 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>RADAR AIFU</title>
+    <title>RADAR AIFU 5.0</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
-        body { margin: 0; padding: 0; background: #000; font-family: sans-serif; }
+        body { margin: 0; padding: 0; background: #000; font-family: 'Courier New', monospace; overflow: hidden; }
         #map { height: 100vh; width: 100vw; background: #000; }
-        .radar-panel {
-            position: absolute; top: 10px; left: 10px; width: 200px;
+        .panel { 
+            position: absolute; top: 15px; left: 15px; width: 220px;
             background: rgba(0, 20, 10, 0.9); border: 2px solid #00ff88;
-            border-radius: 8px; padding: 10px; color: #00ff88; z-index: 1000;
+            border-radius: 12px; padding: 15px; color: #00ff88; z-index: 9999;
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.4); pointer-events: none;
         }
+        .intensidad-bar { height: 8px; background: linear-gradient(to right, #0044ff, #00ff88, #ff0000); border-radius: 4px; margin: 10px 0; }
     </style>
 </head>
 <body>
-
-    <div class="radar-panel">
-        <h2 style="margin:0; font-size:14px;">🛰️ RADAR AIFU</h2>
-        <div style="font-size:18px;">REPORTES: <span id="count">0</span></div>
-        <div id="status" style="font-size:10px;">INICIALIZANDO...</div>
+    <div class="panel">
+        <h2 style="margin:0; font-size:14px; border-bottom:1px solid #00ff88;">🛰️ RADAR TÁCTICO</h2>
+        <div style="margin:10px 0; font-size:18px; font-weight:bold;">REPORTES: <span id="count">0</span></div>
+        <div id="status" style="font-size:10px;">ESCANEANDO CIELO URUGUAYO...</div>
+        <div class="intensidad-bar"></div>
     </div>
-
     <div id="map"></div>
-
     <script>
-        // Forzamos el inicio
         const tg = window.Telegram.WebApp;
-        
-        try {
-            tg.ready();
-            tg.expand();
-        } catch(e) { console.log("Fuera de Telegram"); }
+        tg.ready(); tg.expand();
 
-        // Inicializar mapa
-        var map = L.map('map', { zoomControl: false }).setView([-34.6, -56.2], 7);
-        
-        // Usamos una capa estándar para asegurar que cargue
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
+        var map = L.map('map', { zoomControl: false }).setView([-34.7, -56.1], 8);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
         var markers = L.layerGroup().addTo(map);
 
-        function cargarDatos() {
-            document.getElementById('status').innerText = "ACTUALIZANDO...";
-            fetch('/radar-data')
-                .then(res => res.json())
-                .then(data => {
-                    markers.clearLayers();
-                    document.getElementById('count').innerText = data.length;
-                    document.getElementById('status').innerText = "SISTEMA ONLINE";
-                    
-                    data.forEach(p => {
-                        L.circleMarker([p.lat, p.lon], {
-                            radius: 10, color: '#fff', weight: 1, fillColor: '#00ff88', fillOpacity: 0.7
-                        }).addTo(markers);
-                    });
-                })
-                .catch(err => {
-                    document.getElementById('status').innerText = "⚠️ ERROR DE DATOS";
-                    console.error(err);
+        function actualizar() {
+            fetch('/radar-data').then(res => res.json()).then(data => {
+                markers.clearLayers();
+                document.getElementById('count').innerText = data.length;
+                data.forEach(p => {
+                    L.circleMarker([p.lat, p.lon], { radius: 10, color: '#fff', fillColor: '#00ff88', fillOpacity: 0.7 })
+                    .bindPopup(`<b>AGENTE:</b> ${p.agente}<br><b>DETALLE:</b> ${p.desc}`).addTo(markers);
                 });
+            }).catch(e => document.getElementById('status').innerText = "⚠️ SEÑAL INTERRUMPIDA");
         }
-
-        // Ejecutar carga
-        cargarDatos();
-        setInterval(cargarDatos, 20000);
+        actualizar(); setInterval(actualizar, 20000);
     </script>
 </body>
 </html>
