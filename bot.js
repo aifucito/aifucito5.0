@@ -10,7 +10,7 @@ import { v4 as uuidv4 } from "uuid";
 /* ===============================
    CONFIGURACIÓN CENTRAL AIFU
    =============================== */
-const ADMIN_ID = "7662736311"; // DAMIÁN
+const ADMIN_ID = "7662736311"; 
 const RADAR_CONO_SUR = "-1002447915570";
 const WEBAPP_URL = "https://aifucito5-0.onrender.com"; 
 
@@ -26,9 +26,9 @@ const log = (t, m) => console.log(`[${new Date().toISOString()}] ${t}: ${m}`);
 bot.use(session());
 
 /* ===============================
-   PERSISTENCIA DE DATOS
+   PERSISTENCIA (data/reportes.json)
    =============================== */
-const DATA_DIR = "/opt/render/project/src/data"; 
+const DATA_DIR = path.join(process.cwd(), "data"); 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const AGENTES_PATH = path.join(DATA_DIR, "agentes.json");
@@ -40,7 +40,15 @@ function cargarDB() {
     try {
         if (fs.existsSync(AGENTES_PATH)) DB_AGENTES = JSON.parse(fs.readFileSync(AGENTES_PATH));
         if (fs.existsSync(REPORTES_PATH)) DB_REPORTES = JSON.parse(fs.readFileSync(REPORTES_PATH));
-    } catch { log("DB", "Bases de datos inicializadas."); }
+        
+        // Inyección de emergencia si la hoja está vacía
+        if (DB_REPORTES.length === 0) {
+            DB_REPORTES = [
+                { id: "1", lat: -34.912, lon: -55.045, descripcion: "Punto Base: Punta Ballena", idUser: ADMIN_ID, ts: Date.now() },
+                { id: "2", lat: -34.862, lon: -55.275, descripcion: "Punto Base: Piriápolis", idUser: ADMIN_ID, ts: Date.now() }
+            ];
+        }
+    } catch { log("DB", "Bases de datos listas."); }
 }
 cargarDB();
 
@@ -53,17 +61,8 @@ function guardarDB() {
 setInterval(guardarDB, 30000);
 
 /* ===============================
-   LÓGICA DE OLEADAS Y RANGOS
+   LÓGICA DE INVESTIGACIÓN (OLEADAS)
    =============================== */
-function obtenerRango(id, r) {
-    if (id.toString() === ADMIN_ID) return "💎 PRESIDENTE AIFU";
-    if (r >= 50) return "🛰️ Investigador Élite";
-    if (r >= 25) return "🔭 Investigador Senior";
-    if (r >= 10) return "📡 Investigador";
-    if (r >= 5) return "👁 Observador";
-    return "👤 Testigo";
-}
-
 function distanciaKm(lat1, lon1, lat2, lon2) {
     const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -78,8 +77,15 @@ function detectarOleada(rep) {
     return cercanos.length >= 3;
 }
 
+function obtenerRango(id, reportes) {
+    if (id.toString() === ADMIN_ID) return "💎 PRESIDENTE AIFU";
+    if (reportes >= 50) return "🛰️ Investigador Élite";
+    if (reportes >= 10) return "📡 Investigador";
+    return "👁️ Observador";
+}
+
 /* ===============================
-   INTERFAZ PRINCIPAL
+   INTERFAZ (TECLADO DAMIÁN)
    =============================== */
 const teclado = Markup.keyboard([
     ["🛸 GENERAR REPORTE", Markup.button.webApp("🌍 VER RADAR", WEBAPP_URL)],
@@ -95,19 +101,15 @@ bot.start(ctx => {
         DB_AGENTES[id].vip = true;
     }
     guardarDB();
-    const saludo = (id === ADMIN_ID) 
-        ? `🫡 ¡A SUS ÓRDENES PRESIDENTE DAMIÁN!\n\nEl sistema AIFUCITO 5.0 está operativo y sincronizado con el Radar Cono Sur.`
-        : `🛸 ¡BIENVENIDO AGENTE!\n\nIniciando escaneo de frecuencia para la red AIFU.`;
-    ctx.reply(saludo, teclado);
+    ctx.reply(`🛸 ¡BIENVENIDO PRESIDENTE DAMIÁN!\n\nEl sistema AIFUCITO 5.0 está operativo y sincronizado con el Radar Cono Sur.`, teclado);
 });
 
 /* ===============================
-   GESTIÓN DE REPORTES (MULTIMEDIA + GPS)
+   PROTOCOLO DE REPORTE COMPLETO
    =============================== */
 bot.hears("🛸 GENERAR REPORTE", ctx => {
     ctx.session.reporte = { id: uuidv4(), ts: Date.now(), idUser: ctx.from.id.toString() };
-    ctx.reply("📍 Para iniciar el reporte, necesito tu ubicación GPS.", 
-        Markup.keyboard([[Markup.button.locationRequest("📍 ENVIAR MI UBICACIÓN")], ["❌ CANCELAR"]]).resize());
+    ctx.reply("📍 Para iniciar el reporte, necesito tu ubicación GPS.", Markup.keyboard([[Markup.button.locationRequest("📍 ENVIAR MI UBICACIÓN")], ["❌ CANCELAR"]]).resize());
 });
 
 bot.on("location", async ctx => {
@@ -140,7 +142,7 @@ bot.on("text", async (ctx, next) => {
     // Solo ADMIN o VIP mandan multimedia
     if (ctx.from.id.toString() === ADMIN_ID || DB_AGENTES[ctx.from.id.toString()]?.vip) {
         ctx.session.esperandoMultimedia = true;
-        return ctx.reply("📸 **EVIDENCIA.**\nPodés enviar una foto o video del avistamiento:", 
+        return ctx.reply("📸 **EVIDENCIA.**\nComo investigador autorizado, podés enviar una foto o video del avistamiento:", 
             Markup.inlineKeyboard([[Markup.button.callback("FINALIZAR SIN ARCHIVO", "finalizar")]]));
     }
     await finalizarReporte(ctx);
@@ -171,7 +173,7 @@ async function finalizarReporte(ctx) {
 
     const txt = `🛸 **NUEVO REPORTE AIFU**\n📍 ${r.ciudad}, ${r.pais}\n👤 ${ctx.from.first_name}\n🎖️ ${obtenerRango(r.idUser, DB_AGENTES[r.idUser].reportes)}\n📝 ${r.descripcion}`;
     
-    // Envío General
+    // Envío General y Multimedia
     if (r.fileId) {
         if (r.msgType === "photo") await bot.telegram.sendPhoto(RADAR_CONO_SUR, r.fileId, { caption: txt });
         else await bot.telegram.sendVideo(RADAR_CONO_SUR, r.fileId, { caption: txt });
@@ -179,10 +181,10 @@ async function finalizarReporte(ctx) {
         await bot.telegram.sendMessage(RADAR_CONO_SUR, txt);
     }
     
-    // Envío Regional
-    const p = r.pais.toLowerCase();
+    // Envío Regional Automático
+    const p = r.pais ? r.pais.toLowerCase() : "";
     const dest = p.includes("uruguay") ? GRUPOS.URUGUAY : p.includes("argentina") ? GRUPOS.ARGENTINA : p.includes("chile") ? GRUPOS.CHILE : GRUPOS.GLOBAL;
-    bot.telegram.sendMessage(dest, txt).catch(() => log("DIFUSION", "Grupo no alcanzado"));
+    bot.telegram.sendMessage(dest, txt).catch(() => {});
 
     ctx.reply("🚀 ¡Reporte enviado con éxito!", teclado);
     ctx.session = null;
@@ -198,31 +200,39 @@ bot.hears("🧉 MATE INVESTIGADOR", ctx => {
 bot.hears("⭐ MI PERFIL", ctx => {
     const id = ctx.from.id.toString();
     const u = DB_AGENTES[id] || { reportes: 0, vip: false };
-    ctx.reply(`🪪 **EXPEDIENTE AIFU**\n\n👤 Agente: ${ctx.from.first_name}\n🆔 ID: \`${id}\`\n🛸 Reportes: ${u.reportes}\n🎖️ Rango: ${obtenerRango(id, u.reportes)}\n${u.vip ? "⭐ ESTADO: VIP (Multimedia habilitada)" : "👁️ ESTADO: OBSERVADOR"}`);
+    const rango = obtenerRango(id, u.reportes);
+    ctx.reply(`🪪 **EXPEDIENTE AIFU**\n\n👤 Agente: ${ctx.from.first_name}\n🆔 ID: \`${id}\`\n🛸 Reportes: ${u.reportes}\n🎖️ Rango: ${rango}\n${u.vip ? "⭐ ESTADO: INVESTIGADOR VIP (Acceso Multimedia)" : "👁️ ESTADO: OBSERVADOR"}`);
 });
 
 bot.hears("📊 ESTADÍSTICAS", ctx => {
-    ctx.reply(`📊 **RADAR ESTADÍSTICO**\n\n🛸 Total histórico: ${DB_REPORTES.length}\n📡 Red de Agentes: ${Object.keys(DB_AGENTES).length}`);
+    const hoy = new Date().setHours(0,0,0,0);
+    const reportesHoy = DB_REPORTES.filter(r => r.ts > hoy).length;
+    ctx.reply(`📊 **RADAR ESTADÍSTICO**\n\n🛸 Avistamientos hoy: ${reportesHoy}\n📈 Total histórico: ${DB_REPORTES.length}\n📡 Red de Agentes: ${Object.keys(DB_AGENTES).length}`);
 });
 
 bot.hears("💳 AFILIACIÓN / PAGO", ctx => {
-    ctx.reply("💳 **MEMBRESÍA AIFU**\n\nApoyá la investigación oficial. Membresía por $1.50 USD.\n\n🔗 [PAGAR AQUÍ](https://link-de-tu-pago.com)");
+    ctx.reply("💳 **MEMBRESÍA AIFU**\n\nApoyá la investigación oficial. Membresía vitalicia por $1.50 USD.\n\n🔗 [HACER PAGO AQUÍ](https://link-de-tu-pago.com)", Markup.inlineKeyboard([
+        [Markup.button.url("💳 PAGAR AHORA", "https://link-de-tu-pago.com")]
+    ]));
 });
 
 /* ===============================
-   SERVIDOR WEB
+   API WEB (EL ENLACE DEL MAPA)
    =============================== */
 const app = express();
 app.use(compression());
 app.use(express.static("public"));
+
 app.get("/radar-data", (req, res) => {
-    res.json(DB_REPORTES.slice(-100).map(r => ({
-        lat: r.lat, lon: r.lon,
-        vip: DB_AGENTES[r.idUser]?.vip || false,
+    // Esto es lo que el mapa busca para mostrar los puntos
+    const formatoMapa = DB_REPORTES.slice(-100).map(r => ({
+        lat: parseFloat(r.lat),
+        lon: parseFloat(r.lon),
         agente: DB_AGENTES[r.idUser]?.nombre || "Anon",
-        desc: r.descripcion
-    })));
+        desc: r.descripcion || "Avistamiento registrado"
+    }));
+    res.json(formatoMapa);
 });
 
-app.listen(process.env.PORT || 10000);
+app.listen(process.env.PORT || 10000, () => log("WEB", "Radar Link Online"));
 bot.launch();
