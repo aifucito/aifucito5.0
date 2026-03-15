@@ -1,46 +1,73 @@
-<script>
-        const tg = window.Telegram.WebApp;
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RADAR AIFU</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        body { margin: 0; padding: 0; background: #000; font-family: sans-serif; }
+        #map { height: 100vh; width: 100vw; background: #000; }
+        .radar-panel {
+            position: absolute; top: 10px; left: 10px; width: 200px;
+            background: rgba(0, 20, 10, 0.9); border: 2px solid #00ff88;
+            border-radius: 8px; padding: 10px; color: #00ff88; z-index: 1000;
+        }
+    </style>
+</head>
+<body>
 
-        // ESTA VERSIÓN NO TIENE BLOQUEO PARA QUE PUEDAS ENTRAR YA MISMO
-        function iniciarApp() {
-            document.getElementById('loading').style.display = 'none';
+    <div class="radar-panel">
+        <h2 style="margin:0; font-size:14px;">🛰️ RADAR AIFU</h2>
+        <div style="font-size:18px;">REPORTES: <span id="count">0</span></div>
+        <div id="status" style="font-size:10px;">INICIALIZANDO...</div>
+    </div>
+
+    <div id="map"></div>
+
+    <script>
+        // Forzamos el inicio
+        const tg = window.Telegram.WebApp;
+        
+        try {
             tg.ready();
             tg.expand();
+        } catch(e) { console.log("Fuera de Telegram"); }
 
-            var map = L.map('map', { zoomControl: false }).setView([-34.6, -56.2], 7);
-            
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-                attribution: 'AIFU'
-            }).addTo(map);
+        // Inicializar mapa
+        var map = L.map('map', { zoomControl: false }).setView([-34.6, -56.2], 7);
+        
+        // Usamos una capa estándar para asegurar que cargue
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-            var layerGroup = L.layerGroup().addTo(map);
+        var markers = L.layerGroup().addTo(map);
 
-            function actualizarRadar() {
-                fetch('/radar-data')
-                    .then(res => res.json())
-                    .then(data => {
-                        layerGroup.clearLayers();
-                        document.getElementById('count').innerText = data.length;
-                        
-                        data.forEach(p => {
-                            var color = p.vip ? '#00ff88' : '#00ffff';
-                            var m = L.circleMarker([p.lat, p.lon], {
-                                radius: 10, color: '#fff', weight: 1, fillColor: color, fillOpacity: 0.7
-                            });
-                            m.bindPopup(`<b>AGENTE:</b> ${p.agente || 'Anon'}<br><b>DESC:</b> ${p.desc || 'Sin datos'}`);
-                            m.addTo(layerGroup);
-                        });
-                    }).catch(err => {
-                        console.error("Error cargando puntos:", err);
-                        // Si falla la carga, mostramos un error en el panel
-                        document.getElementById('alert-status').innerText = "❌ ERROR DE CONEXIÓN";
+        function cargarDatos() {
+            document.getElementById('status').innerText = "ACTUALIZANDO...";
+            fetch('/radar-data')
+                .then(res => res.json())
+                .then(data => {
+                    markers.clearLayers();
+                    document.getElementById('count').innerText = data.length;
+                    document.getElementById('status').innerText = "SISTEMA ONLINE";
+                    
+                    data.forEach(p => {
+                        L.circleMarker([p.lat, p.lon], {
+                            radius: 10, color: '#fff', weight: 1, fillColor: '#00ff88', fillOpacity: 0.7
+                        }).addTo(markers);
                     });
-            }
-
-            actualizarRadar();
-            setInterval(actualizarRadar, 15000);
+                })
+                .catch(err => {
+                    document.getElementById('status').innerText = "⚠️ ERROR DE DATOS";
+                    console.error(err);
+                });
         }
 
-        // Entramos directo, sin preguntar quién sos
-        window.onload = iniciarApp;
+        // Ejecutar carga
+        cargarDatos();
+        setInterval(cargarDatos, 20000);
     </script>
+</body>
+</html>
