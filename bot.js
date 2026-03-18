@@ -7,9 +7,7 @@ import path from "path";
 import axios from "axios";
 import { v4 as uuidv4 } from "uuid";
 
-/* ===============================
-   CONFIGURACIÓN
-   =============================== */
+/* CONFIG */
 const ADMIN_ID = "7662736311";
 const RADAR_CONO_SUR = "-1002447915570";
 const WEBAPP_URL = "https://aifucito5-0.onrender.com";
@@ -17,16 +15,13 @@ const WEBAPP_URL = "https://aifucito5-0.onrender.com";
 const bot = new Telegraf(process.env.TELEGRAM_TOKEN);
 bot.use(session());
 
-/* ===============================
-   🔥 DETECTOR DE CANAL (CLAVE)
-   =============================== */
+/* DETECTOR CANAL */
 bot.on("channel_post", (ctx) => {
     console.log("====== CANAL DETECTADO ======");
     console.log("ID:", ctx.channelPost.chat.id);
     console.log("TITULO:", ctx.channelPost.chat.title);
     console.log("=============================");
 });
-
 /* ===============================
    PERSISTENCIA
    =============================== */
