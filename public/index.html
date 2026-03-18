@@ -19,6 +19,7 @@ body {
 #map {
     height: 100vh;
     width: 100%;
+    filter: brightness(0.85) contrast(1.3);
 }
 
 .panel {
@@ -40,6 +41,15 @@ body {
     padding: 10px;
     border: 1px solid #00ff88;
     border-radius: 8px;
+}
+
+.pulse {
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); opacity: 0.9; }
+    100% { transform: scale(3); opacity: 0; }
 }
 </style>
 </head>
@@ -63,14 +73,22 @@ body {
     </button>
 </div>
 
+<audio id="alertSound">
+<source src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg">
+</audio>
+
 <script>
+const tg = window.Telegram.WebApp;
+tg.ready();
+tg.expand();
+
 const map = L.map('map').setView([-34.5, -58], 5);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: 'AIFU Radar'
-}).addTo(map);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
 
 const markers = L.layerGroup().addTo(map);
+const linesLayer = L.layerGroup().addTo(map);
+const pulseLayer = L.layerGroup().addTo(map);
 
 let heatLayer;
 let currentData = [];
@@ -78,37 +96,47 @@ let playback = false;
 let playbackIndex = 0;
 
 // ----------------------
-// FILTRO TIEMPO
+// TIEMPO
 // ----------------------
 function getTimeLimit() {
     const val = document.getElementById("timeRange").value;
 
-    if (val == 1) {
-        document.getElementById("timeLabel").innerText = "Últimas 24h";
-        return 24 * 60 * 60 * 1000;
-    }
-    if (val == 2) {
-        document.getElementById("timeLabel").innerText = "Última semana";
-        return 7 * 24 * 60 * 60 * 1000;
-    }
-    if (val == 3) {
-        document.getElementById("timeLabel").innerText = "Último mes";
-        return 30 * 24 * 60 * 60 * 1000;
-    }
+    if (val == 1) { document.getElementById("timeLabel").innerText = "Últimas 24h"; return 86400000; }
+    if (val == 2) { document.getElementById("timeLabel").innerText = "Última semana"; return 604800000; }
+    if (val == 3) { document.getElementById("timeLabel").innerText = "Último mes"; return 2592000000; }
 }
 
 // ----------------------
-// ACTUALIZAR DATOS
+// DISTANCIA REAL
+// ----------------------
+function distanciaKm(a, b) {
+    const R = 6371;
+    const dLat = (b.lat - a.lat) * Math.PI/180;
+    const dLon = (b.lon - a.lon) * Math.PI/180;
+
+    const lat1 = a.lat * Math.PI/180;
+    const lat2 = b.lat * Math.PI/180;
+
+    const x = Math.sin(dLat/2) ** 2 +
+              Math.sin(dLon/2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+
+    return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
+}
+
+// ----------------------
+// ACTUALIZAR
 // ----------------------
 function actualizar() {
 
-    fetch('/radar-data')
+    fetch(`/radar-data?user=${tg.initDataUnsafe.user?.id}`)
     .then(res => res.json())
     .then(data => {
 
         const limite = Date.now() - getTimeLimit();
 
-        currentData = data.filter(p => p.ts && p.ts > limite);
+        currentData = data
+            .filter(p => p.ts && p.ts > limite)
+            .sort((a,b) => a.ts - b.ts);
 
         renderMapa(currentData);
         detectarZonas(currentData);
@@ -123,34 +151,40 @@ function actualizar() {
 }
 
 // ----------------------
-// RENDER MAPA
+// RENDER
 // ----------------------
 function renderMapa(data) {
 
     markers.clearLayers();
+    linesLayer.clearLayers();
+    pulseLayer.clearLayers();
 
-    if (heatLayer) {
-        map.removeLayer(heatLayer);
-    }
+    if (heatLayer) map.removeLayer(heatLayer);
 
     let heatPoints = [];
+    let linePoints = [];
 
     data.forEach(p => {
 
         heatPoints.push([p.lat, p.lon, 1]);
+        linePoints.push([p.lat, p.lon]);
 
         L.circleMarker([p.lat, p.lon], {
             radius: 6,
             color: "#00ff88",
             fillColor: "#00ff88",
             fillOpacity: 0.8
-        })
-        .bindPopup(`
-            <b>Investigador:</b> ${p.agente || "Anónimo"}<br>
-            <b>Detalle:</b> ${p.desc || "Sin datos"}
-        `)
-        .addTo(markers);
+        }).addTo(markers);
     });
+
+    // LINEAS DE MOVIMIENTO
+    if (linePoints.length > 1) {
+        L.polyline(linePoints, {
+            color: "#00ff88",
+            weight: 2,
+            opacity: 0.5
+        }).addTo(linesLayer);
+    }
 
     heatLayer = L.heatLayer(heatPoints, {
         radius: 35,
@@ -167,12 +201,69 @@ function renderMapa(data) {
 }
 
 // ----------------------
-// REPRODUCCIÓN
+// ZONAS CALIENTES
+// ----------------------
+function detectarZonas(data) {
+
+    let clusters = [];
+
+    data.forEach(p => {
+        let grupo = data.filter(o => distanciaKm(p, o) < 10);
+
+        if (grupo.length >= 5) {
+            clusters.push(grupo);
+        }
+    });
+
+    if (clusters.length > 0) {
+        activarAlerta(clusters);
+    } else {
+        desactivarAlerta();
+    }
+}
+
+// ----------------------
+// ALERTA + PULSO
+// ----------------------
+function activarAlerta(clusters) {
+
+    const status = document.getElementById('status');
+    status.innerText = "🚨 ALERTA ROJA";
+    status.style.color = "red";
+
+    document.body.style.boxShadow = "0 0 60px red inset";
+
+    document.getElementById("alertSound").play();
+
+    clusters.forEach(grupo => {
+
+        const centro = grupo[0];
+
+        const circle = L.circle([centro.lat, centro.lon], {
+            radius: 8000,
+            color: "red",
+            fillColor: "red",
+            fillOpacity: 0.3
+        }).addTo(pulseLayer);
+
+        const el = circle._path;
+        if (el) el.classList.add("pulse");
+    });
+}
+
+function desactivarAlerta() {
+
+    document.getElementById('status').innerText = "VIGILANCIA ACTIVA";
+    document.getElementById('status').style.color = "#00ff88";
+    document.body.style.boxShadow = "none";
+}
+
+// ----------------------
+// PLAYBACK
 // ----------------------
 function togglePlayback() {
     playback = !playback;
     playbackIndex = 0;
-
     if (playback) reproducir();
 }
 
@@ -180,7 +271,6 @@ function reproducir() {
     if (!playback) return;
 
     let subset = currentData.slice(0, playbackIndex);
-
     renderMapa(subset);
 
     playbackIndex++;
@@ -192,49 +282,6 @@ function reproducir() {
     }
 }
 
-// ----------------------
-// DETECCIÓN DE ZONAS
-// ----------------------
-function detectarZonas(data) {
-
-    let zonas = {};
-
-    data.forEach(p => {
-        let key = `${p.lat.toFixed(1)}_${p.lon.toFixed(1)}`;
-        zonas[key] = (zonas[key] || 0) + 1;
-    });
-
-    let max = Math.max(...Object.values(zonas), 0);
-
-    if (max >= 5) activarAlerta(max);
-    else desactivarAlerta();
-}
-
-// ----------------------
-// ALERTA ROJA
-// ----------------------
-function activarAlerta(nivel) {
-
-    const status = document.getElementById('status');
-
-    status.innerText = `🚨 ALERTA ROJA (${nivel})`;
-    status.style.color = "red";
-
-    document.body.style.boxShadow = "0 0 40px red inset";
-}
-
-function desactivarAlerta() {
-
-    const status = document.getElementById('status');
-
-    status.innerText = "VIGILANCIA ACTIVA";
-    status.style.color = "#00ff88";
-
-    document.body.style.boxShadow = "none";
-}
-
-// ----------------------
-// AUTO REFRESH
 // ----------------------
 setInterval(actualizar, 30000);
 actualizar();
