@@ -1,1 +1,15 @@
 
+[
+  {
+    "lat": -34.9011,
+    "lng": -56.1645,
+    "fecha": "2026-03-10",
+    "tipo": "luz en movimiento"
+  },
+  {
+    "lat": -34.85,
+    "lng": -56.2,
+    "fecha": "2026-02-22",
+    "tipo": "objeto triangular"
+  }
+]
