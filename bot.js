@@ -1,230 +1,142 @@
-// bot.js
 import "dotenv/config";
 import { Telegraf, Markup } from "telegraf";
 import express from "express";
-import fs from "fs-extra";
-
-// =========================
-// VALIDAR TOKEN
-// =========================
-if (!process.env.BOT_TOKEN) {
-  console.error("ERROR: La variable de entorno BOT_TOKEN no está definida.");
-  process.exit(1);
-}
+import fs from "fs";
+import crypto from "crypto";
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const app = express();
+const PORT = process.env.PORT || 3000;
 
-const DATA_FILE = "./data.json";
-const COLAB_FILE = "./colaboradores.json";
+let reportes = [];
 
-// =========================
-// CONFIGURACIÓN ADMIN Y GRUPO
-// =========================
-const ADMIN_ID = process.env.ADMIN_ID || "TU_ID"; // Opcional: definir en variables de entorno
-const GRUPO_ID = process.env.GRUPO_ID || "-1003895765674"; // Opcional: definir en variables de entorno
-
-// =========================
-// INICIALIZAR ARCHIVOS
-// =========================
-await fs.ensureFile(DATA_FILE);
-await fs.ensureFile(COLAB_FILE);
-
-if (!(await fs.pathExists(DATA_FILE))) await fs.writeJson(DATA_FILE, []);
-if (!(await fs.pathExists(COLAB_FILE))) await fs.writeJson(COLAB_FILE, {});
-
-// =========================
-// PERSONALIDAD
-// =========================
-const personalidad = {
-  inicio: [
-    "👁️ Entraste… hablá bajo… CRIDOVNI no siempre avisa…",
-    "🛸 Bienvenido… ¿seguro que nadie te siguió?",
-    "😶‍🌫️ AIFU activo… cuidado con los hombres de negro…"
-  ],
-  pedir: [
-    "📍 Mandá la ubicación… pero mirá alrededor…",
-    "🛰️ Necesito coordenadas… rápido…",
-    "👀 Pasame ubicación… por las dudas"
-  ],
-  ok: [
-    "🛸 Registro guardado… shhh 🤫",
-    "📡 Señal recibida… no digas nada",
-    "👁️ Ya está… AIFU lo tiene"
-  ],
-  no_colab: [
-    "👀 Ves poco… los colaboradores ven todo…",
-    "🤫 Hay más… pero no está liberado",
-    "🛑 Acceso limitado… por ahora"
-  ],
-  colab: [
-    "🟢 Estás dentro…",
-    "👁️ Acceso completo…",
-    "😶‍🌫️ Sos parte ahora"
-  ]
-};
-
-function r(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
+// ==========================
+// CARGA SEGURA
+// ==========================
+try {
+  reportes = JSON.parse(fs.readFileSync("data.json"));
+} catch {
+  reportes = [];
 }
 
-// =========================
-// COLABORADORES
-// =========================
-async function getColabs() {
-  return await fs.readJson(COLAB_FILE);
+// ==========================
+// RANGOS
+// ==========================
+function obtenerRango(cantidad) {
+  if (cantidad >= 80) return "🧠 Fundador de rutas espaciales";
+  if (cantidad >= 40) return "🔭 Vigilante del cielo";
+  if (cantidad >= 20) return "🛰️ Investigador de campo";
+  if (cantidad >= 10) return "👽 Guardaespaldas de ALF";
+  if (cantidad >= 5) return "🛸 Avistador de lo oculto";
+  return "🧉 Cebador de mate galáctico";
 }
 
-async function saveColabs(data) {
-  await fs.writeJson(COLAB_FILE, data, { spaces: 2 });
+// ==========================
+// GUARDAR
+// ==========================
+function guardar() {
+  fs.writeFileSync("data.json", JSON.stringify(reportes));
 }
 
-async function esColaborador(id) {
-  const c = await getColabs();
-  return !!c[id];
-}
-
-// =========================
-// ZONA CALIENTE
-// =========================
-function distanciaKm(a, b) {
-  const R = 6371;
-  const dLat = (b.lat - a.lat) * Math.PI/180;
-  const dLon = (b.lon - a.lon) * Math.PI/180;
-
-  const lat1 = a.lat * Math.PI/180;
-  const lat2 = b.lat * Math.PI/180;
-
-  const x = Math.sin(dLat/2) ** 2 +
-            Math.sin(dLon/2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
-
-  return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
-}
-
-function detectarZonaCaliente(data, nuevo) {
-  const ahora = Date.now();
-
-  const cercanos = data.filter(p => {
-    const tiempo = (ahora - p.ts) < (60 * 60 * 1000); // 1h
-    const dist = distanciaKm(p, nuevo) < 10; // 10km
-    return tiempo && dist;
-  });
-
-  return cercanos.length >= 3;
-}
-
-// =========================
-// BOT
-// =========================
-bot.start((ctx) => {
+// ==========================
+// BIENVENIDA
+// ==========================
+bot.start(ctx => {
   ctx.reply(
-    r(personalidad.inicio),
-    Markup.keyboard([
-      ["📡 Reportar avistamiento"],
-      ["🤝 Ser colaborador"],
-      ["📊 Estado"]
-    ]).resize()
+`Shhh… hablá bajo… 👁️
+
+Esto no es un bot normal.
+Acá registramos lo que otros prefieren ignorar…
+
+CRIDOVNI no siempre llega primero…
+y los hombres de negro… bueno… mejor no hablar de eso.
+
+¿Viste algo en el cielo?`,
+    Markup.keyboard([["📡 Reportar avistamiento"]]).resize()
   );
 });
 
-bot.hears("🤝 Ser colaborador", (ctx) => {
+// ==========================
+// PEDIR GPS
+// ==========================
+bot.hears("📡 Reportar avistamiento", ctx => {
   ctx.reply(
-`🤝 COLABORADOR AIFU
+`Activá tu GPS…
 
-🛰️ Acceso completo al radar
-📡 Más reportes visibles
-👁️ Participación real
+Nada de escribir lugares.
+Necesitamos coordenadas exactas.
 
-Si querés entrar...
-escribime.
-
-(shhh… no es para todos)`
-  );
-});
-
-bot.hears("📊 Estado", async (ctx) => {
-  const c = await esColaborador(ctx.from.id);
-  ctx.reply(c ? r(personalidad.colab) : r(personalidad.no_colab));
-});
-
-bot.hears("📡 Reportar avistamiento", (ctx) => {
-  ctx.reply(
-    r(personalidad.pedir),
+(Y mirá atrás… por si acaso…)`,
     Markup.keyboard([
       Markup.button.locationRequest("📍 Enviar ubicación")
     ]).resize()
   );
 });
 
-bot.on("location", async (ctx) => {
-  const { latitude, longitude } = ctx.message.location;
-  const data = await fs.readJson(DATA_FILE);
+// ==========================
+// RECIBIR UBICACIÓN
+// ==========================
+bot.on("location", ctx => {
 
-  const nuevo = {
+  const { latitude, longitude } = ctx.message.location;
+
+  const userReports = reportes.filter(r => r.user === ctx.from.id);
+
+  const reporte = {
+    id: crypto.randomUUID(),
     lat: latitude,
     lon: longitude,
-    agente: ctx.from.first_name,
-    ts: Date.now()
+    ts: Date.now(),
+    user: ctx.from.id
   };
 
-  data.push(nuevo);
-  await fs.writeJson(DATA_FILE, data, { spaces: 2 });
+  reportes.push(reporte);
+  guardar();
 
-  // PUBLICAR EN GRUPO
-  bot.telegram.sendMessage(GRUPO_ID,
-`🛸 NUEVO REPORTE
+  const rango = obtenerRango(userReports.length + 1);
 
-👤 ${ctx.from.first_name}
-📍 https://maps.google.com/?q=${latitude},${longitude}`
+  // enviar al canal
+  bot.telegram.sendMessage(
+    process.env.CANAL_ID,
+    JSON.stringify(reporte)
   );
 
-  // DETECTAR ZONA CALIENTE
-  if (detectarZonaCaliente(data, nuevo)) {
-    bot.telegram.sendMessage(GRUPO_ID,
-`🚨 ALERTA AIFU
+  ctx.reply(
+`📡 Señal registrada…
 
-Múltiples reportes en la misma zona
+Rango actual:
+${rango}
 
-👁️ Actividad inusual detectada`
+Seguimos observando…`
+  );
+});
+
+// ==========================
+// API MAPA
+// ==========================
+app.get("/radar-data", (req, res) => {
+  res.json(reportes);
+});
+
+// ==========================
+// DETECCIÓN DE OLAS
+// ==========================
+function detectarOla() {
+
+  const ahora = Date.now();
+
+  const recientes = reportes.filter(r => ahora - r.ts < 3600000);
+
+  if (recientes.length >= 10) {
+    bot.telegram.sendMessage(
+      process.env.CANAL_ID,
+      "🚨 ACTIVIDAD ANÓMALA DETECTADA EN EL CONO SUR"
     );
   }
+}
 
-  ctx.reply(r(personalidad.ok));
-});
+setInterval(detectarOla, 60000);
 
-bot.command("colab", async (ctx) => {
-  if (String(ctx.from.id) !== ADMIN_ID) return;
-  const args = ctx.message.text.split(" ");
-  const userId = args[1];
-  if (!userId) return ctx.reply("uso: /colab id");
-
-  const c = await getColabs();
-  c[userId] = true;
-  await saveColabs(c);
-
-  ctx.reply("🟢 colaborador activado");
-});
-
-// =========================
-// API MAPA
-// =========================
-app.get("/radar-data", async (req, res) => {
-  const userId = req.query.user;
-  const data = await fs.readJson(DATA_FILE);
-  if (await esColaborador(userId)) return res.json(data);
-  return res.json(data.slice(-6));
-});
-
-// =========================
-// SERVER
-// =========================
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => console.log("Servidor activo en", PORT));
-
-// =========================
-// LANZAR BOT
-// =========================
-bot.launch()
-  .then(() => console.log("Bot iniciado correctamente 🚀"))
-  .catch(err => console.error("Error al iniciar el bot:", err));
+// ==========================
+bot.launch();
+app.listen(PORT);
