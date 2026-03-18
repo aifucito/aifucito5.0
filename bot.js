@@ -2,6 +2,8 @@ import "dotenv/config";
 import { Telegraf, Markup, session } from "telegraf";
 import express from "express";
 import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
 /* ===============================
    CONFIGURACIÓN CENTRAL
@@ -31,7 +33,20 @@ const app = express();
 app.use(express.json());
 
 /* ===============================
-   BASE DE DATOS SIMPLE
+   RUTAS (ARREGLO CLAVE DEL MAPA)
+   =============================== */
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+app.use(express.static(path.join(__dirname, "public")));
+
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+/* ===============================
+   BASE DE DATOS
    =============================== */
 
 const DB_FILE = "usuarios.json";
@@ -72,12 +87,12 @@ function rango(reportes) {
 }
 
 /* ===============================
-   MENÚ PRINCIPAL
+   MENÚ
    =============================== */
 
 bot.start((ctx) => {
   ctx.reply(
-    "🛰️ AIFU activo...\nHablá bajo... esto no es público.",
+    "🛰️ AIFU activo...\nHablá bajo...",
     Markup.keyboard([
       ["📡 Reportar avistamiento", "👤 Perfil"],
       ["🗺️ Ver mapa", "🛰️ Hacerse colaborador"]
@@ -93,12 +108,12 @@ bot.hears("👤 Perfil", (ctx) => {
   const user = getUser(ctx.from.id);
 
   ctx.reply(
-    `👁️ Perfil confidencial
+`👁️ Perfil
 
-🆔 ID: ${ctx.from.id}
+🆔 ${ctx.from.id}
 📊 Reportes: ${user.reportes}
-🎖️ Rango: ${rango(user.reportes)}
-🔓 Estado: ${user.rol === "colaborador" ? "Colaborador AIFU" : "Gratis"}`
+🎖️ ${rango(user.reportes)}
+🔓 ${user.rol === "colaborador" ? "Colaborador AIFU" : "Gratis"}`
   );
 });
 
@@ -108,7 +123,7 @@ bot.hears("👤 Perfil", (ctx) => {
 
 bot.hears("🗺️ Ver mapa", (ctx) => {
   ctx.reply(
-    "🛰️ Accediendo al radar...",
+    "🛰️ Radar activo",
     Markup.inlineKeyboard([
       Markup.button.webApp("🌐 Abrir Radar", WEBAPP_URL)
     ])
@@ -116,22 +131,18 @@ bot.hears("🗺️ Ver mapa", (ctx) => {
 });
 
 /* ===============================
-   COLABORADOR
+   PAGOS
    =============================== */
 
 bot.hears("🛰️ Hacerse colaborador", (ctx) => {
   ctx.reply(
-`👁️‍🗨️ Shhh... CRIDOVNI podría estar escuchando...
-
-Acceso completo por 3 USD:
+`Acceso total: 3 USD
 
 🟣 Prex: 20184008
 🟡 Mi Dinero: 3701464270
 🌐 PayPal: electros@adinet.com.uy
 
-📸 Enviá el comprobante aquí.
-
-Un agente validará tu acceso manualmente...`
+📸 Enviá comprobante`
   );
 });
 
@@ -144,7 +155,7 @@ bot.on("photo", async (ctx) => {
 
   await ctx.telegram.sendMessage(
     ADMIN_ID,
-    `🆕 Nuevo posible colaborador
+`🆕 NUEVO VIP
 
 👤 ${user.first_name}
 🆔 ${user.id}
@@ -157,24 +168,23 @@ bot.on("photo", async (ctx) => {
     ctx.message.message_id
   );
 
-  ctx.reply("📡 Comprobante enviado. Estamos verificando...");
+  ctx.reply("📡 En revisión...");
 });
 
 /* ===============================
-   ACTIVAR USUARIO
+   ACTIVAR VIP
    =============================== */
 
 bot.command("activar", (ctx) => {
   if (ctx.from.id != ADMIN_ID) return;
 
   const id = ctx.message.text.split(" ")[1];
-
   const user = getUser(id);
-  user.rol = "colaborador";
 
+  user.rol = "colaborador";
   guardarUsuarios();
 
-  ctx.reply(`✅ Usuario ${id} ahora es Colaborador AIFU`);
+  ctx.reply(`✅ Activado: ${id}`);
 });
 
 /* ===============================
@@ -182,7 +192,7 @@ bot.command("activar", (ctx) => {
    =============================== */
 
 bot.hears("📡 Reportar avistamiento", (ctx) => {
-  ctx.reply("📍 Enviá ubicación o descripción del avistamiento");
+  ctx.reply("📍 Enviá ubicación o texto");
 });
 
 bot.on("text", async (ctx) => {
@@ -192,10 +202,8 @@ bot.on("text", async (ctx) => {
   const ahora = Date.now();
 
   if (user.rol === "gratis") {
-    const unDia = 86400000;
-
-    if (ahora - user.ultimoReporte < unDia) {
-      return ctx.reply("⚠️ Solo podés hacer 1 reporte por día");
+    if (ahora - user.ultimoReporte < 86400000) {
+      return ctx.reply("⚠️ 1 reporte por día");
     }
   }
 
@@ -203,7 +211,7 @@ bot.on("text", async (ctx) => {
   user.ultimoReporte = ahora;
   guardarUsuarios();
 
-  const mensaje = `🛸 NUEVO AVISTAMIENTO
+  const mensaje = `🛸 AVISTAMIENTO
 
 👤 ${ctx.from.first_name}
 🌎 ${ctx.message.text}`;
@@ -211,15 +219,7 @@ bot.on("text", async (ctx) => {
   await ctx.telegram.sendMessage(RADAR_CONO_SUR, mensaje);
   await ctx.telegram.sendMessage(BACKUP_CANAL, mensaje);
 
-  ctx.reply("📡 Reporte enviado...");
-});
-
-/* ===============================
-   SERVIDOR WEB
-   =============================== */
-
-app.get("/", (req, res) => {
-  res.send("AIFU BOT ONLINE");
+  ctx.reply("📡 Enviado");
 });
 
 /* ===============================
@@ -229,4 +229,4 @@ app.get("/", (req, res) => {
 bot.launch();
 app.listen(process.env.PORT || 3000);
 
-console.log("🛰️ Bot AIFU activo...");
+console.log("🛰️ AIFU activo");
