@@ -1,61 +1,244 @@
-let heatLayer;
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>RADAR AIFU - CONO SUR</title>
 
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+
+<style>
+body {
+    margin: 0;
+    background: black;
+    font-family: monospace;
+    color: #00ff88;
+}
+
+#map {
+    height: 100vh;
+    width: 100%;
+}
+
+.panel {
+    position: absolute;
+    top: 15px;
+    left: 15px;
+    background: rgba(0,0,0,0.7);
+    padding: 10px;
+    border: 1px solid #00ff88;
+    border-radius: 8px;
+}
+
+.bottom-panel {
+    position: absolute;
+    bottom: 15px;
+    left: 15px;
+    width: 260px;
+    background: rgba(0,0,0,0.7);
+    padding: 10px;
+    border: 1px solid #00ff88;
+    border-radius: 8px;
+}
+</style>
+</head>
+
+<body>
+
+<div id="map"></div>
+
+<div class="panel">
+    <div id="status">INICIANDO...</div>
+    <div>Total: <span id="count">0</span></div>
+</div>
+
+<div class="bottom-panel">
+    <div>FILTRO TIEMPO</div>
+    <input id="timeRange" type="range" min="1" max="3" step="1" value="1" style="width:100%;">
+    <div id="timeLabel">Últimas 24h</div>
+
+    <button onclick="togglePlayback()" style="margin-top:10px;width:100%;">
+        ▶ REPRODUCIR
+    </button>
+</div>
+
+<script>
+const map = L.map('map').setView([-34.5, -58], 5);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: 'AIFU Radar'
+}).addTo(map);
+
+const markers = L.layerGroup().addTo(map);
+
+let heatLayer;
+let currentData = [];
+let playback = false;
+let playbackIndex = 0;
+
+// ----------------------
+// FILTRO TIEMPO
+// ----------------------
+function getTimeLimit() {
+    const val = document.getElementById("timeRange").value;
+
+    if (val == 1) {
+        document.getElementById("timeLabel").innerText = "Últimas 24h";
+        return 24 * 60 * 60 * 1000;
+    }
+    if (val == 2) {
+        document.getElementById("timeLabel").innerText = "Última semana";
+        return 7 * 24 * 60 * 60 * 1000;
+    }
+    if (val == 3) {
+        document.getElementById("timeLabel").innerText = "Último mes";
+        return 30 * 24 * 60 * 60 * 1000;
+    }
+}
+
+// ----------------------
+// ACTUALIZAR DATOS
+// ----------------------
 function actualizar() {
-    const statusLabel = document.getElementById('status');
 
     fetch('/radar-data')
     .then(res => res.json())
     .then(data => {
 
-        markers.clearLayers();
+        const limite = Date.now() - getTimeLimit();
 
-        if (heatLayer) {
-            map.removeLayer(heatLayer);
-        }
+        currentData = data.filter(p => p.ts && p.ts > limite);
 
-        document.getElementById('count').innerText = data.length;
-        statusLabel.innerText = "VIGILANCIA ACTIVA - CONO SUR";
-        statusLabel.style.color = "#00ff88";
+        renderMapa(currentData);
+        detectarZonas(currentData);
 
-        let heatPoints = [];
-
-        data.forEach(p => {
-
-            // 🔥 DATOS PARA HEATMAP
-            heatPoints.push([p.lat, p.lon, 1]);
-
-            // 🟢 PUNTO CON GLOW
-            L.circleMarker([p.lat, p.lon], {
-                radius: 6,
-                color: "#00ff88",
-                fillColor: "#00ff88",
-                fillOpacity: 0.8
-            })
-            .bindPopup(`
-                <div style="color:#000; font-family:monospace;">
-                    <b>🛰️ INVESTIGADOR:</b> ${p.agente || "Anónimo"}<br>
-                    <b>📝 DETALLE:</b> ${p.desc || "Sin datos"}
-                </div>
-            `)
-            .addTo(markers);
-        });
-
-        // 🔥 CAPA DE CALOR (ESTO ES LO IMPORTANTE)
-        heatLayer = L.heatLayer(heatPoints, {
-            radius: 35,
-            blur: 25,
-            maxZoom: 10,
-            gradient: {
-                0.2: '#0044ff',
-                0.4: '#00ff88',
-                0.7: '#ffff00',
-                1.0: '#ff0000'
-            }
-        }).addTo(map);
-
+        document.getElementById("status").innerText = "VIGILANCIA ACTIVA";
+        document.getElementById("status").style.color = "#00ff88";
     })
     .catch(() => {
-        statusLabel.innerText = "⚠️ SEÑAL INTERRUMPIDA";
-        statusLabel.style.color = "#ff4444";
+        document.getElementById("status").innerText = "⚠️ SIN CONEXIÓN";
+        document.getElementById("status").style.color = "red";
     });
 }
+
+// ----------------------
+// RENDER MAPA
+// ----------------------
+function renderMapa(data) {
+
+    markers.clearLayers();
+
+    if (heatLayer) {
+        map.removeLayer(heatLayer);
+    }
+
+    let heatPoints = [];
+
+    data.forEach(p => {
+
+        heatPoints.push([p.lat, p.lon, 1]);
+
+        L.circleMarker([p.lat, p.lon], {
+            radius: 6,
+            color: "#00ff88",
+            fillColor: "#00ff88",
+            fillOpacity: 0.8
+        })
+        .bindPopup(`
+            <b>Investigador:</b> ${p.agente || "Anónimo"}<br>
+            <b>Detalle:</b> ${p.desc || "Sin datos"}
+        `)
+        .addTo(markers);
+    });
+
+    heatLayer = L.heatLayer(heatPoints, {
+        radius: 35,
+        blur: 25,
+        gradient: {
+            0.2: '#0044ff',
+            0.4: '#00ff88',
+            0.7: '#ffff00',
+            1.0: '#ff0000'
+        }
+    }).addTo(map);
+
+    document.getElementById('count').innerText = data.length;
+}
+
+// ----------------------
+// REPRODUCCIÓN
+// ----------------------
+function togglePlayback() {
+    playback = !playback;
+    playbackIndex = 0;
+
+    if (playback) reproducir();
+}
+
+function reproducir() {
+    if (!playback) return;
+
+    let subset = currentData.slice(0, playbackIndex);
+
+    renderMapa(subset);
+
+    playbackIndex++;
+
+    if (playbackIndex <= currentData.length) {
+        setTimeout(reproducir, 300);
+    } else {
+        playback = false;
+    }
+}
+
+// ----------------------
+// DETECCIÓN DE ZONAS
+// ----------------------
+function detectarZonas(data) {
+
+    let zonas = {};
+
+    data.forEach(p => {
+        let key = `${p.lat.toFixed(1)}_${p.lon.toFixed(1)}`;
+        zonas[key] = (zonas[key] || 0) + 1;
+    });
+
+    let max = Math.max(...Object.values(zonas), 0);
+
+    if (max >= 5) activarAlerta(max);
+    else desactivarAlerta();
+}
+
+// ----------------------
+// ALERTA ROJA
+// ----------------------
+function activarAlerta(nivel) {
+
+    const status = document.getElementById('status');
+
+    status.innerText = `🚨 ALERTA ROJA (${nivel})`;
+    status.style.color = "red";
+
+    document.body.style.boxShadow = "0 0 40px red inset";
+}
+
+function desactivarAlerta() {
+
+    const status = document.getElementById('status');
+
+    status.innerText = "VIGILANCIA ACTIVA";
+    status.style.color = "#00ff88";
+
+    document.body.style.boxShadow = "none";
+}
+
+// ----------------------
+// AUTO REFRESH
+// ----------------------
+setInterval(actualizar, 30000);
+actualizar();
+</script>
+
+</body>
+</html>
