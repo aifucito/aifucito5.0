@@ -19,11 +19,6 @@ const GRUPOS = {
     CHILE: "-1002334825945",
     GLOBAL: "-4740280144"
 };
-bot.on("channel_post", (ctx) => {
-    console.log("====== CANAL POST ======");
-    console.log("CHAT ID:", ctx.channelPost.chat.id);
-    console.log("TITLE:", ctx.channelPost.chat.title);
-    console.log("========================");
 });
 const bot = new Telegraf(process.env.TELEGRAM_TOKEN);
 bot.use(session());
