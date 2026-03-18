@@ -1,232 +1,81 @@
-import "dotenv/config";
-import { Telegraf, Markup, session } from "telegraf";
-import express from "express";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>AIFU Radar</title>
 
-/* ===============================
-   CONFIGURACIÓN CENTRAL
-   =============================== */
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-const TOKEN = process.env.BOT_TOKEN;
-const ADMIN_ID = "7662736311";
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
-const RADAR_CONO_SUR = "-1002447915570";
-const CANAL_UY = "-1002341505345";
-const CANAL_AR = "-1002319047243";
-const CANAL_CL = "-1002334825945";
-const CANAL_GLOBAL = "-4740280144";
-
-const BACKUP_CANAL = "-1003895765674";
-
-const WEBAPP_URL = "https://aifucito5-0.onrender.com";
-
-/* ===============================
-   INICIALIZACIÓN
-   =============================== */
-
-const bot = new Telegraf(TOKEN);
-bot.use(session());
-
-const app = express();
-app.use(express.json());
-
-/* ===============================
-   RUTAS (ARREGLO CLAVE DEL MAPA)
-   =============================== */
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-app.use(express.static(path.join(__dirname, "public")));
-
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
-
-/* ===============================
-   BASE DE DATOS
-   =============================== */
-
-const DB_FILE = "usuarios.json";
-
-let usuarios = {};
-if (fs.existsSync(DB_FILE)) {
-  usuarios = JSON.parse(fs.readFileSync(DB_FILE));
-}
-
-function guardarUsuarios() {
-  fs.writeFileSync(DB_FILE, JSON.stringify(usuarios, null, 2));
-}
-
-/* ===============================
-   UTILIDADES
-   =============================== */
-
-function getUser(id) {
-  if (!usuarios[id]) {
-    usuarios[id] = {
-      reportes: 0,
-      ultimoReporte: 0,
-      rol: "gratis"
-    };
-  }
-  return usuarios[id];
-}
-
-function rango(reportes) {
-  if (reportes <= 5) return "Fajinador de retretes espaciales";
-  if (reportes <= 15) return "Cebador del mate del Área 51";
-  if (reportes <= 30) return "Guardaespaldas de Alf";
-  if (reportes <= 50) return "Paseador de Chupacabras";
-  if (reportes <= 80) return "Traductor de círculos";
-  if (reportes <= 120) return "Catador de sondas";
-  if (reportes <= 200) return "Piloto de plato con GNC";
-  return "Comandante Intergaláctico";
-}
-
-/* ===============================
-   MENÚ
-   =============================== */
-
-bot.start((ctx) => {
-  ctx.reply(
-    "🛰️ AIFU activo...\nHablá bajo...",
-    Markup.keyboard([
-      ["📡 Reportar avistamiento", "👤 Perfil"],
-      ["🗺️ Ver mapa", "🛰️ Hacerse colaborador"]
-    ]).resize()
-  );
-});
-
-/* ===============================
-   PERFIL
-   =============================== */
-
-bot.hears("👤 Perfil", (ctx) => {
-  const user = getUser(ctx.from.id);
-
-  ctx.reply(
-`👁️ Perfil
-
-🆔 ${ctx.from.id}
-📊 Reportes: ${user.reportes}
-🎖️ ${rango(user.reportes)}
-🔓 ${user.rol === "colaborador" ? "Colaborador AIFU" : "Gratis"}`
-  );
-});
-
-/* ===============================
-   MAPA
-   =============================== */
-
-bot.hears("🗺️ Ver mapa", (ctx) => {
-  ctx.reply(
-    "🛰️ Radar activo",
-    Markup.inlineKeyboard([
-      Markup.button.webApp("🌐 Abrir Radar", WEBAPP_URL)
-    ])
-  );
-});
-
-/* ===============================
-   PAGOS
-   =============================== */
-
-bot.hears("🛰️ Hacerse colaborador", (ctx) => {
-  ctx.reply(
-`Acceso total: 3 USD
-
-🟣 Prex: 20184008
-🟡 Mi Dinero: 3701464270
-🌐 PayPal: electros@adinet.com.uy
-
-📸 Enviá comprobante`
-  );
-});
-
-/* ===============================
-   COMPROBANTES
-   =============================== */
-
-bot.on("photo", async (ctx) => {
-  const user = ctx.from;
-
-  await ctx.telegram.sendMessage(
-    ADMIN_ID,
-`🆕 NUEVO VIP
-
-👤 ${user.first_name}
-🆔 ${user.id}
-@${user.username || "sin username"}`
-  );
-
-  await ctx.telegram.forwardMessage(
-    ADMIN_ID,
-    ctx.chat.id,
-    ctx.message.message_id
-  );
-
-  ctx.reply("📡 En revisión...");
-});
-
-/* ===============================
-   ACTIVAR VIP
-   =============================== */
-
-bot.command("activar", (ctx) => {
-  if (ctx.from.id != ADMIN_ID) return;
-
-  const id = ctx.message.text.split(" ")[1];
-  const user = getUser(id);
-
-  user.rol = "colaborador";
-  guardarUsuarios();
-
-  ctx.reply(`✅ Activado: ${id}`);
-});
-
-/* ===============================
-   REPORTES
-   =============================== */
-
-bot.hears("📡 Reportar avistamiento", (ctx) => {
-  ctx.reply("📍 Enviá ubicación o texto");
-});
-
-bot.on("text", async (ctx) => {
-  if (ctx.message.text.startsWith("/")) return;
-
-  const user = getUser(ctx.from.id);
-  const ahora = Date.now();
-
-  if (user.rol === "gratis") {
-    if (ahora - user.ultimoReporte < 86400000) {
-      return ctx.reply("⚠️ 1 reporte por día");
-    }
+<style>
+  body {
+    margin: 0;
+    background: black;
+    color: white;
+    font-family: Arial;
   }
 
-  user.reportes++;
-  user.ultimoReporte = ahora;
-  guardarUsuarios();
+  #map {
+    height: 100vh;
+    width: 100%;
+  }
 
-  const mensaje = `🛸 AVISTAMIENTO
+  .panel {
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+    background: rgba(0,0,0,0.7);
+    padding: 10px;
+    text-align: center;
+  }
+</style>
+</head>
 
-👤 ${ctx.from.first_name}
-🌎 ${ctx.message.text}`;
+<body>
 
-  await ctx.telegram.sendMessage(RADAR_CONO_SUR, mensaje);
-  await ctx.telegram.sendMessage(BACKUP_CANAL, mensaje);
+<div id="map"></div>
 
-  ctx.reply("📡 Enviado");
-});
+<div class="panel">
+🛰️ Radar AIFU activo
+</div>
 
-/* ===============================
-   INICIO
-   =============================== */
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-bot.launch();
-app.listen(process.env.PORT || 3000);
+<script>
 
-console.log("🛰️ AIFU activo");
+// Crear mapa centrado en Uruguay
+const map = L.map('map').setView([-34.9, -56.2], 6);
+
+// Cargar tiles (MAPA REAL)
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 18,
+}).addTo(map);
+
+// Cargar reportes
+async function cargarReportes() {
+  try {
+    const res = await fetch("reportes.json");
+    const data = await res.json();
+
+    data.forEach(r => {
+      if (r.lat && r.lng) {
+        L.marker([r.lat, r.lng])
+          .addTo(map)
+          .bindPopup(r.texto || "Avistamiento");
+      }
+    });
+
+  } catch (e) {
+    console.log("Error cargando reportes");
+  }
+}
+
+cargarReportes();
+
+</script>
+
+</body>
+</html>
