@@ -1,291 +1,232 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<title>RADAR AIFU - CONO SUR</title>
+import "dotenv/config";
+import { Telegraf, Markup, session } from "telegraf";
+import express from "express";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+/* ===============================
+   CONFIGURACIÓN CENTRAL
+   =============================== */
 
-<style>
-body {
-    margin: 0;
-    background: black;
-    font-family: monospace;
-    color: #00ff88;
+const TOKEN = process.env.BOT_TOKEN;
+const ADMIN_ID = "7662736311";
+
+const RADAR_CONO_SUR = "-1002447915570";
+const CANAL_UY = "-1002341505345";
+const CANAL_AR = "-1002319047243";
+const CANAL_CL = "-1002334825945";
+const CANAL_GLOBAL = "-4740280144";
+
+const BACKUP_CANAL = "-1003895765674";
+
+const WEBAPP_URL = "https://aifucito5-0.onrender.com";
+
+/* ===============================
+   INICIALIZACIÓN
+   =============================== */
+
+const bot = new Telegraf(TOKEN);
+bot.use(session());
+
+const app = express();
+app.use(express.json());
+
+/* ===============================
+   RUTAS (ARREGLO CLAVE DEL MAPA)
+   =============================== */
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+app.use(express.static(path.join(__dirname, "public")));
+
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+/* ===============================
+   BASE DE DATOS
+   =============================== */
+
+const DB_FILE = "usuarios.json";
+
+let usuarios = {};
+if (fs.existsSync(DB_FILE)) {
+  usuarios = JSON.parse(fs.readFileSync(DB_FILE));
 }
 
-#map {
-    height: 100vh;
-    width: 100%;
-    filter: brightness(0.85) contrast(1.3);
+function guardarUsuarios() {
+  fs.writeFileSync(DB_FILE, JSON.stringify(usuarios, null, 2));
 }
 
-.panel {
-    position: absolute;
-    top: 15px;
-    left: 15px;
-    background: rgba(0,0,0,0.7);
-    padding: 10px;
-    border: 1px solid #00ff88;
-    border-radius: 8px;
+/* ===============================
+   UTILIDADES
+   =============================== */
+
+function getUser(id) {
+  if (!usuarios[id]) {
+    usuarios[id] = {
+      reportes: 0,
+      ultimoReporte: 0,
+      rol: "gratis"
+    };
+  }
+  return usuarios[id];
 }
 
-.bottom-panel {
-    position: absolute;
-    bottom: 15px;
-    left: 15px;
-    width: 260px;
-    background: rgba(0,0,0,0.7);
-    padding: 10px;
-    border: 1px solid #00ff88;
-    border-radius: 8px;
+function rango(reportes) {
+  if (reportes <= 5) return "Fajinador de retretes espaciales";
+  if (reportes <= 15) return "Cebador del mate del Área 51";
+  if (reportes <= 30) return "Guardaespaldas de Alf";
+  if (reportes <= 50) return "Paseador de Chupacabras";
+  if (reportes <= 80) return "Traductor de círculos";
+  if (reportes <= 120) return "Catador de sondas";
+  if (reportes <= 200) return "Piloto de plato con GNC";
+  return "Comandante Intergaláctico";
 }
 
-.pulse {
-    animation: pulse 2s infinite;
-}
+/* ===============================
+   MENÚ
+   =============================== */
 
-@keyframes pulse {
-    0% { transform: scale(1); opacity: 0.9; }
-    100% { transform: scale(3); opacity: 0; }
-}
-</style>
-</head>
+bot.start((ctx) => {
+  ctx.reply(
+    "🛰️ AIFU activo...\nHablá bajo...",
+    Markup.keyboard([
+      ["📡 Reportar avistamiento", "👤 Perfil"],
+      ["🗺️ Ver mapa", "🛰️ Hacerse colaborador"]
+    ]).resize()
+  );
+});
 
-<body>
+/* ===============================
+   PERFIL
+   =============================== */
 
-<div id="map"></div>
+bot.hears("👤 Perfil", (ctx) => {
+  const user = getUser(ctx.from.id);
 
-<div class="panel">
-    <div id="status">INICIANDO...</div>
-    <div>Total: <span id="count">0</span></div>
-</div>
+  ctx.reply(
+`👁️ Perfil
 
-<div class="bottom-panel">
-    <div>FILTRO TIEMPO</div>
-    <input id="timeRange" type="range" min="1" max="3" step="1" value="1" style="width:100%;">
-    <div id="timeLabel">Últimas 24h</div>
+🆔 ${ctx.from.id}
+📊 Reportes: ${user.reportes}
+🎖️ ${rango(user.reportes)}
+🔓 ${user.rol === "colaborador" ? "Colaborador AIFU" : "Gratis"}`
+  );
+});
 
-    <button onclick="togglePlayback()" style="margin-top:10px;width:100%;">
-        ▶ REPRODUCIR
-    </button>
-</div>
+/* ===============================
+   MAPA
+   =============================== */
 
-<audio id="alertSound">
-<source src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg">
-</audio>
+bot.hears("🗺️ Ver mapa", (ctx) => {
+  ctx.reply(
+    "🛰️ Radar activo",
+    Markup.inlineKeyboard([
+      Markup.button.webApp("🌐 Abrir Radar", WEBAPP_URL)
+    ])
+  );
+});
 
-<script>
-const tg = window.Telegram.WebApp;
-tg.ready();
-tg.expand();
+/* ===============================
+   PAGOS
+   =============================== */
 
-const map = L.map('map').setView([-34.5, -58], 5);
+bot.hears("🛰️ Hacerse colaborador", (ctx) => {
+  ctx.reply(
+`Acceso total: 3 USD
 
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
+🟣 Prex: 20184008
+🟡 Mi Dinero: 3701464270
+🌐 PayPal: electros@adinet.com.uy
 
-const markers = L.layerGroup().addTo(map);
-const linesLayer = L.layerGroup().addTo(map);
-const pulseLayer = L.layerGroup().addTo(map);
+📸 Enviá comprobante`
+  );
+});
 
-let heatLayer;
-let currentData = [];
-let playback = false;
-let playbackIndex = 0;
+/* ===============================
+   COMPROBANTES
+   =============================== */
 
-// ----------------------
-// TIEMPO
-// ----------------------
-function getTimeLimit() {
-    const val = document.getElementById("timeRange").value;
+bot.on("photo", async (ctx) => {
+  const user = ctx.from;
 
-    if (val == 1) { document.getElementById("timeLabel").innerText = "Últimas 24h"; return 86400000; }
-    if (val == 2) { document.getElementById("timeLabel").innerText = "Última semana"; return 604800000; }
-    if (val == 3) { document.getElementById("timeLabel").innerText = "Último mes"; return 2592000000; }
-}
+  await ctx.telegram.sendMessage(
+    ADMIN_ID,
+`🆕 NUEVO VIP
 
-// ----------------------
-// DISTANCIA REAL
-// ----------------------
-function distanciaKm(a, b) {
-    const R = 6371;
-    const dLat = (b.lat - a.lat) * Math.PI/180;
-    const dLon = (b.lon - a.lon) * Math.PI/180;
+👤 ${user.first_name}
+🆔 ${user.id}
+@${user.username || "sin username"}`
+  );
 
-    const lat1 = a.lat * Math.PI/180;
-    const lat2 = b.lat * Math.PI/180;
+  await ctx.telegram.forwardMessage(
+    ADMIN_ID,
+    ctx.chat.id,
+    ctx.message.message_id
+  );
 
-    const x = Math.sin(dLat/2) ** 2 +
-              Math.sin(dLon/2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+  ctx.reply("📡 En revisión...");
+});
 
-    return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
-}
+/* ===============================
+   ACTIVAR VIP
+   =============================== */
 
-// ----------------------
-// ACTUALIZAR
-// ----------------------
-function actualizar() {
+bot.command("activar", (ctx) => {
+  if (ctx.from.id != ADMIN_ID) return;
 
-    fetch(`/radar-data?user=${tg.initDataUnsafe.user?.id}`)
-    .then(res => res.json())
-    .then(data => {
+  const id = ctx.message.text.split(" ")[1];
+  const user = getUser(id);
 
-        const limite = Date.now() - getTimeLimit();
+  user.rol = "colaborador";
+  guardarUsuarios();
 
-        currentData = data
-            .filter(p => p.ts && p.ts > limite)
-            .sort((a,b) => a.ts - b.ts);
+  ctx.reply(`✅ Activado: ${id}`);
+});
 
-        renderMapa(currentData);
-        detectarZonas(currentData);
+/* ===============================
+   REPORTES
+   =============================== */
 
-        document.getElementById("status").innerText = "VIGILANCIA ACTIVA";
-        document.getElementById("status").style.color = "#00ff88";
-    })
-    .catch(() => {
-        document.getElementById("status").innerText = "⚠️ SIN CONEXIÓN";
-        document.getElementById("status").style.color = "red";
-    });
-}
+bot.hears("📡 Reportar avistamiento", (ctx) => {
+  ctx.reply("📍 Enviá ubicación o texto");
+});
 
-// ----------------------
-// RENDER
-// ----------------------
-function renderMapa(data) {
+bot.on("text", async (ctx) => {
+  if (ctx.message.text.startsWith("/")) return;
 
-    markers.clearLayers();
-    linesLayer.clearLayers();
-    pulseLayer.clearLayers();
+  const user = getUser(ctx.from.id);
+  const ahora = Date.now();
 
-    if (heatLayer) map.removeLayer(heatLayer);
-
-    let heatPoints = [];
-    let linePoints = [];
-
-    data.forEach(p => {
-
-        heatPoints.push([p.lat, p.lon, 1]);
-        linePoints.push([p.lat, p.lon]);
-
-        L.circleMarker([p.lat, p.lon], {
-            radius: 6,
-            color: "#00ff88",
-            fillColor: "#00ff88",
-            fillOpacity: 0.8
-        }).addTo(markers);
-    });
-
-    // LINEAS DE MOVIMIENTO
-    if (linePoints.length > 1) {
-        L.polyline(linePoints, {
-            color: "#00ff88",
-            weight: 2,
-            opacity: 0.5
-        }).addTo(linesLayer);
+  if (user.rol === "gratis") {
+    if (ahora - user.ultimoReporte < 86400000) {
+      return ctx.reply("⚠️ 1 reporte por día");
     }
+  }
 
-    heatLayer = L.heatLayer(heatPoints, {
-        radius: 35,
-        blur: 25,
-        gradient: {
-            0.2: '#0044ff',
-            0.4: '#00ff88',
-            0.7: '#ffff00',
-            1.0: '#ff0000'
-        }
-    }).addTo(map);
+  user.reportes++;
+  user.ultimoReporte = ahora;
+  guardarUsuarios();
 
-    document.getElementById('count').innerText = data.length;
-}
+  const mensaje = `🛸 AVISTAMIENTO
 
-// ----------------------
-// ZONAS CALIENTES
-// ----------------------
-function detectarZonas(data) {
+👤 ${ctx.from.first_name}
+🌎 ${ctx.message.text}`;
 
-    let clusters = [];
+  await ctx.telegram.sendMessage(RADAR_CONO_SUR, mensaje);
+  await ctx.telegram.sendMessage(BACKUP_CANAL, mensaje);
 
-    data.forEach(p => {
-        let grupo = data.filter(o => distanciaKm(p, o) < 10);
+  ctx.reply("📡 Enviado");
+});
 
-        if (grupo.length >= 5) {
-            clusters.push(grupo);
-        }
-    });
+/* ===============================
+   INICIO
+   =============================== */
 
-    if (clusters.length > 0) {
-        activarAlerta(clusters);
-    } else {
-        desactivarAlerta();
-    }
-}
+bot.launch();
+app.listen(process.env.PORT || 3000);
 
-// ----------------------
-// ALERTA + PULSO
-// ----------------------
-function activarAlerta(clusters) {
-
-    const status = document.getElementById('status');
-    status.innerText = "🚨 ALERTA ROJA";
-    status.style.color = "red";
-
-    document.body.style.boxShadow = "0 0 60px red inset";
-
-    document.getElementById("alertSound").play();
-
-    clusters.forEach(grupo => {
-
-        const centro = grupo[0];
-
-        const circle = L.circle([centro.lat, centro.lon], {
-            radius: 8000,
-            color: "red",
-            fillColor: "red",
-            fillOpacity: 0.3
-        }).addTo(pulseLayer);
-
-        const el = circle._path;
-        if (el) el.classList.add("pulse");
-    });
-}
-
-function desactivarAlerta() {
-
-    document.getElementById('status').innerText = "VIGILANCIA ACTIVA";
-    document.getElementById('status').style.color = "#00ff88";
-    document.body.style.boxShadow = "none";
-}
-
-// ----------------------
-// PLAYBACK
-// ----------------------
-function togglePlayback() {
-    playback = !playback;
-    playbackIndex = 0;
-    if (playback) reproducir();
-}
-
-function reproducir() {
-    if (!playback) return;
-
-    let subset = currentData.slice(0, playbackIndex);
-    renderMapa(subset);
-
-    playbackIndex++;
-
-    if (playbackIndex <= currentData.length) {
-        setTimeout(reproducir, 300);
-    } else {
-        playback = false;
-    }
-}
-
-// ----------------------
-setInterval(actualizar, 30000);
-actualizar();
-</script>
-
-</body>
-</html>
+console.log("🛰️ AIFU activo");
