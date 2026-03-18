@@ -1,3 +1,4 @@
+console.log("TOKEN:", process.env.BOT_TOKEN);
 import "dotenv/config";
 import { Telegraf } from "telegraf";
 import express from "express";
