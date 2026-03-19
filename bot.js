@@ -28,7 +28,11 @@ const GRUPOS = {
 /* ===============================
    INIT
    =============================== */
-
+bot.on("channel_post", (ctx) => {
+  console.log("📢 CANAL DETECTADO");
+  console.log("ID:", ctx.chat.id);
+  console.log("TÍTULO:", ctx.chat.title);
+});
 const bot = new Telegraf(TOKEN);
 bot.use(session());
 
