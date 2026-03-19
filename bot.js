@@ -6,24 +6,27 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 /* ===============================
-   CONFIGURACIÓN CENTRAL
+   CONFIG
    =============================== */
 
 const TOKEN = process.env.BOT_TOKEN;
-const ADMIN_ID = "7662736311";
+const ADMIN_ID = 7662736311;
 
 const RADAR_CONO_SUR = "-1002447915570";
-const CANAL_UY = "-1002341505345";
-const CANAL_AR = "-1002319047243";
-const CANAL_CL = "-1002334825945";
-const CANAL_GLOBAL = "-4740280144";
-
 const BACKUP_CANAL = "-1003895765674";
 
 const WEBAPP_URL = "https://aifucito5-0.onrender.com";
 
+const GRUPOS = {
+  UY: "https://t.me/+nCVD4NsOihIyNGFh",
+  AR: "https://t.me/+QpErPk26SY05OGIx",
+  CL: "https://t.me/+VP2T47eLvIowNmYx",
+  GLOBAL: "https://t.me/+r5XfcJma3g03MWZh",
+  CONOSUR: "https://t.me/+YqA6d3VpKv9mZjU5"
+};
+
 /* ===============================
-   INICIALIZACIÓN
+   INIT
    =============================== */
 
 const bot = new Telegraf(TOKEN);
@@ -31,10 +34,6 @@ bot.use(session());
 
 const app = express();
 app.use(express.json());
-
-/* ===============================
-   RUTAS (ARREGLO CLAVE DEL MAPA)
-   =============================== */
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -46,7 +45,7 @@ app.get("/", (req, res) => {
 });
 
 /* ===============================
-   BASE DE DATOS
+   DB
    =============================== */
 
 const DB_FILE = "usuarios.json";
@@ -56,48 +55,149 @@ if (fs.existsSync(DB_FILE)) {
   usuarios = JSON.parse(fs.readFileSync(DB_FILE));
 }
 
-function guardarUsuarios() {
+function save() {
   fs.writeFileSync(DB_FILE, JSON.stringify(usuarios, null, 2));
 }
-
-/* ===============================
-   UTILIDADES
-   =============================== */
 
 function getUser(id) {
   if (!usuarios[id]) {
     usuarios[id] = {
       reportes: 0,
-      ultimoReporte: 0,
-      rol: "gratis"
+      rol: "gratis",
+      pais: null,
+      expira: 0
     };
   }
+
+  if (id == ADMIN_ID) {
+    usuarios[id].rol = "admin";
+  }
+
   return usuarios[id];
 }
 
-function rango(reportes) {
-  if (reportes <= 5) return "Fajinador de retretes espaciales";
-  if (reportes <= 15) return "Cebador del mate del Área 51";
-  if (reportes <= 30) return "Guardaespaldas de Alf";
-  if (reportes <= 50) return "Paseador de Chupacabras";
-  if (reportes <= 80) return "Traductor de círculos";
-  if (reportes <= 120) return "Catador de sondas";
-  if (reportes <= 200) return "Piloto de plato con GNC";
-  return "Comandante Intergaláctico";
+/* ===============================
+   EXPIRACIÓN
+   =============================== */
+
+function calcularExpiracion() {
+  const hoy = new Date();
+  return new Date(hoy.getFullYear(), hoy.getMonth() + 2, 1).getTime();
+}
+
+async function checkExpiracion(ctx, user) {
+  if (user.rol === "colaborador" && Date.now() > user.expira) {
+    user.rol = "gratis";
+    save();
+    ctx.reply("⚠️ Suscripción vencida");
+  }
 }
 
 /* ===============================
-   MENÚ
+   PAÍS
+   =============================== */
+
+function detectarPais(lat, lon) {
+  if (lat < -30 && lat > -35 && lon < -53 && lon > -58) return "UY";
+  if (lat < -22 && lat > -55 && lon < -53 && lon > -73) return "AR";
+  if (lat < -17 && lat > -56 && lon < -66 && lon > -75) return "CL";
+  return "GLOBAL";
+}
+
+/* ===============================
+   RECONSTRUIR MAPA DESDE BACKUP
+   =============================== */
+
+async function reconstruirMapa() {
+  console.log("🔄 Reconstruyendo mapa desde backup...");
+
+  let reportes = [];
+
+  try {
+    const updates = await bot.telegram.getUpdates();
+
+    updates.forEach(u => {
+      if (u.channel_post && u.channel_post.chat.id == BACKUP_CANAL) {
+        try {
+          const data = JSON.parse(u.channel_post.text);
+          reportes.push(data);
+        } catch {}
+      }
+    });
+
+    fs.writeFileSync("public/reportes.json", JSON.stringify(reportes, null, 2));
+
+    console.log("✅ Mapa reconstruido:", reportes.length);
+
+  } catch (e) {
+    console.log("❌ Error reconstruyendo", e.message);
+  }
+}
+
+/* ===============================
+   MENU
    =============================== */
 
 bot.start((ctx) => {
+  if (ctx.chat.type !== "private") return;
+
   ctx.reply(
     "🛰️ AIFU activo...\nHablá bajo...",
     Markup.keyboard([
-      ["📡 Reportar avistamiento", "👤 Perfil"],
-      ["🗺️ Ver mapa", "🛰️ Hacerse colaborador"]
+      ["📡 Reportar", "📊 Ver reportes"],
+      ["👤 Perfil", "🗺️ Ver mapa"],
+      ["💳 Colaborador"]
     ]).resize()
   );
+});
+
+/* ===============================
+   REPORTES + GPS
+   =============================== */
+
+bot.hears("📡 Reportar", (ctx) => {
+  ctx.reply("📍 Enviá tu ubicación");
+});
+
+bot.on("location", async (ctx) => {
+
+  const user = getUser(ctx.from.id);
+  await checkExpiracion(ctx, user);
+
+  const { latitude, longitude } = ctx.message.location;
+
+  if (!user.pais) {
+    user.pais = detectarPais(latitude, longitude);
+  }
+
+  user.reportes++;
+  save();
+
+  const data = {
+    lat: latitude,
+    lng: longitude,
+    user: ctx.from.first_name,
+    ts: Date.now()
+  };
+
+  const texto = `🛸 AVISTAMIENTO
+
+👤 ${data.user}
+📍 ${data.lat}, ${data.lng}`;
+
+  await ctx.telegram.sendMessage(RADAR_CONO_SUR, texto);
+  await ctx.telegram.sendMessage(BACKUP_CANAL, JSON.stringify(data));
+
+  let reportes = [];
+  try {
+    reportes = JSON.parse(fs.readFileSync("public/reportes.json"));
+  } catch {}
+
+  reportes.push(data);
+
+  fs.writeFileSync("public/reportes.json", JSON.stringify(reportes, null, 2));
+
+  ctx.reply("📡 Reporte registrado...");
 });
 
 /* ===============================
@@ -105,15 +205,17 @@ bot.start((ctx) => {
    =============================== */
 
 bot.hears("👤 Perfil", (ctx) => {
+
   const user = getUser(ctx.from.id);
 
   ctx.reply(
-`👁️ Perfil
+`🧾 Perfil
 
-🆔 ${ctx.from.id}
-📊 Reportes: ${user.reportes}
-🎖️ ${rango(user.reportes)}
-🔓 ${user.rol === "colaborador" ? "Colaborador AIFU" : "Gratis"}`
+Rol: ${user.rol === "admin" ? "👑 Comandante Intergaláctico" :
+       user.rol === "colaborador" ? "Colaborador AIFU" : "Gratis"}
+
+País: ${user.pais || "No definido"}
+Reportes: ${user.reportes}`
   );
 });
 
@@ -122,57 +224,15 @@ bot.hears("👤 Perfil", (ctx) => {
    =============================== */
 
 bot.hears("🗺️ Ver mapa", (ctx) => {
-  ctx.reply(
-    "🛰️ Radar activo",
+  ctx.reply("🛰️ Radar activo",
     Markup.inlineKeyboard([
-      Markup.button.webApp("🌐 Abrir Radar", WEBAPP_URL)
+      Markup.button.webApp("Abrir Radar", WEBAPP_URL)
     ])
   );
 });
 
 /* ===============================
-   PAGOS
-   =============================== */
-
-bot.hears("🛰️ Hacerse colaborador", (ctx) => {
-  ctx.reply(
-`Acceso total: 3 USD
-
-🟣 Prex: 20184008
-🟡 Mi Dinero: 3701464270
-🌐 PayPal: electros@adinet.com.uy
-
-📸 Enviá comprobante`
-  );
-});
-
-/* ===============================
-   COMPROBANTES
-   =============================== */
-
-bot.on("photo", async (ctx) => {
-  const user = ctx.from;
-
-  await ctx.telegram.sendMessage(
-    ADMIN_ID,
-`🆕 NUEVO VIP
-
-👤 ${user.first_name}
-🆔 ${user.id}
-@${user.username || "sin username"}`
-  );
-
-  await ctx.telegram.forwardMessage(
-    ADMIN_ID,
-    ctx.chat.id,
-    ctx.message.message_id
-  );
-
-  ctx.reply("📡 En revisión...");
-});
-
-/* ===============================
-   ACTIVAR VIP
+   ACTIVAR COLABORADOR
    =============================== */
 
 bot.command("activar", (ctx) => {
@@ -182,51 +242,21 @@ bot.command("activar", (ctx) => {
   const user = getUser(id);
 
   user.rol = "colaborador";
-  guardarUsuarios();
+  user.expira = calcularExpiracion();
 
-  ctx.reply(`✅ Activado: ${id}`);
+  save();
+
+  ctx.reply("✅ Activado");
 });
 
 /* ===============================
-   REPORTES
+   START
    =============================== */
 
-bot.hears("📡 Reportar avistamiento", (ctx) => {
-  ctx.reply("📍 Enviá ubicación o texto");
-});
+(async () => {
+  await reconstruirMapa();
+  bot.launch();
+  app.listen(process.env.PORT || 3000);
+})();
 
-bot.on("text", async (ctx) => {
-  if (ctx.message.text.startsWith("/")) return;
-
-  const user = getUser(ctx.from.id);
-  const ahora = Date.now();
-
-  if (user.rol === "gratis") {
-    if (ahora - user.ultimoReporte < 86400000) {
-      return ctx.reply("⚠️ 1 reporte por día");
-    }
-  }
-
-  user.reportes++;
-  user.ultimoReporte = ahora;
-  guardarUsuarios();
-
-  const mensaje = `🛸 AVISTAMIENTO
-
-👤 ${ctx.from.first_name}
-🌎 ${ctx.message.text}`;
-
-  await ctx.telegram.sendMessage(RADAR_CONO_SUR, mensaje);
-  await ctx.telegram.sendMessage(BACKUP_CANAL, mensaje);
-
-  ctx.reply("📡 Enviado");
-});
-
-/* ===============================
-   INICIO
-   =============================== */
-
-bot.launch();
-app.listen(process.env.PORT || 3000);
-
-console.log("🛰️ AIFU activo");
+console.log("🛰️ AIFU operativo");
