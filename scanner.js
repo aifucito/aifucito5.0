@@ -5,24 +5,31 @@ import fs from "fs";
 const apiId = Number(process.env.API_ID);
 const apiHash = process.env.API_HASH;
 
-const session = new StringSession(process.env.STRING_SESSION || "");
+// 👉 IMPORTANTE: después de la primera vez esto se guarda
+const stringSession = new StringSession(process.env.STRING_SESSION || "");
 
 const BACKUP_CHANNEL = -1003895765674;
 const ADMIN_ID = 7662736311;
 
-const client = new TelegramClient(session, apiId, apiHash, {
+const client = new TelegramClient(stringSession, apiId, apiHash, {
   connectionRetries: 5,
 });
 
 async function iniciar() {
 
   await client.start({
-    phoneNumber: async () => prompt("Número: "),
-    password: async () => prompt("Password 2FA (si tenés): "),
-    phoneCode: async () => prompt("Código Telegram: "),
+    phoneNumber: async () => process.env.PHONE_NUMBER,
+    password: async () => process.env.TG_PASSWORD || "",
+    phoneCode: async () => {
+      console.log("👉 PONÉ EL CÓDIGO DE TELEGRAM EN LOGS");
+      return "";
+    },
   });
 
   console.log("🛰️ Scanner conectado");
+
+  // 👉 guardar sesión automáticamente
+  console.log("SESSION:", client.session.save());
 
   const mensajes = await client.getMessages(BACKUP_CHANNEL, {
     limit: 2000
@@ -43,7 +50,7 @@ async function iniciar() {
 }
 
 /* ===============================
-   DETECTAR OLEADAS
+   OLEADAS
    =============================== */
 
 async function detectarOleadas(data) {
@@ -72,7 +79,6 @@ async function detectarOleadas(data) {
 
         console.log("🚨 OLEADA DETECTADA", z, count);
 
-        // ALERTA A VOS
         await client.sendMessage(ADMIN_ID, {
           message: `🚨 OLEADA DETECTADA\nZona: ${z}\nReportes: ${count}`
         });
