@@ -2,10 +2,11 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>AIFU Radar Neo</title>
+<title>AIFU Radar Neo LIVE</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
 
 <style>
 body {
@@ -24,7 +25,7 @@ body {
   position: fixed;
   top: 10px;
   left: 10px;
-  width: 260px;
+  width: 280px;
   background: rgba(0, 20, 10, 0.85);
   border: 1px solid #00ff88;
   border-radius: 10px;
@@ -35,7 +36,6 @@ body {
 }
 
 .title { font-weight: bold; margin-bottom: 6px; }
-
 .status { margin-bottom: 6px; }
 
 .heat-bar {
@@ -56,6 +56,21 @@ body {
   padding: 8px;
   font-size: 13px;
 }
+
+/* ALERTA PUSH */
+.push-alert {
+  position: fixed;
+  top: 120px;
+  left: 10px;
+  background: rgba(0,255,136,0.15);
+  border: 1px solid #00ff88;
+  color: #00ff88;
+  padding: 10px;
+  font-size: 12px;
+  border-radius: 8px;
+  display: none;
+  z-index: 99999;
+}
 </style>
 </head>
 
@@ -64,10 +79,10 @@ body {
 <div id="map"></div>
 
 <div class="ia-panel">
-  <div class="title">Aifucito IA</div>
+  <div class="title">Aifucito IA LIVE</div>
 
   <div class="status">Estado: ACTIVO</div>
-  <div class="status">Reportes: <span id="hoy">0</span></div>
+  <div class="status">Reportes: <span id="count">0</span></div>
   <div class="status">Densidad: <span id="densidad">BAJA</span></div>
 
   <div class="heat-bar"></div>
@@ -77,13 +92,20 @@ body {
   </div>
 </div>
 
+<div class="push-alert" id="push"></div>
+
 <div class="bottom">
-Radar AIFU activo
+RADAR AIFU LIVE - sin refresh
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <script>
+
+/* =========================
+   MAPA BASE
+========================= */
 
 const map = L.map('map').setView([-34.9, -56.2], 6);
 
@@ -91,46 +113,133 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 18
 }).addTo(map);
 
-function color(n) {
+/* =========================
+   CAPAS
+========================= */
+
+let markersLayer = L.layerGroup().addTo(map);
+let heatLayer = L.heatLayer([], { radius: 25, blur: 20 }).addTo(map);
+
+/* =========================
+   SUPABASE LIVE
+========================= */
+
+const supabaseUrl = "TU_SUPABASE_URL";
+const supabaseKey = "TU_SUPABASE_KEY";
+const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+
+let reportes = [];
+
+/* =========================
+   COLOR INTENSIDAD
+========================= */
+
+function intensidad(n) {
   return n > 10 ? "#00ff00" :
          n > 5 ? "#66ff66" : "#00aa44";
 }
 
-let reportes = [];
+/* =========================
+   ALERTA PUSH
+========================= */
 
-async function cargar() {
+function push(msg) {
+  const el = document.getElementById("push");
+  el.innerText = msg;
+  el.style.display = "block";
 
-  const res = await fetch("/api/reports");
-  reportes = await res.json();
-
-  reportes.forEach(r => {
-    if (!r.lat || !r.lng) return;
-
-    L.circleMarker([r.lat, r.lng], {
-      radius: 6,
-      color: color(1),
-      fillColor: color(1),
-      fillOpacity: 0.8
-    }).addTo(map).bindPopup(r.descripcion || "evento");
-  });
-
-  document.getElementById("hoy").innerText = reportes.length;
-
-  let densidad = "BAJA";
-  if (reportes.length > 20) densidad = "ALTA";
-  else if (reportes.length > 8) densidad = "MEDIA";
-
-  document.getElementById("densidad").innerText = densidad;
-
-  if (densidad === "ALTA") {
-    document.getElementById("alerta").innerText =
-      "Actividad elevada detectada";
-  }
+  setTimeout(() => {
+    el.style.display = "none";
+  }, 5000);
 }
 
-cargar();
+/* =========================
+   RENDER MAPA
+========================= */
 
-setInterval(cargar, 10000);
+function render() {
+
+  markersLayer.clearLayers();
+
+  let heatPoints = [];
+
+  reportes.forEach(r => {
+
+    if (!r.lat || !r.lng) return;
+
+    markersLayer.addLayer(
+      L.circleMarker([r.lat, r.lng], {
+        radius: 6,
+        color: intensidad(1),
+        fillColor: intensidad(1),
+        fillOpacity: 0.8
+      }).bindPopup(`
+        <b>${r.tipo}</b><br/>
+        ${r.descripcion}<br/>
+        ${r.pais}
+      `)
+    );
+
+    heatPoints.push([r.lat, r.lng, 0.6]);
+  });
+
+  heatLayer.setLatLngs(heatPoints);
+
+  document.getElementById("count").innerText = reportes.length;
+
+  let d = "BAJA";
+  if (reportes.length > 20) d = "ALTA";
+  else if (reportes.length > 8) d = "MEDIA";
+
+  document.getElementById("densidad").innerText = d;
+
+  document.getElementById("alerta").innerText =
+    d === "ALTA" ? "Zona crítica activa" : "Sin anomalías";
+}
+
+/* =========================
+   CARGA INICIAL
+========================= */
+
+async function load() {
+  const res = await fetch("/api/reports?range=24h");
+  reportes = await res.json();
+  render();
+}
+
+/* =========================
+   LIVE REAL TIME (SUPABASE)
+========================= */
+
+function live() {
+
+  const channel = supabase
+    .channel('realtime-reportes')
+    .on('postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'reportes'
+      },
+      (payload) => {
+
+        const r = payload.new;
+        reportes.push(r);
+
+        render();
+
+        push(`Nuevo evento: ${r.tipo} en ${r.pais}`);
+      }
+    )
+    .subscribe();
+}
+
+/* =========================
+   INIT
+========================= */
+
+load();
+live();
 
 </script>
 
