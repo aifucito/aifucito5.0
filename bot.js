@@ -1,319 +1,266 @@
 import "dotenv/config";
 import { Telegraf, Markup, session } from "telegraf";
 import express from "express";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
+import cors from "cors";
+import axios from "axios";
 import { createClient } from "@supabase/supabase-js";
 
-/* ===============================
-    CONFIGURACIÓN
-================================ */
-const TOKEN = process.env.BOT_TOKEN;
-const ADMIN_ID = "7662736311";
+/* =========================
+   CONFIG
+========================= */
 
-const RADAR_CONO_SUR = -1002447915570;
-const BACKUP_CANAL = -1003895765674;
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_KEY;
+const ADMIN_ID = process.env.ADMIN_ID;
 
-const WEBAPP_URL = "https://aifucito5-0.onrender.com";
-
-/* ===============================
-    SUPABASE
-================================ */
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_KEY
-);
-
-/* ===============================
-    INICIALIZACIÓN
-================================ */
-const bot = new Telegraf(TOKEN);
-bot.use(session());
-
-// FIX sesión segura
-bot.use((ctx, next) => {
-  if (!ctx.session) ctx.session = {};
-  return next();
-});
-
+const bot = new Telegraf(BOT_TOKEN);
 const app = express();
+
+app.use(cors());
 app.use(express.json());
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-app.use(express.static(path.join(__dirname, "public")));
+bot.use(session());
 
-/* ===============================
-    BASE LOCAL (BACKUP)
-================================ */
-const DB_FILE = "usuarios.json";
-const LOG_FILE = "public/reportes.json";
+/* =========================
+   RANGOS
+========================= */
 
-let usuarios = fs.existsSync(DB_FILE)
-  ? JSON.parse(fs.readFileSync(DB_FILE))
-  : {};
-
-function save() {
-  fs.writeFileSync(DB_FILE, JSON.stringify(usuarios, null, 2));
-}
-
-function getUser(id, name = "Desconocido") {
-  if (!usuarios[id]) {
-    usuarios[id] = {
-      nombre: name,
-      reportes: 0,
-      rol: "gratis",
-      pais: null,
-      expira: 0
-    };
-  }
-  if (id == ADMIN_ID) usuarios[id].rol = "admin";
-  return usuarios[id];
-}
-
-/* ===============================
-    SUPABASE USER
-================================ */
-async function getUserDB(id, name) {
-  let { data: user } = await supabase
-    .from("usuarios")
-    .select("*")
-    .eq("id", id.toString())
-    .single();
-
-  if (!user) {
-    const { data: newUser } = await supabase
-      .from("usuarios")
-      .insert({
-        id: id.toString(),
-        nombre: name,
-        rol: id.toString() === ADMIN_ID ? "admin" : "gratis",
-        reportes: 0
-      })
-      .select()
-      .single();
-
-    return newUser;
-  }
-
-  return user;
-}
-
-/* ===============================
-    RANGOS
-================================ */
 function obtenerRango(user) {
-  if (user.rol === "admin") return "👑 Comandante Intergaláctico";
+  if (String(user.id) === String(ADMIN_ID)) return "👑 Comandante Intergaláctico";
   if (user.rol === "colaborador") return "🛡️ Agente de Élite AIFU";
 
-  const r = user.reportes;
+  const r = user.reportes || 0;
+
   if (r >= 20) return "casi te busca la CRIDOVNI";
   if (r >= 10) return "👽 Guardaespalda de Alf";
   if (r >= 5) return "🧉 Cebador de mate del Área 51";
   return "🧹 Fajinador de retretes espaciales";
 }
 
-function detectarPais(lat, lon) {
-  if (lat < -30 && lat > -35 && lon < -53 && lon > -58) return "🇺🇾 Uruguay";
-  if (lat < -22 && lat > -55 && lon < -53 && lon > -73) return "🇦🇷 Argentina";
-  if (lat < -17 && lat > -56 && lon < -66 && lon > -75) return "🇨🇱 Chile";
-  return "🌎 Global";
+/* =========================
+   MENÚ
+========================= */
+
+function menu() {
+  return Markup.keyboard([
+    ["📍 Reportar"],
+    ["🗺 Mapa"],
+    ["🤖 Aifucito"],
+    ["👤 Perfil"],
+  ]).resize();
 }
 
-/* ===============================
-    TEST DB
-================================ */
-bot.command("testdb", async (ctx) => {
-  const { error } = await supabase.from("usuarios").insert({
-    id: ctx.from.id.toString(),
-    nombre: ctx.from.first_name,
-    rol: "test",
-    reportes: 0
-  });
+/* =========================
+   USUARIO
+========================= */
 
-  if (error) return ctx.reply("❌ Error Supabase");
-  ctx.reply("✅ Supabase funcionando");
-});
+async function ensureUser(ctx) {
+  const { from } = ctx;
 
-/* ===============================
-    START
-================================ */
-bot.start((ctx) => {
-  if (ctx.chat.type !== "private") return;
+  const { data } = await supabase
+    .from("usuarios")
+    .select("*")
+    .eq("id", String(from.id))
+    .single();
 
-  ctx.reply(
-    "🛰️ HOLA! SOY AIFUCITO...",
-    Markup.keyboard([
-      [Markup.button.locationRequest("📍 Enviar ubicación")],
-      ["📡 Reportar", "📊 Ver reportes"],
-      ["👤 Perfil", "🗺️ Ver mapa"]
-    ]).resize()
-  );
-});
-
-/* ===============================
-    FLUJO PRO
-================================ */
-
-// Paso 1: tipo
-bot.hears("📡 Reportar", (ctx) => {
-  ctx.session.step = "tipo";
-
-  ctx.reply(
-    "🛸 ¿Qué tipo de avistamiento viste?",
-    Markup.keyboard([
-      ["💡 Luz", "🛸 Objeto"],
-      ["👤 Entidad", "❓ Otro"]
-    ]).resize()
-  );
-});
-
-// Paso 2: guardar tipo
-bot.hears(["💡 Luz", "🛸 Objeto", "👤 Entidad", "❓ Otro"], (ctx) => {
-  if (ctx.session.step !== "tipo") return;
-
-  ctx.session.tipo = ctx.message.text;
-  ctx.session.step = "descripcion";
-
-  ctx.reply("✍️ Describí lo que viste:");
-});
-
-// Paso 3: descripción
-bot.on("text", (ctx, next) => {
-  if (ctx.session.step === "descripcion") {
-    ctx.session.descripcion = ctx.message.text;
-    ctx.session.step = "ubicacion";
-
-    return ctx.reply(
-      "📍 Ahora enviá tu ubicación",
-      Markup.keyboard([
-        [Markup.button.locationRequest("📍 Enviar ubicación")]
-      ]).resize()
-    );
+  if (!data) {
+    await supabase.from("usuarios").insert([
+      {
+        id: String(from.id),
+        nombre: from.username || from.first_name,
+        rol: String(from.id) === String(ADMIN_ID) ? "admin" : "user",
+        reportes: 0,
+        created_at: new Date().toISOString(),
+      },
+    ]);
   }
-  return next();
-});
 
-/* ===============================
-    UBICACIÓN PRO
-================================ */
-bot.on("location", async (ctx) => {
-  const localUser = getUser(ctx.from.id, ctx.from.first_name);
-  const dbUser = await getUserDB(ctx.from.id, ctx.from.first_name);
+  return data;
+}
 
-  const { latitude, longitude, accuracy } = ctx.message.location;
+/* =========================
+   REPORTES
+========================= */
 
-  const tipo = ctx.session.tipo || "No especificado";
-  const descripcion = ctx.session.descripcion || "Sin descripción";
-  const pais = detectarPais(latitude, longitude);
+async function saveReport(ctx, report) {
+  await supabase.from("reportes").insert([
+    {
+      user_id: String(ctx.from.id),
+      lat: report.lat,
+      lng: report.lng,
+      tipo: report.tipo || "avistamiento",
+      descripcion: report.descripcion,
+      precision: report.precision || 1,
+      pais: report.pais || "UY",
+      created_at: new Date().toISOString(),
+    },
+  ]);
 
-  // LOCAL
-  localUser.reportes++;
-  if (!localUser.pais) localUser.pais = pais;
-  save();
+  const { data } = await supabase
+    .from("usuarios")
+    .select("reportes")
+    .eq("id", String(ctx.from.id))
+    .single();
 
-  // SUPABASE
   await supabase
     .from("usuarios")
-    .update({ reportes: dbUser.reportes + 1 })
-    .eq("id", ctx.from.id.toString());
+    .update({ reportes: (data?.reportes || 0) + 1 })
+    .eq("id", String(ctx.from.id));
+}
 
-  const data = {
-    lat: latitude,
-    lng: longitude,
-    user: ctx.from.first_name,
-    rango: obtenerRango(dbUser),
-    tipo,
-    descripcion,
-    precision: accuracy || 0,
-    pais,
-    ts: Date.now()
-  };
+/* =========================
+   IA AIFUCITO
+========================= */
 
-  // DB
-  await supabase.from("reportes").insert({
-    user_id: ctx.from.id.toString(),
-    lat: latitude,
-    lng: longitude,
-    rango: data.rango,
-    tipo: data.tipo,
-    descripcion: data.descripcion,
-    precision: data.precision,
-    pais: data.pais
-  });
+const SYSTEM_PROMPT = `
+Eres Aifucito, asistente del sistema AIFU en Uruguay.
 
-  // RADAR
-  const texto = `🛸 AVISTAMIENTO
+Personalidad:
+- simpático, alegre, conspiranoico divertido
+- cómplice con el usuario
+- estilo “expediente secreto”
+- humor ligero
 
-👤 ${data.user}
-🎖️ ${data.rango}
-📌 Tipo: ${data.tipo}
-📝 ${data.descripcion}
-📍 ${data.lat}, ${data.lng}
-🎯 Precisión: ${data.precision}m
-🌎 ${data.pais}`;
+Contexto:
+- CRIDOVNI (Fuerza Aérea Uruguaya)
+- NASA
+- CIA
+- Hombres de Negro (referencia cultural)
+- fenómenos aéreos no identificados
 
-  await ctx.telegram.sendMessage(RADAR_CONO_SUR, texto);
-  await ctx.telegram.sendMessage(BACKUP_CANAL, JSON.stringify(data));
+Reglas:
+- puedes dejar entreabierta la idea de conspiracion
+- tono divertido y narrativo
+- lenguaje simple y cercano
+`;
 
-  // BACKUP LOCAL
-  let reportes = fs.existsSync(LOG_FILE)
-    ? JSON.parse(fs.readFileSync(LOG_FILE))
-    : [];
+async function llamarGemini(prompt) {
+  const API_KEY = process.env.GEMINI_API_KEY;
 
-  reportes.push(data);
-  fs.writeFileSync(LOG_FILE, JSON.stringify(reportes, null, 2));
+  const url =
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent";
 
-  ctx.session = {};
+  try {
+    const res = await axios.post(
+      url,
+      {
+        contents: [
+          {
+            parts: [{ text: SYSTEM_PROMPT + "\nUsuario: " + prompt }],
+          },
+        ],
+      },
+      { params: { key: API_KEY } }
+    );
 
-  ctx.reply("✅ Reporte completo enviado");
+    return (
+      res.data?.candidates?.[0]?.content?.parts?.[0]?.text ||
+      "Sin señal desde Aifucito"
+    );
+  } catch {
+    return "Error en la conexión con Aifucito";
+  }
+}
+
+/* =========================
+   START
+========================= */
+
+bot.start(async (ctx) => {
+  await ensureUser(ctx);
+  ctx.reply("aifucito activo", menu());
 });
 
-/* ===============================
-    PERFIL
-================================ */
+/* =========================
+   IA BUTTON
+========================= */
+
+bot.hears("🤖 Aifucito", (ctx) => {
+  ctx.session.mode = "ia";
+  ctx.reply("consulta a Aifucito");
+});
+
+/* =========================
+   PERFIL
+========================= */
+
 bot.hears("👤 Perfil", async (ctx) => {
-  const user = await getUserDB(ctx.from.id);
+  const { data } = await supabase
+    .from("usuarios")
+    .select("*")
+    .eq("id", String(ctx.from.id))
+    .single();
+
+  const rango = obtenerRango(data || {});
 
   ctx.reply(
-`🧾 EXPEDIENTE AIFU
-
-🎖️ Rango: ${obtenerRango(user)}
-📊 Avistamientos: ${user.reportes}
-💳 Estado: ${user.rol.toUpperCase()}`
+    `Perfil\n\nNombre: ${data?.nombre}\nReportes: ${data?.reportes}\nRango: ${rango}`
   );
 });
 
-/* ===============================
-    MAPA
-================================ */
-bot.hears("🗺️ Ver mapa", (ctx) => {
-  ctx.reply(
-    "🔭 Abriendo Radar...",
-    Markup.inlineKeyboard([
-      Markup.button.webApp("🛰️ Ver mapa", WEBAPP_URL)
-    ])
-  );
+/* =========================
+   MAPA
+========================= */
+
+bot.hears("🗺 Mapa", (ctx) => {
+  ctx.reply("Mapa activo", {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "Abrir mapa", url: "https://aifucito5-0.onrender.com" }],
+      ],
+    },
+  });
 });
 
-/* ===============================
-    ERRORES
-================================ */
-bot.catch((err) => {
-  console.error("🔥 ERROR:", err);
+/* =========================
+   FLUJO GLOBAL
+========================= */
+
+bot.on("text", async (ctx) => {
+  /* IA */
+  if (ctx.session?.mode === "ia") {
+    const res = await llamarGemini(ctx.message.text);
+    ctx.reply(res);
+    ctx.session.mode = null;
+    return;
+  }
+
+  /* REPORTES SIMPLE (BASE) */
+  if (ctx.message.text.includes(",")) {
+    const [lat, lng] = ctx.message.text.split(",");
+
+    ctx.session.lat = parseFloat(lat);
+    ctx.session.lng = parseFloat(lng);
+    ctx.session.step = "desc";
+
+    return ctx.reply("Describe el fenómeno:");
+  }
+
+  if (ctx.session?.step === "desc") {
+    await saveReport(ctx, {
+      lat: ctx.session.lat,
+      lng: ctx.session.lng,
+      descripcion: ctx.message.text,
+    });
+
+    ctx.session = null;
+    return ctx.reply("Reporte registrado");
+  }
 });
 
-/* ===============================
-    SERVIDOR
-================================ */
-app.get("/", (req, res) =>
-  res.sendFile(path.join(__dirname, "public", "index.html"))
-);
+/* =========================
+   API MAPA
+========================= */
 
-(async () => {
-  console.log("🚀 AIFU OS Operativo");
-  bot.launch({ dropPendingUpdates: true });
-  app.listen(process.env.PORT || 3000);
-})();
+app.get("/api/reports", async (req, res) => {
+  const { data } = await supabase.from("reportes").select("*");
+  res.json(data);
+});
+
+app.listen(3000);
+
+bot.launch();
+console.log("AIFUCITO ONLINE");
