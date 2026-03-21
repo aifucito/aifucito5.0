@@ -4,6 +4,8 @@ import express from "express";
 import cors from "cors";
 import axios from "axios";
 import { createClient } from "@supabase/supabase-js";
+import path from "path";
+import { fileURLToPath } from "url";
 
 /* =========================
    CONFIG
@@ -13,6 +15,14 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_KEY;
 const ADMIN_ID = process.env.ADMIN_ID;
+const GEMINI_KEY = process.env.GEMINI_API_KEY;
+
+/* 📡 CANALES */
+const CHANNEL_CONO_SUR = process.env.CHANNEL_CONO_SUR;
+const CHANNEL_GLOBAL = process.env.CHANNEL_GLOBAL;
+const CHANNEL_UY = process.env.CHANNEL_UY;
+const CHANNEL_AR = process.env.CHANNEL_AR;
+const CHANNEL_CL = process.env.CHANNEL_CL;
 
 const bot = new Telegraf(BOT_TOKEN);
 const app = express();
@@ -22,17 +32,34 @@ app.use(express.json());
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-bot.use(session());
+/* =========================
+   FRONTEND MAPA
+========================= */
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+app.use(express.static(path.join(__dirname, "public")));
+
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+/* =========================
+   SESSION
+========================= */
+
+bot.use(session({ defaultSession: () => ({}) }));
 
 /* =========================
    RANGOS
 ========================= */
 
 function obtenerRango(user) {
-  if (String(user.id) === String(ADMIN_ID)) return "👑 Comandante Intergaláctico";
-  if (user.rol === "colaborador") return "🛡️ Agente de Élite AIFU";
+  if (String(user?.id) === String(ADMIN_ID))
+    return "👑 Comandante Intergaláctico";
 
-  const r = user.reportes || 0;
+  const r = user?.reportes || 0;
 
   if (r >= 20) return "casi te busca la CRIDOVNI";
   if (r >= 10) return "👽 Guardaespalda de Alf";
@@ -58,31 +85,31 @@ function menu() {
 ========================= */
 
 async function ensureUser(ctx) {
-  const { from } = ctx;
+  const id = String(ctx.from.id);
 
   const { data } = await supabase
     .from("usuarios")
     .select("*")
-    .eq("id", String(from.id))
+    .eq("id", id)
     .single();
 
-  if (!data) {
-    await supabase.from("usuarios").insert([
-      {
-        id: String(from.id),
-        nombre: from.username || from.first_name,
-        rol: String(from.id) === String(ADMIN_ID) ? "admin" : "user",
-        reportes: 0,
-        created_at: new Date().toISOString(),
-      },
-    ]);
-  }
+  if (data) return data;
 
-  return data;
+  const newUser = {
+    id,
+    nombre: ctx.from.username || ctx.from.first_name,
+    rol: id === String(ADMIN_ID) ? "admin" : "user",
+    reportes: 0,
+    created_at: new Date().toISOString(),
+  };
+
+  await supabase.from("usuarios").insert([newUser]);
+
+  return newUser;
 }
 
 /* =========================
-   REPORTES
+   GUARDAR REPORTE
 ========================= */
 
 async function saveReport(ctx, report) {
@@ -93,8 +120,7 @@ async function saveReport(ctx, report) {
       lng: report.lng,
       tipo: report.tipo || "avistamiento",
       descripcion: report.descripcion,
-      precision: report.precision || 1,
-      pais: report.pais || "UY",
+      pais: report.pais || "GLOBAL",
       created_at: new Date().toISOString(),
     },
   ]);
@@ -112,56 +138,70 @@ async function saveReport(ctx, report) {
 }
 
 /* =========================
-   IA AIFUCITO
+   IA GEMINI
 ========================= */
 
-const SYSTEM_PROMPT = `
-Eres Aifucito, asistente del sistema AIFU en Uruguay.
-
-Personalidad:
-- simpático, alegre, conspiranoico divertido
-- cómplice con el usuario
-- estilo “expediente secreto”
-- humor ligero
-
-Contexto:
-- CRIDOVNI (Fuerza Aérea Uruguaya)
-- NASA
-- CIA
-- Hombres de Negro (referencia cultural)
-- fenómenos aéreos no identificados
-
-Reglas:
-- puedes dejar entreabierta la idea de conspiracion
-- tono divertido y narrativo
-- lenguaje simple y cercano
-`;
-
-async function llamarGemini(prompt) {
-  const API_KEY = process.env.GEMINI_API_KEY;
-
-  const url =
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent";
-
+async function llamarGemini(text) {
   try {
     const res = await axios.post(
-      url,
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent",
       {
-        contents: [
-          {
-            parts: [{ text: SYSTEM_PROMPT + "\nUsuario: " + prompt }],
-          },
-        ],
+        contents: [{
+          parts: [{
+            text: "Aifucito IA conspiranoico:\n" + text
+          }]
+        }]
       },
-      { params: { key: API_KEY } }
+      { params: { key: GEMINI_KEY } }
     );
 
-    return (
-      res.data?.candidates?.[0]?.content?.parts?.[0]?.text ||
-      "Sin señal desde Aifucito"
-    );
+    return res.data?.candidates?.[0]?.content?.parts?.[0]?.text
+      || "sin respuesta IA";
+
   } catch {
-    return "Error en la conexión con Aifucito";
+    return "error IA Aifucito";
+  }
+}
+
+/* =========================
+   ROUTING DE CANALES
+========================= */
+
+function getChannels(pais) {
+  const p = (pais || "").toUpperCase();
+
+  let canales = [];
+
+  // 🔥 CONO SUR SIEMPRE RECIBE TODO
+  canales.push(CHANNEL_CONO_SUR);
+
+  // 🇺🇾 🇦🇷 🇨🇱 específicos
+  if (p === "UY") canales.push(CHANNEL_UY);
+  else if (p === "AR") canales.push(CHANNEL_AR);
+  else if (p === "CL") canales.push(CHANNEL_CL);
+  else canales.push(CHANNEL_GLOBAL);
+
+  return [...new Set(canales)];
+}
+
+/* =========================
+   ALERTAS
+========================= */
+
+async function enviarAlerta(pais, mensaje) {
+  const canales = getChannels(pais);
+
+  for (const c of canales) {
+    if (!c) continue;
+
+    try {
+      await bot.telegram.sendMessage(
+        c,
+        "🚨 ALERTA AIFU\n\n" + mensaje
+      );
+    } catch (e) {
+      console.log("error canal", e.message);
+    }
   }
 }
 
@@ -171,16 +211,16 @@ async function llamarGemini(prompt) {
 
 bot.start(async (ctx) => {
   await ensureUser(ctx);
-  ctx.reply("aifucito activo", menu());
+  ctx.reply("🛰 Aifucito activo", menu());
 });
 
 /* =========================
-   IA BUTTON
+   IA MODE
 ========================= */
 
 bot.hears("🤖 Aifucito", (ctx) => {
   ctx.session.mode = "ia";
-  ctx.reply("consulta a Aifucito");
+  ctx.reply("Escribe consulta");
 });
 
 /* =========================
@@ -194,10 +234,12 @@ bot.hears("👤 Perfil", async (ctx) => {
     .eq("id", String(ctx.from.id))
     .single();
 
-  const rango = obtenerRango(data || {});
-
   ctx.reply(
-    `Perfil\n\nNombre: ${data?.nombre}\nReportes: ${data?.reportes}\nRango: ${rango}`
+`👤 Perfil
+
+Nombre: ${data?.nombre}
+Reportes: ${data?.reportes || 0}
+Rango: ${obtenerRango(data || {})}`
   );
 });
 
@@ -206,48 +248,59 @@ bot.hears("👤 Perfil", async (ctx) => {
 ========================= */
 
 bot.hears("🗺 Mapa", (ctx) => {
-  ctx.reply("Mapa activo", {
+  ctx.reply("Radar activo", {
     reply_markup: {
       inline_keyboard: [
-        [{ text: "Abrir mapa", url: "https://aifucito5-0.onrender.com" }],
-      ],
-    },
+        [{ text: "Abrir mapa", url: "https://ipusito5-0.onrender.com" }]
+      ]
+    }
   });
 });
 
 /* =========================
-   FLUJO GLOBAL
+   FLUJO GENERAL
 ========================= */
 
 bot.on("text", async (ctx) => {
-  /* IA */
+
   if (ctx.session?.mode === "ia") {
-    const res = await llamarGemini(ctx.message.text);
-    ctx.reply(res);
+    const r = await llamarGemini(ctx.message.text);
+    ctx.reply(r);
     ctx.session.mode = null;
     return;
   }
 
-  /* REPORTES SIMPLE (BASE) */
+  // 📍 formato: lat,lng,pais
   if (ctx.message.text.includes(",")) {
-    const [lat, lng] = ctx.message.text.split(",");
+    const parts = ctx.message.text.split(",");
 
-    ctx.session.lat = parseFloat(lat);
-    ctx.session.lng = parseFloat(lng);
+    ctx.session.lat = parseFloat(parts[0]);
+    ctx.session.lng = parseFloat(parts[1]);
+    ctx.session.pais = parts[2] || "GLOBAL";
     ctx.session.step = "desc";
 
     return ctx.reply("Describe el fenómeno:");
   }
 
   if (ctx.session?.step === "desc") {
-    await saveReport(ctx, {
+
+    const report = {
       lat: ctx.session.lat,
       lng: ctx.session.lng,
       descripcion: ctx.message.text,
-    });
+      pais: ctx.session.pais
+    };
+
+    await saveReport(ctx, report);
+
+    await enviarAlerta(report.pais, `
+📍 País: ${report.pais}
+📌 Descripción: ${report.descripcion}
+🛰 Nuevo evento registrado
+`);
 
     ctx.session = null;
-    return ctx.reply("Reporte registrado");
+    return ctx.reply("Reporte enviado 🛰");
   }
 });
 
@@ -257,10 +310,26 @@ bot.on("text", async (ctx) => {
 
 app.get("/api/reports", async (req, res) => {
   const { data } = await supabase.from("reportes").select("*");
-  res.json(data);
+  res.json(data || []);
 });
 
-app.listen(3000);
+/* =========================
+   HEALTHCHECK
+========================= */
+
+app.get("/test", (req, res) => {
+  res.send("AIFU OK");
+});
+
+/* =========================
+   RENDER PORT
+========================= */
+
+const PORT = process.env.PORT;
+
+app.listen(PORT, () => {
+  console.log("SERVER ON", PORT);
+});
 
 bot.launch();
 console.log("AIFUCITO ONLINE");
