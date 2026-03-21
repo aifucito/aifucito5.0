@@ -7,7 +7,7 @@ import { fileURLToPath } from "url";
 import { createClient } from "@supabase/supabase-js";
 
 /* ===============================
-    CONFIGURACIÓN
+    CONFIGURACIÓN TÁCTICA
 ================================ */
 const TOKEN = process.env.BOT_TOKEN;
 const ADMIN_ID = "7662736311";
@@ -40,7 +40,7 @@ const __dirname = path.dirname(__filename);
 app.use(express.static(path.join(__dirname, "public")));
 
 /* ===============================
-    BASE LOCAL (backup temporal)
+    BASE LOCAL (SE MANTIENE)
 ================================ */
 const DB_FILE = "usuarios.json";
 const LOG_FILE = "public/reportes.json";
@@ -53,8 +53,22 @@ function save() {
   fs.writeFileSync(DB_FILE, JSON.stringify(usuarios, null, 2));
 }
 
+function getUser(id, name = "Desconocido") {
+  if (!usuarios[id]) {
+    usuarios[id] = {
+      nombre: name,
+      reportes: 0,
+      rol: "gratis",
+      pais: null,
+      expira: 0
+    };
+  }
+  if (id == ADMIN_ID) usuarios[id].rol = "admin";
+  return usuarios[id];
+}
+
 /* ===============================
-    USUARIO DB (SUPABASE)
+    SUPABASE USER
 ================================ */
 async function getUserDB(id, name) {
   let { data: user } = await supabase
@@ -82,17 +96,24 @@ async function getUserDB(id, name) {
 }
 
 /* ===============================
-    RANGOS
+    RANGOS Y PAÍS
 ================================ */
 function obtenerRango(user) {
   if (user.rol === "admin") return "👑 Comandante Intergaláctico";
   if (user.rol === "colaborador") return "🛡️ Agente de Élite AIFU";
 
   const r = user.reportes;
-  if (r >= 20) return "👽 Guardaespalda de Alf";
-  if (r >= 10) return "🧉 Cebador de mate del Área 51";
-  if (r >= 5) return "🧹 Fajinador de retretes espaciales";
-  return "🛰️ Recluta Civil";
+  if (r >= 20) return "casi te busca la CRIDOVNI";
+  if (r >= 10) return "👽 Guardaespalda de Alf";
+  if (r >= 5) return "🧉 Cebador de mate del Área 51";
+  return "🧹 Fajinador de retretes espaciales";
+}
+
+function detectarPais(lat, lon) {
+  if (lat < -30 && lat > -35 && lon < -53 && lon > -58) return "🇺🇾 Uruguay";
+  if (lat < -22 && lat > -55 && lon < -53 && lon > -73) return "🇦🇷 Argentina";
+  if (lat < -17 && lat > -56 && lon < -66 && lon > -75) return "🇨🇱 Chile";
+  return "🌎 Global";
 }
 
 /* ===============================
@@ -124,6 +145,7 @@ bot.start((ctx) => {
   ctx.reply(
     "🛰️ AIFU activo... Hablá bajo...",
     Markup.keyboard([
+      [Markup.button.locationRequest("📍 Enviar ubicación")],
       ["📡 Reportar", "📊 Ver reportes"],
       ["👤 Perfil", "🗺️ Ver mapa"]
     ]).resize()
@@ -131,31 +153,40 @@ bot.start((ctx) => {
 });
 
 bot.hears("📡 Reportar", (ctx) =>
-  ctx.reply("📍 Enviá tu ubicación por GPS...")
+  ctx.reply("📍 Tocá el botón de arriba para enviar tu ubicación automáticamente")
 );
 
 /* ===============================
-    EVENTO UBICACIÓN (YA CON SUPABASE)
+    UBICACIÓN (SUPABASE + BACKUP)
 ================================ */
 bot.on("location", async (ctx) => {
-  const user = await getUserDB(ctx.from.id, ctx.from.first_name);
+  const localUser = getUser(ctx.from.id, ctx.from.first_name);
+  const dbUser = await getUserDB(ctx.from.id, ctx.from.first_name);
+
   const { latitude, longitude } = ctx.message.location;
 
-  // actualizar contador en Supabase
+  // LOCAL
+  localUser.reportes++;
+  if (!localUser.pais) {
+    localUser.pais = detectarPais(latitude, longitude);
+  }
+  save();
+
+  // SUPABASE
   await supabase
     .from("usuarios")
-    .update({ reportes: user.reportes + 1 })
+    .update({ reportes: dbUser.reportes + 1 })
     .eq("id", ctx.from.id.toString());
 
   const data = {
     lat: latitude,
     lng: longitude,
     user: ctx.from.first_name,
-    rango: obtenerRango(user),
+    rango: obtenerRango(dbUser),
     ts: Date.now()
   };
 
-  // guardar en Supabase
+  // GUARDAR EN SUPABASE
   await supabase.from("reportes").insert({
     user_id: ctx.from.id.toString(),
     lat: latitude,
@@ -163,19 +194,14 @@ bot.on("location", async (ctx) => {
     rango: data.rango
   });
 
-  // radar
-  await ctx.telegram.sendMessage(
-    RADAR_CONO_SUR,
-    `🛸 AVISTAMIENTO\n👤 ${data.user}\n🎖️ ${data.rango}\n📍 ${data.lat}, ${data.lng}`
-  );
+  // RADAR
+  const texto = `🛸 AVISTAMIENTO\n👤 ${data.user}\n🎖️ ${data.rango}\n📍 ${data.lat}, ${data.lng}\n🌎 ${localUser.pais}`;
+  await ctx.telegram.sendMessage(RADAR_CONO_SUR, texto);
 
-  // backup
-  await ctx.telegram.sendMessage(
-    BACKUP_CANAL,
-    JSON.stringify(data)
-  );
+  // BACKUP CANAL
+  await ctx.telegram.sendMessage(BACKUP_CANAL, JSON.stringify(data));
 
-  // backup local
+  // BACKUP LOCAL
   let reportes = fs.existsSync(LOG_FILE)
     ? JSON.parse(fs.readFileSync(LOG_FILE))
     : [];
@@ -187,7 +213,7 @@ bot.on("location", async (ctx) => {
 });
 
 /* ===============================
-    PERFIL (lee de Supabase)
+    PERFIL
 ================================ */
 bot.hears("👤 Perfil", async (ctx) => {
   const user = await getUserDB(ctx.from.id);
