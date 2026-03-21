@@ -2,19 +2,16 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>AIFU Radar</title>
-
+<title>AIFU Radar Neo</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<!-- Leaflet CSS -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
   body {
     margin: 0;
-    background: black;
-    color: white;
     font-family: Arial;
+    background: #06130a;
   }
 
   #map {
@@ -22,13 +19,49 @@
     width: 100%;
   }
 
-  .panel {
+  /* 🌐 PANEL IA */
+  .ia-panel {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    width: 260px;
+    background: rgba(0, 20, 10, 0.85);
+    border: 1px solid #00ff88;
+    border-radius: 10px;
+    padding: 10px;
+    color: #00ff88;
+    font-size: 12px;
+    z-index: 9999;
+  }
+
+  .title {
+    font-weight: bold;
+    margin-bottom: 6px;
+  }
+
+  .status {
+    margin-bottom: 6px;
+  }
+
+  /* 🔥 HEAT BAR */
+  .heat-bar {
+    height: 8px;
+    width: 100%;
+    background: linear-gradient(to right, #003300, #00ff88, #00ff00);
+    border-radius: 5px;
+    margin-top: 8px;
+  }
+
+  /* 🛰 PANEL BOTTOM */
+  .bottom {
     position: fixed;
     bottom: 0;
     width: 100%;
     background: rgba(0,0,0,0.7);
-    padding: 10px;
+    color: #00ff88;
     text-align: center;
+    padding: 8px;
+    font-size: 13px;
   }
 </style>
 </head>
@@ -37,43 +70,88 @@
 
 <div id="map"></div>
 
-<div class="panel">
-🛰️ Radar AIFU activo
+<!-- 🧠 IA PANEL -->
+<div class="ia-panel">
+  <div class="title">🧠 Aifucito IA</div>
+
+  <div class="status">Estado: ACTIVO</div>
+  <div class="status">Reportes hoy: <span id="hoy">10</span></div>
+  <div class="status">Densidad: <span id="densidad">MEDIA</span></div>
+
+  <div class="heat-bar"></div>
+
+  <div id="alerta" style="margin-top:8px;color:#7CFFB2;">
+    Sin anomalías
+  </div>
 </div>
 
-<!-- Leaflet JS -->
+<div class="bottom">
+🛰️ Radar AIFU activo - monitoreo en tiempo real
+</div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
 
-// Crear mapa centrado en Uruguay
+// 🌍 MAPA
 const map = L.map('map').setView([-34.9, -56.2], 6);
 
-// Cargar tiles (MAPA REAL)
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 18,
+  maxZoom: 18
 }).addTo(map);
 
-// Cargar reportes
-async function cargarReportes() {
-  try {
-    const res = await fetch("reportes.json");
-    const data = await res.json();
+// 🟢 COLORES SEGÚN DENSIDAD
+function color(r) {
+  return r > 10 ? "#00ff00" :
+         r > 5  ? "#66ff66" :
+                  "#00aa44";
+}
 
-    data.forEach(r => {
-      if (r.lat && r.lng) {
-        L.marker([r.lat, r.lng])
-          .addTo(map)
-          .bindPopup(r.texto || "Avistamiento");
-      }
-    });
+// 📡 SIMULACIÓN REPORTES
+let reportes = [];
 
-  } catch (e) {
-    console.log("Error cargando reportes");
+async function cargar() {
+
+  const res = await fetch("reportes.json");
+  reportes = await res.json();
+
+  reportes.forEach(r => {
+
+    if (!r.lat || !r.lng) return;
+
+    const marker = L.circleMarker([r.lat, r.lng], {
+      radius: 6,
+      color: color(r.intensidad || 1),
+      fillColor: color(r.intensidad || 1),
+      fillOpacity: 0.8
+    }).addTo(map);
+
+    marker.bindPopup(r.descripcion || "Avistamiento");
+  });
+
+  actualizarIA();
+}
+
+function actualizarIA() {
+
+  const total = reportes.length;
+
+  document.getElementById("hoy").innerText = total;
+
+  let densidad = "BAJA";
+
+  if (total > 20) densidad = "ALTA";
+  else if (total > 8) densidad = "MEDIA";
+
+  document.getElementById("densidad").innerText = densidad;
+
+  if (densidad === "ALTA") {
+    document.getElementById("alerta").innerText =
+      "🚨 Actividad elevada detectada";
   }
 }
 
-cargarReportes();
+cargar();
 
 </script>
 
