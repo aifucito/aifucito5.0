@@ -41,10 +41,14 @@ app.listen(PORT, "0.0.0.0", () => {
 });
 
 /* =========================
-   SESSION
+   SESSION SAFE
 ========================= */
 
 bot.use(session());
+bot.use((ctx, next) => {
+  ctx.session = ctx.session || {};
+  return next();
+});
 
 /* =========================
    RANGO
@@ -59,7 +63,7 @@ function obtenerRango(user = {}) {
   if (r >= 20) return "casi te busca la CRIDOVNI";
   if (r >= 10) return "👽 Guardaespalda de Alf";
   if (r >= 5) return "🧉 Cebador de mate del Área 51";
-  return "🧹 Fajinador de retretas espaciales";
+  return "🧹 Fajinador de retretes espaciales";
 }
 
 /* =========================
@@ -73,6 +77,44 @@ function menu() {
     ["🤖 Aifucito"],
     ["👤 Perfil"],
   ]).resize();
+}
+
+/* =========================
+   GEO REAL (NOMINATIM)
+========================= */
+
+async function reverseGeo(lat, lng) {
+  try {
+    const res = await axios.get(
+      "https://nominatim.openstreetmap.org/reverse",
+      {
+        params: {
+          format: "json",
+          lat,
+          lon: lng,
+        },
+        headers: {
+          "User-Agent": "AIFUCITO-BOT"
+        }
+      }
+    );
+
+    const a = res.data?.address || {};
+
+    return {
+      pais: a.country_code?.toUpperCase() || "GLOBAL",
+      ciudad: a.city || a.town || a.village || "Desconocido",
+      localidad: a.suburb || a.neighbourhood || "Desconocido",
+      full: res.data?.display_name || ""
+    };
+  } catch {
+    return {
+      pais: "GLOBAL",
+      ciudad: "Desconocido",
+      localidad: "Desconocido",
+      full: ""
+    };
+  }
 }
 
 /* =========================
@@ -103,7 +145,7 @@ async function ensureUser(ctx) {
 }
 
 /* =========================
-   GUARDAR REPORTE
+   GUARDAR REPORTE + BACKUP
 ========================= */
 
 async function saveReport(ctx, report) {
@@ -112,11 +154,13 @@ async function saveReport(ctx, report) {
       user_id: String(ctx.from.id),
       lat: report.lat,
       lng: report.lng,
-      rango: report.rango || 1,
-      tipo: report.tipo || "avistamiento",
+      rango: 1,
+      tipo: "avistamiento",
       descripcion: report.descripcion,
-      precision: report.precision || 1,
-      pais: report.pais || "GLOBAL",
+      precision: 1,
+      pais: report.pais,
+      ciudad: report.ciudad,
+      localidad: report.localidad,
       alerta_generada: false,
     },
   ]);
@@ -131,6 +175,12 @@ async function saveReport(ctx, report) {
     .from("usuarios")
     .update({ reportes: (data?.reportes || 0) + 1 })
     .eq("id", String(ctx.from.id));
+
+  /* BACKUP TELEGRAM */
+  await bot.telegram.sendMessage(
+    CHANNEL_GLOBAL,
+    JSON.stringify(report, null, 2)
+  ).catch(() => {});
 }
 
 /* =========================
@@ -153,17 +203,6 @@ async function llamarGemini(text) {
   } catch {
     return "error IA";
   }
-}
-
-/* =========================
-   PAÍS POR GPS
-========================= */
-
-function detectarPais(lat, lng) {
-  if (lat < -30 && lng < -50) return "UY";
-  if (lat < -34 && lng < -58) return "AR";
-  if (lat < -20 && lng < -50) return "BR";
-  return "GLOBAL";
 }
 
 /* =========================
@@ -212,7 +251,6 @@ bot.start(async (ctx) => {
 ========================= */
 
 bot.hears("🤖 Aifucito", (ctx) => {
-  ctx.session = ctx.session || {};
   ctx.session.mode = "ia";
   ctx.reply("Escribe consulta");
 });
@@ -252,11 +290,10 @@ bot.hears("🗺 Mapa", (ctx) => {
 });
 
 /* =========================
-   REPORTAR (GPS OBLIGATORIO)
+   REPORTAR GPS
 ========================= */
 
 bot.hears("📍 Reportar", (ctx) => {
-  ctx.session = ctx.session || {};
   ctx.session.step = "gps";
 
   ctx.reply("Envía tu ubicación GPS:", {
@@ -271,11 +308,11 @@ bot.hears("📍 Reportar", (ctx) => {
 });
 
 /* =========================
-   LOCATION HANDLER
+   LOCATION
 ========================= */
 
 bot.on("location", (ctx) => {
-  if (!ctx.session || ctx.session.step !== "gps") return;
+  if (ctx.session.step !== "gps") return;
 
   ctx.session.lat = ctx.message.location.latitude;
   ctx.session.lng = ctx.message.location.longitude;
@@ -285,11 +322,10 @@ bot.on("location", (ctx) => {
 });
 
 /* =========================
-   FLUJO GENERAL
+   FLUJO TEXTO
 ========================= */
 
 bot.on("text", async (ctx) => {
-  ctx.session = ctx.session || {};
   const text = ctx.message.text;
 
   if (ctx.session.mode === "ia") {
@@ -300,30 +336,34 @@ bot.on("text", async (ctx) => {
   }
 
   if (ctx.session.step === "desc") {
-    const pais = detectarPais(ctx.session.lat, ctx.session.lng);
+
+    const geo = await reverseGeo(ctx.session.lat, ctx.session.lng);
 
     const report = {
       lat: ctx.session.lat,
       lng: ctx.session.lng,
       descripcion: text,
-      pais,
+      pais: geo.pais,
+      ciudad: geo.ciudad,
+      localidad: geo.localidad,
     };
 
     await saveReport(ctx, report);
 
-    await enviarAlerta(pais, `
-📍 Ubicación: ${report.lat}, ${report.lng}
-📌 Descripción: ${report.descripcion}
+    await enviarAlerta(report.pais, `
+📍 País: ${report.pais}
+🏙 Ciudad: ${report.ciudad}
+📌 Localidad: ${report.localidad}
 🛰 Evento registrado
 `);
 
-    ctx.session = null;
+    ctx.session = {};
     return ctx.reply("Reporte enviado 🛰");
   }
 });
 
 /* =========================
-   START BOT
+   BOT START
 ========================= */
 
 bot.launch();
