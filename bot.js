@@ -25,7 +25,7 @@ const bot = new Telegraf(BOT_TOKEN);
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 /* =========================
-   EXPRESS (OBLIGATORIO RENDER)
+   EXPRESS (RENDER FIX)
 ========================= */
 
 const app = express();
@@ -34,7 +34,6 @@ app.get("/", (req, res) => {
   res.send("AIFUCITO ONLINE OK");
 });
 
-/* 🔧 FIX RENDER PORT */
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, "0.0.0.0", () => {
@@ -51,7 +50,7 @@ bot.use(session());
    RANGO
 ========================= */
 
-function obtenerRango(user) {
+function obtenerRango(user = {}) {
   if (String(user?.id) === String(ADMIN_ID))
     return "👑 Comandante Intergaláctico";
 
@@ -60,7 +59,7 @@ function obtenerRango(user) {
   if (r >= 20) return "casi te busca la CRIDOVNI";
   if (r >= 10) return "👽 Guardaespalda de Alf";
   if (r >= 5) return "🧉 Cebador de mate del Área 51";
-  return "🧹 Fajinador de retretos espaciales";
+  return "🧹 Fajinador de retretas espaciales";
 }
 
 /* =========================
@@ -77,7 +76,7 @@ function menu() {
 }
 
 /* =========================
-   USUARIO (SAFE)
+   USUARIO
 ========================= */
 
 async function ensureUser(ctx) {
@@ -157,6 +156,17 @@ async function llamarGemini(text) {
 }
 
 /* =========================
+   PAÍS POR GPS
+========================= */
+
+function detectarPais(lat, lng) {
+  if (lat < -30 && lng < -50) return "UY";
+  if (lat < -34 && lng < -58) return "AR";
+  if (lat < -20 && lng < -50) return "BR";
+  return "GLOBAL";
+}
+
+/* =========================
    CANALES
 ========================= */
 
@@ -202,6 +212,7 @@ bot.start(async (ctx) => {
 ========================= */
 
 bot.hears("🤖 Aifucito", (ctx) => {
+  ctx.session = ctx.session || {};
   ctx.session.mode = "ia";
   ctx.reply("Escribe consulta");
 });
@@ -222,7 +233,7 @@ bot.hears("👤 Perfil", async (ctx) => {
 
 Nombre: ${data?.nombre || "-"}
 Reportes: ${data?.reportes || 0}
-Rango: ${obtenerRango(data || {})}`
+Rango: ${obtenerRango(data)}`
   );
 });
 
@@ -234,10 +245,43 @@ bot.hears("🗺 Mapa", (ctx) => {
   ctx.reply("Radar activo", {
     reply_markup: {
       inline_keyboard: [
-        [{ text: "Abrir mapa", url: "https://ipusito5-0.onrender.com" }]
+        [{ text: "Abrir mapa", url: "https://aifucito5-0.onrender.com" }]
       ]
     }
   });
+});
+
+/* =========================
+   REPORTAR (GPS OBLIGATORIO)
+========================= */
+
+bot.hears("📍 Reportar", (ctx) => {
+  ctx.session = ctx.session || {};
+  ctx.session.step = "gps";
+
+  ctx.reply("Envía tu ubicación GPS:", {
+    reply_markup: {
+      keyboard: [
+        [{ text: "📡 Enviar GPS", request_location: true }]
+      ],
+      resize_keyboard: true,
+      one_time_keyboard: true
+    }
+  });
+});
+
+/* =========================
+   LOCATION HANDLER
+========================= */
+
+bot.on("location", (ctx) => {
+  if (!ctx.session || ctx.session.step !== "gps") return;
+
+  ctx.session.lat = ctx.message.location.latitude;
+  ctx.session.lng = ctx.message.location.longitude;
+  ctx.session.step = "desc";
+
+  ctx.reply("Ubicación recibida. Describe el fenómeno:");
 });
 
 /* =========================
@@ -245,48 +289,32 @@ bot.hears("🗺 Mapa", (ctx) => {
 ========================= */
 
 bot.on("text", async (ctx) => {
+  ctx.session = ctx.session || {};
   const text = ctx.message.text;
 
-  if (ctx.session?.mode === "ia") {
+  if (ctx.session.mode === "ia") {
     const r = await llamarGemini(text);
     ctx.reply(r);
     ctx.session.mode = null;
     return;
   }
 
-  if (text.includes(",")) {
-    const parts = text.split(",");
+  if (ctx.session.step === "desc") {
+    const pais = detectarPais(ctx.session.lat, ctx.session.lng);
 
-    const lat = parseFloat(parts[0]);
-    const lng = parseFloat(parts[1]);
-    const pais = parts[2] || "GLOBAL";
-
-    if (isNaN(lat) || isNaN(lng)) {
-      return ctx.reply("Formato inválido. Usa: lat,lng,pais");
-    }
-
-    ctx.session.lat = lat;
-    ctx.session.lng = lng;
-    ctx.session.pais = pais;
-    ctx.session.step = "desc";
-
-    return ctx.reply("Describe el fenómeno:");
-  }
-
-  if (ctx.session?.step === "desc") {
     const report = {
       lat: ctx.session.lat,
       lng: ctx.session.lng,
       descripcion: text,
-      pais: ctx.session.pais,
+      pais,
     };
 
     await saveReport(ctx, report);
 
-    await enviarAlerta(report.pais, `
-📍 País: ${report.pais}
+    await enviarAlerta(pais, `
+📍 Ubicación: ${report.lat}, ${report.lng}
 📌 Descripción: ${report.descripcion}
-🛰 Nuevo evento registrado
+🛰 Evento registrado
 `);
 
     ctx.session = null;
@@ -295,7 +323,7 @@ bot.on("text", async (ctx) => {
 });
 
 /* =========================
-   BOT START
+   START BOT
 ========================= */
 
 bot.launch();
