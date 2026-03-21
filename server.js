@@ -1,143 +1,83 @@
-const express = require('express');
-const cors = require('cors');
-const fs = require('fs');
-const path = require('path');
+import "dotenv/config";
+import { Telegraf, session } from "telegraf";
+import express from "express";
+import cors from "cors";
+import { createClient } from "@supabase/supabase-js";
+import path from "path";
+import { fileURLToPath } from "url";
 
+/* =========================
+   CONFIG
+========================= */
+
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_KEY;
+
+const bot = new Telegraf(BOT_TOKEN);
 const app = express();
 
 app.use(cors());
 app.use(express.json());
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-app.use(express.static(path.join(__dirname, 'public')));
 
-const DATA_FILE = path.join(__dirname, 'data', 'reportes.json');
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-/* =================================
-   CLIENTES DEL RADAR EN VIVO
-================================= */
+/* =========================
+   FRONTEND STATIC
+========================= */
 
-let radarClientes = [];
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-/* =================================
-   CANAL RADAR EN VIVO
-================================= */
+app.use(express.static(path.join(__dirname, "public")));
 
-app.get('/api/live', (req, res) => {
-
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-
-    res.flushHeaders();
-
-    radarClientes.push(res);
-
-    req.on('close', () => {
-        radarClientes = radarClientes.filter(c => c !== res);
-    });
-
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-/* =================================
-   ENVIAR EVENTO AL RADAR
-================================= */
+/* =========================
+   API REPORTES CON RANGO
+========================= */
 
-function emitirRadar(reporte){
+app.get("/api/reports", async (req, res) => {
+  const range = req.query.range || "24h";
 
-    const data = `data: ${JSON.stringify(reporte)}\n\n`;
+  let hours = 24;
 
-    radarClientes.forEach(cliente=>{
-        try{
-            cliente.write(data);
-        }catch{}
-    });
+  switch (range) {
+    case "7d": hours = 24 * 7; break;
+    case "1m": hours = 24 * 30; break;
+    case "3m": hours = 24 * 90; break;
+    case "6m": hours = 24 * 180; break;
+    case "9m": hours = 24 * 270; break;
+    case "1y": hours = 24 * 365; break;
+    default: hours = 24;
+  }
 
-}
+  const fromDate = new Date(Date.now() - hours * 60 * 60 * 1000);
 
-/* =================================
-   API DE REPORTES
-================================= */
+  const { data, error } = await supabase
+    .from("reportes")
+    .select("*")
+    .gte("created_at", fromDate.toISOString())
+    .order("created_at", { ascending: false });
 
-app.get('/api/reportes', (req, res) => {
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
 
-    let reportes = [];
-
-    if (fs.existsSync(DATA_FILE)) {
-        reportes = JSON.parse(fs.readFileSync(DATA_FILE));
-    }
-
-    const { tipo, usuario, vip } = req.query;
-
-    let filtrados = reportes;
-
-    if (tipo === 'ultimo_año') {
-
-        const hoy = new Date();
-        const unAñoAtras = new Date();
-        unAñoAtras.setFullYear(hoy.getFullYear() - 1);
-
-        filtrados = filtrados.filter(r => new Date(r.fecha) >= unAñoAtras);
-    }
-
-    if (vip !== 'true') {
-
-        filtrados = filtrados.map(r => {
-
-            if (r.usuario !== usuario) {
-
-                return {
-                    mensaje: r.mensaje,
-                    fecha: r.fecha,
-                    categoria: r.categoria,
-                    ciudad: r.ciudad,
-                    barrio: r.barrio,
-                    pais: r.pais
-                }
-
-            }
-
-            return r;
-
-        });
-
-    }
-
-    res.json(filtrados);
-
+  res.json(data || []);
 });
 
-/* =================================
-   GUARDAR REPORTE (EJEMPLO)
-   ESTE ENDPOINT EMITE AL RADAR
-================================= */
-
-app.post('/api/reportar', (req, res) => {
-
-    let reportes = [];
-
-    if (fs.existsSync(DATA_FILE)) {
-        reportes = JSON.parse(fs.readFileSync(DATA_FILE));
-    }
-
-    const nuevo = req.body;
-
-    reportes.push(nuevo);
-
-    fs.writeFileSync(DATA_FILE, JSON.stringify(reportes, null, 2));
-
-    /* ENVÍA EL REPORTE AL RADAR */
-    emitirRadar(nuevo);
-
-    res.json({ ok:true });
-
-});
-
-/* =================================
+/* =========================
    SERVER
-================================= */
+========================= */
 
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-    console.log(`Servidor corriendo en http://localhost:${PORT}`);
+  console.log("SERVER ON", PORT);
 });
+
+bot.launch();
+console.log("AIFUCITO ONLINE");
