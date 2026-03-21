@@ -8,61 +8,54 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
-  body {
-    margin: 0;
-    font-family: Arial;
-    background: #06130a;
-  }
+body {
+  margin: 0;
+  font-family: Arial;
+  background: #06130a;
+}
 
-  #map {
-    height: 100vh;
-    width: 100%;
-  }
+#map {
+  height: 100vh;
+  width: 100%;
+}
 
-  /* 🌐 PANEL IA */
-  .ia-panel {
-    position: fixed;
-    top: 10px;
-    left: 10px;
-    width: 260px;
-    background: rgba(0, 20, 10, 0.85);
-    border: 1px solid #00ff88;
-    border-radius: 10px;
-    padding: 10px;
-    color: #00ff88;
-    font-size: 12px;
-    z-index: 9999;
-  }
+/* PANEL IA */
+.ia-panel {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  width: 260px;
+  background: rgba(0, 20, 10, 0.85);
+  border: 1px solid #00ff88;
+  border-radius: 10px;
+  padding: 10px;
+  color: #00ff88;
+  font-size: 12px;
+  z-index: 9999;
+}
 
-  .title {
-    font-weight: bold;
-    margin-bottom: 6px;
-  }
+.title { font-weight: bold; margin-bottom: 6px; }
 
-  .status {
-    margin-bottom: 6px;
-  }
+.status { margin-bottom: 6px; }
 
-  /* 🔥 HEAT BAR */
-  .heat-bar {
-    height: 8px;
-    width: 100%;
-    background: linear-gradient(to right, #003300, #00ff88, #00ff00);
-    border-radius: 5px;
-    margin-top: 8px;
-  }
+.heat-bar {
+  height: 8px;
+  width: 100%;
+  background: linear-gradient(to right, #003300, #00ff88, #00ff00);
+  border-radius: 5px;
+  margin-top: 8px;
+}
 
-  /* 🛰 PANEL BOTTOM */
-  .bottom {
-    position: fixed;
-    bottom: 0;
-    width: 100%;
-    background: rgba(0,0,0,0.7);
-    color: #00ff88;
-    text-align: center;
-    padding: 8px;
-    font-size: 13px;
-  }
+.bottom {
+  position: fixed;
+  bottom: 0;
+  width: 100%;
+  background: rgba(0,0,0,0.7);
+  color: #00ff88;
+  text-align: center;
+  padding: 8px;
+  font-size: 13px;
+}
 </style>
 </head>
 
@@ -70,13 +63,12 @@
 
 <div id="map"></div>
 
-<!-- 🧠 IA PANEL -->
 <div class="ia-panel">
-  <div class="title">🧠 Aifucito IA</div>
+  <div class="title">Aifucito IA</div>
 
   <div class="status">Estado: ACTIVO</div>
-  <div class="status">Reportes hoy: <span id="hoy">10</span></div>
-  <div class="status">Densidad: <span id="densidad">MEDIA</span></div>
+  <div class="status">Reportes: <span id="hoy">0</span></div>
+  <div class="status">Densidad: <span id="densidad">BAJA</span></div>
 
   <div class="heat-bar"></div>
 
@@ -86,72 +78,59 @@
 </div>
 
 <div class="bottom">
-🛰️ Radar AIFU activo - monitoreo en tiempo real
+Radar AIFU activo
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
 
-// 🌍 MAPA
 const map = L.map('map').setView([-34.9, -56.2], 6);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 18
 }).addTo(map);
 
-// 🟢 COLORES SEGÚN DENSIDAD
-function color(r) {
-  return r > 10 ? "#00ff00" :
-         r > 5  ? "#66ff66" :
-                  "#00aa44";
+function color(n) {
+  return n > 10 ? "#00ff00" :
+         n > 5 ? "#66ff66" : "#00aa44";
 }
 
-// 📡 SIMULACIÓN REPORTES
 let reportes = [];
 
 async function cargar() {
 
-  const res = await fetch("reportes.json");
+  const res = await fetch("/api/reports");
   reportes = await res.json();
 
   reportes.forEach(r => {
-
     if (!r.lat || !r.lng) return;
 
-    const marker = L.circleMarker([r.lat, r.lng], {
+    L.circleMarker([r.lat, r.lng], {
       radius: 6,
-      color: color(r.intensidad || 1),
-      fillColor: color(r.intensidad || 1),
+      color: color(1),
+      fillColor: color(1),
       fillOpacity: 0.8
-    }).addTo(map);
-
-    marker.bindPopup(r.descripcion || "Avistamiento");
+    }).addTo(map).bindPopup(r.descripcion || "evento");
   });
 
-  actualizarIA();
-}
-
-function actualizarIA() {
-
-  const total = reportes.length;
-
-  document.getElementById("hoy").innerText = total;
+  document.getElementById("hoy").innerText = reportes.length;
 
   let densidad = "BAJA";
-
-  if (total > 20) densidad = "ALTA";
-  else if (total > 8) densidad = "MEDIA";
+  if (reportes.length > 20) densidad = "ALTA";
+  else if (reportes.length > 8) densidad = "MEDIA";
 
   document.getElementById("densidad").innerText = densidad;
 
   if (densidad === "ALTA") {
     document.getElementById("alerta").innerText =
-      "🚨 Actividad elevada detectada";
+      "Actividad elevada detectada";
   }
 }
 
 cargar();
+
+setInterval(cargar, 10000);
 
 </script>
 
