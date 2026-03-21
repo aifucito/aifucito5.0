@@ -24,7 +24,7 @@ body {
   position: fixed;
   top: 10px;
   left: 10px;
-  width: 290px;
+  width: 300px;
   background: rgba(0, 20, 10, 0.85);
   border: 1px solid #00ff88;
   border-radius: 10px;
@@ -34,23 +34,12 @@ body {
   z-index: 9999;
 }
 
-.heat-bar {
-  height: 8px;
+select {
   width: 100%;
-  background: linear-gradient(to right, #003300, #00ff88, #00ff00);
-  border-radius: 5px;
   margin-top: 8px;
-}
-
-.bottom {
-  position: fixed;
-  bottom: 0;
-  width: 100%;
-  background: rgba(0,0,0,0.7);
+  background: black;
   color: #00ff88;
-  text-align: center;
-  padding: 8px;
-  font-size: 13px;
+  border: 1px solid #00ff88;
 }
 
 .push-alert {
@@ -74,26 +63,26 @@ body {
 <div id="map"></div>
 
 <div class="ia-panel">
-  <div><b>Aifucito IA • NEXUS</b></div>
+  <b>AIFU Radar AI LIVE</b>
 
   <div>Reportes: <span id="count">0</span></div>
   <div>Densidad: <span id="densidad">BAJA</span></div>
-  <div>Predicción: <span id="prediccion">ESTABLE</span></div>
-  <div>Anomalía global: <span id="anomalia">NO</span></div>
 
-  <div class="heat-bar"></div>
-
-  <div id="alerta" style="margin-top:8px;color:#7CFFB2;">
-    Sin anomalías
-  </div>
+  <div style="margin-top:8px;">Rango:</div>
+  <select id="range" onchange="loadData()">
+    <option value="24h">24 horas</option>
+    <option value="7d">7 días</option>
+    <option value="1m">1 mes</option>
+    <option value="3m">3 meses</option>
+    <option value="6m">6 meses</option>
+    <option value="9m">9 meses</option>
+    <option value="1y">1 año</option>
+  </select>
 </div>
 
 <div class="push-alert" id="push"></div>
 
-<div class="bottom">RADAR AIFU AI LIVE</div>
-
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <script>
 
@@ -103,206 +92,81 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 18
 }).addTo(map);
 
-let markersLayer = L.layerGroup().addTo(map);
-let heatLayer = L.heatLayer([], { radius: 25, blur: 18 }).addTo(map);
+let markers = L.layerGroup().addTo(map);
+let heat = L.heatLayer([], { radius: 25, blur: 18 }).addTo(map);
 
 let reportes = [];
 
 /* =========================
-   SONIDO CRÍTICO
+   PUSH
 ========================= */
 
-const audio = new Audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg");
-
-/* =========================
-   PUSH ALERT
-========================= */
-
-function push(msg, critical=false) {
+function push(msg) {
   const el = document.getElementById("push");
   el.innerText = msg;
   el.style.display = "block";
 
-  if (critical) audio.play();
-
   setTimeout(() => {
     el.style.display = "none";
-  }, 5000);
+  }, 4000);
 }
 
 /* =========================
-   COLOR
+   LOAD DATA
 ========================= */
 
-function color(n) {
-  return n > 10 ? "#00ff00" :
-         n > 5 ? "#66ff66" : "#00aa44";
+async function loadData() {
+
+  const range = document.getElementById("range").value;
+
+  const res = await fetch(`/api/reports?range=${range}`);
+  reportes = await res.json();
+
+  render();
 }
 
 /* =========================
-   PREDICCIÓN SIMPLE
-========================= */
-
-function calcularPrediccion() {
-
-  const total = reportes.length;
-
-  if (total > 25) return "ALTA ACTIVIDAD";
-  if (total > 12) return "ACTIVIDAD EN AUMENTO";
-  return "ESTABLE";
-}
-
-/* =========================
-   ANOMALÍA GLOBAL
-========================= */
-
-function detectarAnomalia() {
-
-  const total = reportes.length;
-
-  const critico = total > 30;
-
-  return critico;
-}
-
-/* =========================
-   ZONA CALIENTE
-========================= */
-
-function getZonaCaliente() {
-
-  if (reportes.length === 0) return null;
-
-  let max = {};
-
-  reportes.forEach(r => {
-    const key = `${Math.round(r.lat)}_${Math.round(r.lng)}`;
-    max[key] = (max[key] || 0) + 1;
-  });
-
-  let top = null;
-  let maxVal = 0;
-
-  for (let k in max) {
-    if (max[k] > maxVal) {
-      maxVal = max[k];
-      top = k;
-    }
-  }
-
-  if (!top) return null;
-
-  const [lat, lng] = top.split("_").map(Number);
-
-  return { lat, lng, value: maxVal };
-}
-
-/* =========================
-   RENDER
+   RENDER MAPA
 ========================= */
 
 function render() {
 
-  markersLayer.clearLayers();
+  markers.clearLayers();
 
-  let heat = [];
+  let heatData = [];
 
   reportes.forEach(r => {
 
     if (!r.lat || !r.lng) return;
 
-    markersLayer.addLayer(
+    markers.addLayer(
       L.circleMarker([r.lat, r.lng], {
-        radius: 6,
-        color: color(1),
-        fillColor: color(1),
-        fillOpacity: 0.8
-      }).bindPopup(`${r.tipo}<br/>${r.descripcion}`)
+        radius: 5,
+        color: "#00ff88",
+        fillColor: "#00ff88",
+        fillOpacity: 0.7
+      }).bindPopup(r.descripcion || "evento")
     );
 
-    heat.push([r.lat, r.lng, 0.7]);
+    heatData.push([r.lat, r.lng, 0.6]);
   });
 
-  heatLayer.setLatLngs(heat);
+  heat.setLatLngs(heatData);
 
   document.getElementById("count").innerText = reportes.length;
 
-  const dens = reportes.length > 20 ? "ALTA" :
-               reportes.length > 8 ? "MEDIA" : "BAJA";
+  let dens = "BAJA";
+  if (reportes.length > 20) dens = "ALTA";
+  else if (reportes.length > 8) dens = "MEDIA";
 
   document.getElementById("densidad").innerText = dens;
-
-  const pred = calcularPrediccion();
-  document.getElementById("prediccion").innerText = pred;
-
-  const anom = detectarAnomalia();
-  document.getElementById("anomalia").innerText = anom ? "SI" : "NO";
-
-  document.getElementById("alerta").innerText =
-    anom ? "ANOMALÍA GLOBAL DETECTADA" : "Sin anomalías";
-
-  /* 🔴 ZOOM AUTOMÁTICO A ZONA CALIENTE */
-  const hot = getZonaCaliente();
-
-  if (hot && hot.value > 5) {
-    map.setView([hot.lat, hot.lng], 8, {
-      animate: true
-    });
-
-    push("Zona caliente detectada", true);
-  }
-
-  /* 🔊 ALERTA CRÍTICA */
-  if (anom) {
-    push("ALERTA GLOBAL CRÍTICA", true);
-  }
-}
-
-/* =========================
-   LOAD
-========================= */
-
-async function load() {
-  const res = await fetch("/api/reports?range=24h");
-  reportes = await res.json();
-  render();
-}
-
-/* =========================
-   SUPABASE LIVE
-========================= */
-
-function live() {
-
-  const supabase = window.supabase.createClient(
-    "TU_SUPABASE_URL",
-    "TU_SUPABASE_KEY"
-  );
-
-  supabase.channel('aifu-live')
-    .on('postgres_changes', {
-      event: 'INSERT',
-      schema: 'public',
-      table: 'reportes'
-    }, (payload) => {
-
-      reportes.push(payload.new);
-
-      render();
-
-      push(`Nuevo evento: ${payload.new.tipo} (${payload.new.pais})`,
-        payload.new.precision > 2
-      );
-    })
-    .subscribe();
 }
 
 /* =========================
    INIT
 ========================= */
 
-load();
-live();
+loadData();
 
 </script>
 
