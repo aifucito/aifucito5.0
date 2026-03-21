@@ -7,7 +7,7 @@ import { fileURLToPath } from "url";
 import { createClient } from "@supabase/supabase-js";
 
 /* ===============================
-    CONFIGURACIÓN TÁCTICA
+    CONFIGURACIÓN
 ================================ */
 const TOKEN = process.env.BOT_TOKEN;
 const ADMIN_ID = "7662736311";
@@ -31,6 +31,12 @@ const supabase = createClient(
 const bot = new Telegraf(TOKEN);
 bot.use(session());
 
+// FIX sesión segura
+bot.use((ctx, next) => {
+  if (!ctx.session) ctx.session = {};
+  return next();
+});
+
 const app = express();
 app.use(express.json());
 
@@ -40,7 +46,7 @@ const __dirname = path.dirname(__filename);
 app.use(express.static(path.join(__dirname, "public")));
 
 /* ===============================
-    BASE LOCAL (SE MANTIENE)
+    BASE LOCAL (BACKUP)
 ================================ */
 const DB_FILE = "usuarios.json";
 const LOG_FILE = "public/reportes.json";
@@ -96,7 +102,7 @@ async function getUserDB(id, name) {
 }
 
 /* ===============================
-    RANGOS Y PAÍS
+    RANGOS
 ================================ */
 function obtenerRango(user) {
   if (user.rol === "admin") return "👑 Comandante Intergaláctico";
@@ -117,33 +123,28 @@ function detectarPais(lat, lon) {
 }
 
 /* ===============================
-    TEST SUPABASE
+    TEST DB
 ================================ */
 bot.command("testdb", async (ctx) => {
-  const { error } = await supabase
-    .from("usuarios")
-    .insert({
-      id: ctx.from.id.toString(),
-      nombre: ctx.from.first_name,
-      rol: "test",
-      reportes: 0
-    });
+  const { error } = await supabase.from("usuarios").insert({
+    id: ctx.from.id.toString(),
+    nombre: ctx.from.first_name,
+    rol: "test",
+    reportes: 0
+  });
 
-  if (error) {
-    console.error(error);
-    return ctx.reply("❌ Error con Supabase");
-  }
-
+  if (error) return ctx.reply("❌ Error Supabase");
   ctx.reply("✅ Supabase funcionando");
 });
 
 /* ===============================
-    BOT
+    START
 ================================ */
 bot.start((ctx) => {
   if (ctx.chat.type !== "private") return;
+
   ctx.reply(
-    "🛰️ HOLA! SOY AIFUCITO... Hablá bajo...",
+    "🛰️ HOLA! SOY AIFUCITO...",
     Markup.keyboard([
       [Markup.button.locationRequest("📍 Enviar ubicación")],
       ["📡 Reportar", "📊 Ver reportes"],
@@ -152,24 +153,65 @@ bot.start((ctx) => {
   );
 });
 
-bot.hears("📡 Reportar", (ctx) =>
-  ctx.reply("📍 Tocá el botón de arriba para enviar tu ubicación automáticamente")
-);
+/* ===============================
+    FLUJO PRO
+================================ */
+
+// Paso 1: tipo
+bot.hears("📡 Reportar", (ctx) => {
+  ctx.session.step = "tipo";
+
+  ctx.reply(
+    "🛸 ¿Qué tipo de avistamiento viste?",
+    Markup.keyboard([
+      ["💡 Luz", "🛸 Objeto"],
+      ["👤 Entidad", "❓ Otro"]
+    ]).resize()
+  );
+});
+
+// Paso 2: guardar tipo
+bot.hears(["💡 Luz", "🛸 Objeto", "👤 Entidad", "❓ Otro"], (ctx) => {
+  if (ctx.session.step !== "tipo") return;
+
+  ctx.session.tipo = ctx.message.text;
+  ctx.session.step = "descripcion";
+
+  ctx.reply("✍️ Describí lo que viste:");
+});
+
+// Paso 3: descripción
+bot.on("text", (ctx, next) => {
+  if (ctx.session.step === "descripcion") {
+    ctx.session.descripcion = ctx.message.text;
+    ctx.session.step = "ubicacion";
+
+    return ctx.reply(
+      "📍 Ahora enviá tu ubicación",
+      Markup.keyboard([
+        [Markup.button.locationRequest("📍 Enviar ubicación")]
+      ]).resize()
+    );
+  }
+  return next();
+});
 
 /* ===============================
-    UBICACIÓN (SUPABASE + BACKUP)
+    UBICACIÓN PRO
 ================================ */
 bot.on("location", async (ctx) => {
   const localUser = getUser(ctx.from.id, ctx.from.first_name);
   const dbUser = await getUserDB(ctx.from.id, ctx.from.first_name);
 
-  const { latitude, longitude } = ctx.message.location;
+  const { latitude, longitude, accuracy } = ctx.message.location;
+
+  const tipo = ctx.session.tipo || "No especificado";
+  const descripcion = ctx.session.descripcion || "Sin descripción";
+  const pais = detectarPais(latitude, longitude);
 
   // LOCAL
   localUser.reportes++;
-  if (!localUser.pais) {
-    localUser.pais = detectarPais(latitude, longitude);
-  }
+  if (!localUser.pais) localUser.pais = pais;
   save();
 
   // SUPABASE
@@ -183,22 +225,37 @@ bot.on("location", async (ctx) => {
     lng: longitude,
     user: ctx.from.first_name,
     rango: obtenerRango(dbUser),
+    tipo,
+    descripcion,
+    precision: accuracy || 0,
+    pais,
     ts: Date.now()
   };
 
-  // GUARDAR EN SUPABASE
+  // DB
   await supabase.from("reportes").insert({
     user_id: ctx.from.id.toString(),
     lat: latitude,
     lng: longitude,
-    rango: data.rango
+    rango: data.rango,
+    tipo: data.tipo,
+    descripcion: data.descripcion,
+    precision: data.precision,
+    pais: data.pais
   });
 
   // RADAR
-  const texto = `🛸 AVISTAMIENTO\n👤 ${data.user}\n🎖️ ${data.rango}\n📍 ${data.lat}, ${data.lng}\n🌎 ${localUser.pais}`;
-  await ctx.telegram.sendMessage(RADAR_CONO_SUR, texto);
+  const texto = `🛸 AVISTAMIENTO
 
-  // BACKUP CANAL
+👤 ${data.user}
+🎖️ ${data.rango}
+📌 Tipo: ${data.tipo}
+📝 ${data.descripcion}
+📍 ${data.lat}, ${data.lng}
+🎯 Precisión: ${data.precision}m
+🌎 ${data.pais}`;
+
+  await ctx.telegram.sendMessage(RADAR_CONO_SUR, texto);
   await ctx.telegram.sendMessage(BACKUP_CANAL, JSON.stringify(data));
 
   // BACKUP LOCAL
@@ -209,7 +266,9 @@ bot.on("location", async (ctx) => {
   reportes.push(data);
   fs.writeFileSync(LOG_FILE, JSON.stringify(reportes, null, 2));
 
-  ctx.reply(`📡 Reporte procesado, ${data.rango}`);
+  ctx.session = {};
+
+  ctx.reply("✅ Reporte completo enviado");
 });
 
 /* ===============================
@@ -243,7 +302,7 @@ bot.hears("🗺️ Ver mapa", (ctx) => {
     ERRORES
 ================================ */
 bot.catch((err) => {
-  console.error("🔥 ERROR GLOBAL:", err);
+  console.error("🔥 ERROR:", err);
 });
 
 /* ===============================
