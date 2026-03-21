@@ -143,7 +143,7 @@ bot.command("testdb", async (ctx) => {
 bot.start((ctx) => {
   if (ctx.chat.type !== "private") return;
   ctx.reply(
-    "🛰️ AIFU activo... Hablá bajo...",
+    "🛰️ HOLA! SOY AIFUCITO... Hablá bajo...",
     Markup.keyboard([
       [Markup.button.locationRequest("📍 Enviar ubicación")],
       ["📡 Reportar", "📊 Ver reportes"],
