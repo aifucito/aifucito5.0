@@ -1,11 +1,7 @@
 import "dotenv/config";
 import { Telegraf, Markup, session } from "telegraf";
-import express from "express";
-import cors from "cors";
 import axios from "axios";
 import { createClient } from "@supabase/supabase-js";
-import path from "path";
-import { fileURLToPath } from "url";
 
 /* =========================
    CONFIG
@@ -25,31 +21,13 @@ const CHANNEL_AR = process.env.CHANNEL_AR;
 const CHANNEL_CL = process.env.CHANNEL_CL;
 
 const bot = new Telegraf(BOT_TOKEN);
-const app = express();
-
-app.use(cors());
-app.use(express.json());
-
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-
-/* =========================
-   FRONTEND
-========================= */
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-app.use(express.static(path.join(__dirname, "public")));
-
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
 
 /* =========================
    SESSION
 ========================= */
 
-bot.use(session({ defaultSession: () => ({}) }));
+bot.use(session());
 
 /* =========================
    RANGO
@@ -64,7 +42,7 @@ function obtenerRango(user) {
   if (r >= 20) return "casi te busca la CRIDOVNI";
   if (r >= 10) return "👽 Guardaespalda de Alf";
   if (r >= 5) return "🧉 Cebador de mate del Área 51";
-  return "🧹 Fajinador de retretes espaciales";
+  return "🧹 Fajinador de retretos espaciales";
 }
 
 /* =========================
@@ -81,7 +59,7 @@ function menu() {
 }
 
 /* =========================
-   USUARIO
+   USUARIO (SAFE)
 ========================= */
 
 async function ensureUser(ctx) {
@@ -91,7 +69,7 @@ async function ensureUser(ctx) {
     .from("usuarios")
     .select("*")
     .eq("id", id)
-    .single();
+    .maybeSingle();
 
   if (data) return data;
 
@@ -117,13 +95,12 @@ async function saveReport(ctx, report) {
       user_id: String(ctx.from.id),
       lat: report.lat,
       lng: report.lng,
-      rango: report.rango || 1.0,
+      rango: report.rango || 1,
       tipo: report.tipo || "avistamiento",
       descripcion: report.descripcion,
-      precision: report.precision || 1.0,
+      precision: report.precision || 1,
       pais: report.pais || "GLOBAL",
-      alerta_generada: false
-      // created_at lo maneja Supabase (now())
+      alerta_generada: false,
     },
   ]);
 
@@ -131,7 +108,7 @@ async function saveReport(ctx, report) {
     .from("usuarios")
     .select("reportes")
     .eq("id", String(ctx.from.id))
-    .single();
+    .maybeSingle();
 
   await supabase
     .from("usuarios")
@@ -189,7 +166,7 @@ async function enviarAlerta(pais, mensaje) {
     if (!c) continue;
 
     await bot.telegram.sendMessage(c, "🚨 ALERTA AIFU\n\n" + mensaje)
-      .catch(e => console.log(e.message));
+      .catch(() => {});
   }
 }
 
@@ -220,12 +197,12 @@ bot.hears("👤 Perfil", async (ctx) => {
     .from("usuarios")
     .select("*")
     .eq("id", String(ctx.from.id))
-    .single();
+    .maybeSingle();
 
   ctx.reply(
 `👤 Perfil
 
-Nombre: ${data?.nombre}
+Nombre: ${data?.nombre || "-"}
 Reportes: ${data?.reportes || 0}
 Rango: ${obtenerRango(data || {})}`
   );
@@ -250,35 +227,43 @@ bot.hears("🗺 Mapa", (ctx) => {
 ========================= */
 
 bot.on("text", async (ctx) => {
+  const text = ctx.message.text;
 
+  /* IA */
   if (ctx.session?.mode === "ia") {
-    const r = await llamarGemini(ctx.message.text);
+    const r = await llamarGemini(text);
     ctx.reply(r);
     ctx.session.mode = null;
     return;
   }
 
-  // 📍 lat,lng,pais
-  if (ctx.message.text.includes(",")) {
-    const parts = ctx.message.text.split(",");
+  /* COORDENADAS */
+  if (text.includes(",")) {
+    const parts = text.split(",");
 
-    ctx.session.lat = parseFloat(parts[0]);
-    ctx.session.lng = parseFloat(parts[1]);
-    ctx.session.pais = parts[2] || "GLOBAL";
+    const lat = parseFloat(parts[0]);
+    const lng = parseFloat(parts[1]);
+    const pais = parts[2] || "GLOBAL";
+
+    if (isNaN(lat) || isNaN(lng)) {
+      return ctx.reply("Formato inválido. Usa: lat,lng,pais");
+    }
+
+    ctx.session.lat = lat;
+    ctx.session.lng = lng;
+    ctx.session.pais = pais;
     ctx.session.step = "desc";
 
     return ctx.reply("Describe el fenómeno:");
   }
 
+  /* DESCRIPCIÓN */
   if (ctx.session?.step === "desc") {
-
     const report = {
       lat: ctx.session.lat,
       lng: ctx.session.lng,
-      descripcion: ctx.message.text,
+      descripcion: text,
       pais: ctx.session.pais,
-      rango: 1.0,
-      precision: 1.0
     };
 
     await saveReport(ctx, report);
@@ -295,23 +280,8 @@ bot.on("text", async (ctx) => {
 });
 
 /* =========================
-   API MAPA
+   BOT START
 ========================= */
-
-app.get("/api/reports", async (req, res) => {
-  const { data } = await supabase.from("reportes").select("*");
-  res.json(data || []);
-});
-
-/* =========================
-   SERVER
-========================= */
-
-const PORT = process.env.PORT;
-
-app.listen(PORT, () => {
-  console.log("SERVER ON", PORT);
-});
 
 bot.launch();
 console.log("AIFUCITO ONLINE");
