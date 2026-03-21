@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { Telegraf, Markup, session } from "telegraf";
 import axios from "axios";
+import express from "express";
 import { createClient } from "@supabase/supabase-js";
 
 /* =========================
@@ -22,6 +23,22 @@ const CHANNEL_CL = process.env.CHANNEL_CL;
 
 const bot = new Telegraf(BOT_TOKEN);
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+/* =========================
+   EXPRESS (OBLIGATORIO RENDER)
+========================= */
+
+const app = express();
+
+app.get("/", (req, res) => {
+  res.send("AIFUCITO ONLINE OK");
+});
+
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log("Servidor activo en puerto", PORT);
+});
 
 /* =========================
    SESSION
@@ -229,7 +246,6 @@ bot.hears("🗺 Mapa", (ctx) => {
 bot.on("text", async (ctx) => {
   const text = ctx.message.text;
 
-  /* IA */
   if (ctx.session?.mode === "ia") {
     const r = await llamarGemini(text);
     ctx.reply(r);
@@ -237,7 +253,6 @@ bot.on("text", async (ctx) => {
     return;
   }
 
-  /* COORDENADAS */
   if (text.includes(",")) {
     const parts = text.split(",");
 
@@ -257,7 +272,6 @@ bot.on("text", async (ctx) => {
     return ctx.reply("Describe el fenómeno:");
   }
 
-  /* DESCRIPCIÓN */
   if (ctx.session?.step === "desc") {
     const report = {
       lat: ctx.session.lat,
