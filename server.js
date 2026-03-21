@@ -1,29 +1,26 @@
 import "dotenv/config";
-import { Telegraf, session } from "telegraf";
 import express from "express";
 import cors from "cors";
-import { createClient } from "@supabase/supabase-js";
 import path from "path";
 import { fileURLToPath } from "url";
+import { createClient } from "@supabase/supabase-js";
 
 /* =========================
    CONFIG
 ========================= */
 
-const BOT_TOKEN = process.env.BOT_TOKEN;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_KEY;
 
-const bot = new Telegraf(BOT_TOKEN);
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-
 /* =========================
-   FRONTEND STATIC
+   FRONTEND (PUBLIC)
 ========================= */
 
 const __filename = fileURLToPath(import.meta.url);
@@ -36,7 +33,7 @@ app.get("/", (req, res) => {
 });
 
 /* =========================
-   API REPORTES CON RANGO
+   API REPORTES (FILTRO REAL)
 ========================= */
 
 app.get("/api/reports", async (req, res) => {
@@ -45,13 +42,26 @@ app.get("/api/reports", async (req, res) => {
   let hours = 24;
 
   switch (range) {
-    case "7d": hours = 24 * 7; break;
-    case "1m": hours = 24 * 30; break;
-    case "3m": hours = 24 * 90; break;
-    case "6m": hours = 24 * 180; break;
-    case "9m": hours = 24 * 270; break;
-    case "1y": hours = 24 * 365; break;
-    default: hours = 24;
+    case "7d":
+      hours = 24 * 7;
+      break;
+    case "1m":
+      hours = 24 * 30;
+      break;
+    case "3m":
+      hours = 24 * 90;
+      break;
+    case "6m":
+      hours = 24 * 180;
+      break;
+    case "9m":
+      hours = 24 * 270;
+      break;
+    case "1y":
+      hours = 24 * 365;
+      break;
+    default:
+      hours = 24;
   }
 
   const fromDate = new Date(Date.now() - hours * 60 * 60 * 1000);
@@ -70,14 +80,19 @@ app.get("/api/reports", async (req, res) => {
 });
 
 /* =========================
-   SERVER
+   HEALTH CHECK (RENDER)
+========================= */
+
+app.get("/health", (req, res) => {
+  res.json({ status: "ok" });
+});
+
+/* =========================
+   START SERVER
 ========================= */
 
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log("SERVER ON", PORT);
+  console.log("SERVER ON PORT", PORT);
 });
-
-bot.launch();
-console.log("AIFUCITO ONLINE");
