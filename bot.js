@@ -14,9 +14,8 @@ const SUPABASE_KEY = process.env.SUPABASE_KEY;
 const ADMIN_ID = process.env.ADMIN_ID;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
 
-/* 📡 CANALES */
-const CHANNEL_CONO_SUR = process.env.CHANNEL_CONO_SUR;
 const CHANNEL_GLOBAL = process.env.CHANNEL_GLOBAL;
+const CHANNEL_CONO_SUR = process.env.CHANNEL_CONO_SUR;
 const CHANNEL_UY = process.env.CHANNEL_UY;
 const CHANNEL_AR = process.env.CHANNEL_AR;
 const CHANNEL_CL = process.env.CHANNEL_CL;
@@ -25,49 +24,37 @@ const bot = new Telegraf(BOT_TOKEN);
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 /* =========================
-   EXPRESS (RENDER FIX)
+   EXPRESS (RENDER)
 ========================= */
 
 const app = express();
-
-app.get("/", (req, res) => {
-  res.send("AIFUCITO ONLINE OK");
-});
-
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, "0.0.0.0", () => {
-  console.log("Servidor activo en puerto", PORT);
-});
+app.get("/", (_, res) => res.send("AIFUCITO ONLINE OK"));
+app.listen(process.env.PORT || 3000, "0.0.0.0");
 
 /* =========================
-   SESSION SAFE
+   SESSION
 ========================= */
 
 bot.use(session());
 bot.use((ctx, next) => {
-  ctx.session = ctx.session || {};
+  ctx.session ||= {};
   return next();
 });
 
 /* =========================
-   RANGO
+   ESTADOS
 ========================= */
 
-function obtenerRango(user = {}) {
-  if (String(user?.id) === String(ADMIN_ID))
-    return "👑 Comandante Intergaláctico";
-
-  const r = user?.reportes || 0;
-
-  if (r >= 20) return "casi te busca la CRIDOVNI";
-  if (r >= 10) return "👽 Guardaespalda de Alf";
-  if (r >= 5) return "🧉 Cebador de mate del Área 51";
-  return "🧹 Fajinador de retretes espaciales";
-}
+const STATE = {
+  IDLE: "idle",
+  WAIT_GPS: "wait_gps",
+  WAIT_DESC: "wait_desc",
+  IA: "ia",
+  CONFIRM: "confirm"
+};
 
 /* =========================
-   MENU
+   UTIL
 ========================= */
 
 function menu() {
@@ -75,50 +62,51 @@ function menu() {
     ["📍 Reportar"],
     ["🗺 Mapa"],
     ["🤖 Aifucito"],
-    ["👤 Perfil"],
+    ["👤 Perfil"]
   ]).resize();
 }
 
+function rango(user = {}) {
+  if (String(user?.id) === String(ADMIN_ID))
+    return "👑 Comandante Intergaláctico";
+
+  const r = user?.reportes || 0;
+
+  if (r >= 20) return "CRIDOVNI";
+  if (r >= 10) return "Guardaespaldas OVNI";
+  if (r >= 5) return "Cebador cósmico";
+  return "Observador inicial";
+}
+
 /* =========================
-   GEO REAL (NOMINATIM)
+   GEO
 ========================= */
 
 async function reverseGeo(lat, lng) {
   try {
-    const res = await axios.get(
+    const r = await axios.get(
       "https://nominatim.openstreetmap.org/reverse",
       {
-        params: {
-          format: "json",
-          lat,
-          lon: lng,
-        },
-        headers: {
-          "User-Agent": "AIFUCITO-BOT"
-        }
+        params: { format: "json", lat, lon: lng },
+        headers: { "User-Agent": "AIFUCITO" },
+        timeout: 8000
       }
     );
 
-    const a = res.data?.address || {};
+    const a = r.data?.address || {};
 
     return {
       pais: a.country_code?.toUpperCase() || "GLOBAL",
       ciudad: a.city || a.town || a.village || "Desconocido",
-      localidad: a.suburb || a.neighbourhood || "Desconocido",
-      full: res.data?.display_name || ""
+      localidad: a.suburb || a.neighbourhood || "Desconocido"
     };
   } catch {
-    return {
-      pais: "GLOBAL",
-      ciudad: "Desconocido",
-      localidad: "Desconocido",
-      full: ""
-    };
+    return { pais: "GLOBAL", ciudad: "N/A", localidad: "N/A" };
   }
 }
 
 /* =========================
-   USUARIO
+   SUPABASE USER
 ========================= */
 
 async function ensureUser(ctx) {
@@ -132,108 +120,61 @@ async function ensureUser(ctx) {
 
   if (data) return data;
 
-  const newUser = {
+  const user = {
     id,
     nombre: ctx.from.username || ctx.from.first_name,
-    rol: id === String(ADMIN_ID) ? "admin" : "user",
     reportes: 0,
+    rol: id === String(ADMIN_ID) ? "admin" : "user"
   };
 
-  await supabase.from("usuarios").insert([newUser]);
+  await supabase.from("usuarios").insert([user]);
 
-  return newUser;
+  return user;
 }
 
 /* =========================
-   GUARDAR REPORTE + BACKUP
+   GEMINI
 ========================= */
 
-async function saveReport(ctx, report) {
-  await supabase.from("reportes").insert([
-    {
-      user_id: String(ctx.from.id),
-      lat: report.lat,
-      lng: report.lng,
-      rango: 1,
-      tipo: "avistamiento",
-      descripcion: report.descripcion,
-      precision: 1,
-      pais: report.pais,
-      ciudad: report.ciudad,
-      localidad: report.localidad,
-      alerta_generada: false,
-    },
-  ]);
-
-  const { data } = await supabase
-    .from("usuarios")
-    .select("reportes")
-    .eq("id", String(ctx.from.id))
-    .maybeSingle();
-
-  await supabase
-    .from("usuarios")
-    .update({ reportes: (data?.reportes || 0) + 1 })
-    .eq("id", String(ctx.from.id));
-
-  /* BACKUP TELEGRAM */
-  await bot.telegram.sendMessage(
-    CHANNEL_GLOBAL,
-    JSON.stringify(report, null, 2)
-  ).catch(() => {});
-}
-
-/* =========================
-   GEMINI IA
-========================= */
-
-async function llamarGemini(text) {
+async function gemini(text) {
   try {
-    const res = await axios.post(
+    const r = await axios.post(
       "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent",
       {
-        contents: [{
-          parts: [{ text: "Aifucito IA:\n" + text }]
-        }]
+        contents: [{ parts: [{ text }] }]
       },
-      { params: { key: GEMINI_KEY } }
+      { params: { key: GEMINI_KEY }, timeout: 10000 }
     );
 
-    return res.data?.candidates?.[0]?.content?.parts?.[0]?.text || "sin respuesta IA";
+    return r.data?.candidates?.[0]?.content?.parts?.[0]?.text || "sin respuesta";
   } catch {
     return "error IA";
   }
 }
 
 /* =========================
-   CANALES
+   GUARDAR
 ========================= */
 
-function getChannels(pais) {
-  const p = (pais || "").toUpperCase();
-
-  let canales = [CHANNEL_CONO_SUR];
-
-  if (p === "UY") canales.push(CHANNEL_UY);
-  else if (p === "AR") canales.push(CHANNEL_AR);
-  else if (p === "CL") canales.push(CHANNEL_CL);
-  else canales.push(CHANNEL_GLOBAL);
-
-  return [...new Set(canales)];
+async function save(report) {
+  await supabase.from("reportes").insert([report]);
 }
 
 /* =========================
-   ALERTAS
+   ALERTA
 ========================= */
 
-async function enviarAlerta(pais, mensaje) {
-  const canales = getChannels(pais);
+async function alert(pais, msg) {
+  const channels = [CHANNEL_CONO_SUR];
 
-  for (const c of canales) {
+  if (pais === "UY") channels.push(CHANNEL_UY);
+  else if (pais === "AR") channels.push(CHANNEL_AR);
+  else if (pais === "CL") channels.push(CHANNEL_CL);
+  else channels.push(CHANNEL_GLOBAL);
+
+  for (const c of channels) {
     if (!c) continue;
-
-    await bot.telegram.sendMessage(c, "🚨 ALERTA AIFU\n\n" + mensaje)
-      .catch(() => {});
+    await bot.telegram.sendMessage(c, "🚨 AIFU\n\n" + msg).catch(() => {});
   }
 }
 
@@ -243,16 +184,8 @@ async function enviarAlerta(pais, mensaje) {
 
 bot.start(async (ctx) => {
   await ensureUser(ctx);
-  ctx.reply("🛰 Aifucito activo", menu());
-});
-
-/* =========================
-   IA MODE
-========================= */
-
-bot.hears("🤖 Aifucito", (ctx) => {
-  ctx.session.mode = "ia";
-  ctx.reply("Escribe consulta");
+  ctx.session.state = STATE.IDLE;
+  ctx.reply("Sistema activo", menu());
 });
 
 /* =========================
@@ -267,11 +200,10 @@ bot.hears("👤 Perfil", async (ctx) => {
     .maybeSingle();
 
   ctx.reply(
-`👤 Perfil
-
-Nombre: ${data?.nombre || "-"}
-Reportes: ${data?.reportes || 0}
-Rango: ${obtenerRango(data)}`
+`Perfil:
+Nombre: ${data?.nombre}
+Reportes: ${data?.reportes}
+Rango: ${rango(data)}`
   );
 });
 
@@ -280,27 +212,25 @@ Rango: ${obtenerRango(data)}`
 ========================= */
 
 bot.hears("🗺 Mapa", (ctx) => {
-  ctx.reply("Radar activo", {
+  ctx.reply("Mapa activo", {
     reply_markup: {
       inline_keyboard: [
-        [{ text: "Abrir mapa", url: "https://aifucito5-0.onrender.com" }]
+        [{ text: "Abrir", url: "https://aifucito5-0.onrender.com" }]
       ]
     }
   });
 });
 
 /* =========================
-   REPORTAR GPS
+   REPORTAR (GPS OBLIGATORIO)
 ========================= */
 
 bot.hears("📍 Reportar", (ctx) => {
-  ctx.session.step = "gps";
+  ctx.session.state = STATE.WAIT_GPS;
 
-  ctx.reply("Envía tu ubicación GPS:", {
+  ctx.reply("OBLIGATORIO: envía ubicación GPS", {
     reply_markup: {
-      keyboard: [
-        [{ text: "📡 Enviar GPS", request_location: true }]
-      ],
+      keyboard: [[{ text: "📡 Enviar GPS", request_location: true }]],
       resize_keyboard: true,
       one_time_keyboard: true
     }
@@ -308,63 +238,116 @@ bot.hears("📍 Reportar", (ctx) => {
 });
 
 /* =========================
-   LOCATION
+   LOCATION ONLY
 ========================= */
 
 bot.on("location", (ctx) => {
-  if (ctx.session.step !== "gps") return;
+  if (ctx.session.state !== STATE.WAIT_GPS) return;
 
   ctx.session.lat = ctx.message.location.latitude;
   ctx.session.lng = ctx.message.location.longitude;
-  ctx.session.step = "desc";
+  ctx.session.state = STATE.WAIT_DESC;
 
-  ctx.reply("Ubicación recibida. Describe el fenómeno:");
+  ctx.reply("Describe el evento (mínimo 20 caracteres)");
 });
 
 /* =========================
-   FLUJO TEXTO
+   TEXT FLOW
 ========================= */
 
 bot.on("text", async (ctx) => {
   const text = ctx.message.text;
 
-  if (ctx.session.mode === "ia") {
-    const r = await llamarGemini(text);
+  if (ctx.session.state === STATE.IA) {
+    const r = await gemini(text);
     ctx.reply(r);
-    ctx.session.mode = null;
+    ctx.session.state = STATE.IDLE;
     return;
   }
 
-  if (ctx.session.step === "desc") {
+  if (ctx.session.state === STATE.WAIT_DESC) {
+
+    if (text.length < 20)
+      return ctx.reply("Mínimo 20 caracteres");
 
     const geo = await reverseGeo(ctx.session.lat, ctx.session.lng);
 
-    const report = {
+    ctx.session.pending = {
       lat: ctx.session.lat,
       lng: ctx.session.lng,
       descripcion: text,
       pais: geo.pais,
       ciudad: geo.ciudad,
-      localidad: geo.localidad,
+      localidad: geo.localidad
     };
 
-    await saveReport(ctx, report);
+    ctx.session.state = STATE.CONFIRM;
 
-    await enviarAlerta(report.pais, `
-📍 País: ${report.pais}
-🏙 Ciudad: ${report.ciudad}
-📌 Localidad: ${report.localidad}
-🛰 Evento registrado
-`);
+    return ctx.reply(
+`CONFIRMAR:
 
-    ctx.session = {};
-    return ctx.reply("Reporte enviado 🛰");
+País: ${geo.pais}
+Ciudad: ${geo.ciudad}
+Localidad: ${geo.localidad}
+
+Texto:
+${text}`,
+{
+  reply_markup: {
+    inline_keyboard: [
+      [{ text: "✔ Confirmar", callback_data: "ok" }],
+      [{ text: "✖ Cancelar", callback_data: "no" }]
+    ]
+  }
+}
+    );
+  }
+
+  if (ctx.session.state === STATE.IDLE) {
+    return;
   }
 });
 
 /* =========================
-   BOT START
+   CONFIRM
+========================= */
+
+bot.action("ok", async (ctx) => {
+  const r = ctx.session.pending;
+  if (!r) return;
+
+  await save(r);
+
+  await alert(r.pais, `
+${r.pais} - ${r.ciudad}
+Evento registrado
+`);
+
+  ctx.session = {};
+  ctx.reply("Guardado");
+});
+
+/* =========================
+   CANCEL
+========================= */
+
+bot.action("no", (ctx) => {
+  ctx.session = {};
+  ctx.reply("Cancelado");
+});
+
+/* =========================
+   IA
+========================= */
+
+bot.hears("🤖 Aifucito", (ctx) => {
+  ctx.session.state = STATE.IA;
+  ctx.reply("Escribe consulta");
+});
+
+/* =========================
+   LAUNCH
 ========================= */
 
 bot.launch();
-console.log("AIFUCITO ONLINE");
+console.log("AIFUCITO OPERATIVO");
