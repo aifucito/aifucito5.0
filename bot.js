@@ -7,7 +7,7 @@ import { fileURLToPath } from "url";
 import { createClient } from "@supabase/supabase-js";
 
 /* ===============================
-    CONFIGURACIÓN TÁCTICA
+    CONFIGURACIÓN
 ================================ */
 const TOKEN = process.env.BOT_TOKEN;
 const ADMIN_ID = "7662736311";
@@ -40,7 +40,7 @@ const __dirname = path.dirname(__filename);
 app.use(express.static(path.join(__dirname, "public")));
 
 /* ===============================
-    BASE LOCAL (se mantiene por ahora)
+    BASE LOCAL (backup temporal)
 ================================ */
 const DB_FILE = "usuarios.json";
 const LOG_FILE = "public/reportes.json";
@@ -53,18 +53,32 @@ function save() {
   fs.writeFileSync(DB_FILE, JSON.stringify(usuarios, null, 2));
 }
 
-function getUser(id, name = "Desconocido") {
-  if (!usuarios[id]) {
-    usuarios[id] = {
-      nombre: name,
-      reportes: 0,
-      rol: "gratis",
-      pais: null,
-      expira: 0
-    };
+/* ===============================
+    USUARIO DB (SUPABASE)
+================================ */
+async function getUserDB(id, name) {
+  let { data: user } = await supabase
+    .from("usuarios")
+    .select("*")
+    .eq("id", id.toString())
+    .single();
+
+  if (!user) {
+    const { data: newUser } = await supabase
+      .from("usuarios")
+      .insert({
+        id: id.toString(),
+        nombre: name,
+        rol: id.toString() === ADMIN_ID ? "admin" : "gratis",
+        reportes: 0
+      })
+      .select()
+      .single();
+
+    return newUser;
   }
-  if (id == ADMIN_ID) usuarios[id].rol = "admin";
-  return usuarios[id];
+
+  return user;
 }
 
 /* ===============================
@@ -82,12 +96,10 @@ function obtenerRango(user) {
 }
 
 /* ===============================
-    TEST SUPABASE (NUEVO)
+    TEST SUPABASE
 ================================ */
 bot.command("testdb", async (ctx) => {
-  console.log("🧪 Ejecutando testdb");
-
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from("usuarios")
     .insert({
       id: ctx.from.id.toString(),
@@ -97,19 +109,11 @@ bot.command("testdb", async (ctx) => {
     });
 
   if (error) {
-    console.error("❌ Supabase error:", error);
-    return ctx.reply("❌ Error conectando con Supabase");
+    console.error(error);
+    return ctx.reply("❌ Error con Supabase");
   }
 
-  ctx.reply("✅ Supabase conectado correctamente");
-});
-
-/* ===============================
-    DEBUG (NUEVO - TEMPORAL)
-================================ */
-bot.on("text", (ctx, next) => {
-  console.log("📨 Mensaje:", ctx.message.text);
-  return next();
+  ctx.reply("✅ Supabase funcionando");
 });
 
 /* ===============================
@@ -130,12 +134,18 @@ bot.hears("📡 Reportar", (ctx) =>
   ctx.reply("📍 Enviá tu ubicación por GPS...")
 );
 
+/* ===============================
+    EVENTO UBICACIÓN (YA CON SUPABASE)
+================================ */
 bot.on("location", async (ctx) => {
-  const user = getUser(ctx.from.id, ctx.from.first_name);
+  const user = await getUserDB(ctx.from.id, ctx.from.first_name);
   const { latitude, longitude } = ctx.message.location;
 
-  user.reportes++;
-  save();
+  // actualizar contador en Supabase
+  await supabase
+    .from("usuarios")
+    .update({ reportes: user.reportes + 1 })
+    .eq("id", ctx.from.id.toString());
 
   const data = {
     lat: latitude,
@@ -145,16 +155,27 @@ bot.on("location", async (ctx) => {
     ts: Date.now()
   };
 
+  // guardar en Supabase
+  await supabase.from("reportes").insert({
+    user_id: ctx.from.id.toString(),
+    lat: latitude,
+    lng: longitude,
+    rango: data.rango
+  });
+
+  // radar
   await ctx.telegram.sendMessage(
     RADAR_CONO_SUR,
     `🛸 AVISTAMIENTO\n👤 ${data.user}\n🎖️ ${data.rango}\n📍 ${data.lat}, ${data.lng}`
   );
 
+  // backup
   await ctx.telegram.sendMessage(
     BACKUP_CANAL,
     JSON.stringify(data)
   );
 
+  // backup local
   let reportes = fs.existsSync(LOG_FILE)
     ? JSON.parse(fs.readFileSync(LOG_FILE))
     : [];
@@ -166,10 +187,11 @@ bot.on("location", async (ctx) => {
 });
 
 /* ===============================
-    PERFIL
+    PERFIL (lee de Supabase)
 ================================ */
-bot.hears("👤 Perfil", (ctx) => {
-  const user = getUser(ctx.from.id);
+bot.hears("👤 Perfil", async (ctx) => {
+  const user = await getUserDB(ctx.from.id);
+
   ctx.reply(
 `🧾 EXPEDIENTE AIFU
 
