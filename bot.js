@@ -33,7 +33,7 @@ app.use(express.json());
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 /* =========================
-   FRONTEND MAPA
+   FRONTEND
 ========================= */
 
 const __filename = fileURLToPath(import.meta.url);
@@ -52,7 +52,7 @@ app.get("/", (req, res) => {
 bot.use(session({ defaultSession: () => ({}) }));
 
 /* =========================
-   RANGOS
+   RANGO
 ========================= */
 
 function obtenerRango(user) {
@@ -68,7 +68,7 @@ function obtenerRango(user) {
 }
 
 /* =========================
-   MENÚ
+   MENU
 ========================= */
 
 function menu() {
@@ -100,7 +100,6 @@ async function ensureUser(ctx) {
     nombre: ctx.from.username || ctx.from.first_name,
     rol: id === String(ADMIN_ID) ? "admin" : "user",
     reportes: 0,
-    created_at: new Date().toISOString(),
   };
 
   await supabase.from("usuarios").insert([newUser]);
@@ -118,10 +117,13 @@ async function saveReport(ctx, report) {
       user_id: String(ctx.from.id),
       lat: report.lat,
       lng: report.lng,
+      rango: report.rango || 1.0,
       tipo: report.tipo || "avistamiento",
       descripcion: report.descripcion,
+      precision: report.precision || 1.0,
       pais: report.pais || "GLOBAL",
-      created_at: new Date().toISOString(),
+      alerta_generada: false
+      // created_at lo maneja Supabase (now())
     },
   ]);
 
@@ -138,7 +140,7 @@ async function saveReport(ctx, report) {
 }
 
 /* =========================
-   IA GEMINI
+   GEMINI IA
 ========================= */
 
 async function llamarGemini(text) {
@@ -147,35 +149,27 @@ async function llamarGemini(text) {
       "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent",
       {
         contents: [{
-          parts: [{
-            text: "Aifucito IA conspiranoico:\n" + text
-          }]
+          parts: [{ text: "Aifucito IA:\n" + text }]
         }]
       },
       { params: { key: GEMINI_KEY } }
     );
 
-    return res.data?.candidates?.[0]?.content?.parts?.[0]?.text
-      || "sin respuesta IA";
-
+    return res.data?.candidates?.[0]?.content?.parts?.[0]?.text || "sin respuesta IA";
   } catch {
-    return "error IA Aifucito";
+    return "error IA";
   }
 }
 
 /* =========================
-   ROUTING DE CANALES
+   CANALES
 ========================= */
 
 function getChannels(pais) {
   const p = (pais || "").toUpperCase();
 
-  let canales = [];
+  let canales = [CHANNEL_CONO_SUR];
 
-  // 🔥 CONO SUR SIEMPRE RECIBE TODO
-  canales.push(CHANNEL_CONO_SUR);
-
-  // 🇺🇾 🇦🇷 🇨🇱 específicos
   if (p === "UY") canales.push(CHANNEL_UY);
   else if (p === "AR") canales.push(CHANNEL_AR);
   else if (p === "CL") canales.push(CHANNEL_CL);
@@ -194,14 +188,8 @@ async function enviarAlerta(pais, mensaje) {
   for (const c of canales) {
     if (!c) continue;
 
-    try {
-      await bot.telegram.sendMessage(
-        c,
-        "🚨 ALERTA AIFU\n\n" + mensaje
-      );
-    } catch (e) {
-      console.log("error canal", e.message);
-    }
+    await bot.telegram.sendMessage(c, "🚨 ALERTA AIFU\n\n" + mensaje)
+      .catch(e => console.log(e.message));
   }
 }
 
@@ -270,7 +258,7 @@ bot.on("text", async (ctx) => {
     return;
   }
 
-  // 📍 formato: lat,lng,pais
+  // 📍 lat,lng,pais
   if (ctx.message.text.includes(",")) {
     const parts = ctx.message.text.split(",");
 
@@ -288,7 +276,9 @@ bot.on("text", async (ctx) => {
       lat: ctx.session.lat,
       lng: ctx.session.lng,
       descripcion: ctx.message.text,
-      pais: ctx.session.pais
+      pais: ctx.session.pais,
+      rango: 1.0,
+      precision: 1.0
     };
 
     await saveReport(ctx, report);
@@ -314,15 +304,7 @@ app.get("/api/reports", async (req, res) => {
 });
 
 /* =========================
-   HEALTHCHECK
-========================= */
-
-app.get("/test", (req, res) => {
-  res.send("AIFU OK");
-});
-
-/* =========================
-   RENDER PORT
+   SERVER
 ========================= */
 
 const PORT = process.env.PORT;
