@@ -1,59 +1,83 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
 <meta charset="utf-8" />
-<title>AIFU Radar AI LIVE</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AIFU Radar AI LIVE V6.0</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
-body {
-  margin: 0;
-  font-family: Arial;
-  background: #06130a;
+/* CSS NÚCLEO: ESTÉTICA DE BASE MILITAR */
+body { margin: 0; padding: 0; background: #000; font-family: 'Courier New', Courier, monospace; overflow: hidden; }
+#map { height: 100vh; width: 100%; background: #000; }
+
+/* FILTRO NEÓN GLOBAL SOBRE EL MAPA (LA MAGIA) */
+.leaflet-tile-container, .leaflet-objects-pane {
+  filter: sepia(100%) hue-rotate(80deg) saturate(900%) brightness(80%) contrast(120%) drop-shadow(0 0 2px #00ff88);
 }
 
-#map {
-  height: 100vh;
-  width: 100%;
-}
-
+/* PANEL DE IA INTERACTIVAS */
 .ia-panel {
-  position: fixed;
-  top: 10px;
-  left: 10px;
-  width: 300px;
-  background: rgba(0, 20, 10, 0.85);
-  border: 1px solid #00ff88;
-  border-radius: 10px;
-  padding: 10px;
-  color: #00ff88;
-  font-size: 12px;
-  z-index: 9999;
+  position: fixed; top: 10px; left: 10px; width: 280px;
+  background: rgba(0, 15, 5, 0.9); border: 1px solid #00ff88;
+  border-radius: 5px; padding: 12px; color: #00ff88;
+  font-size: 13px; z-index: 9999; box-shadow: 0 0 15px rgba(0,255,136,0.3);
+}
+.ia-header { font-size: 16px; font-weight: bold; border-bottom: 1px solid #00ff88; padding-bottom: 5px; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
+.ia-stat { display: flex; justify-content: space-between; margin-bottom: 4px; }
+.ia-value { font-weight: bold; color: #fff; text-shadow: 0 0 5px #00ff88; }
+
+select#range {
+  width: 100%; margin-top: 10px; background: #000; color: #00ff88;
+  border: 1px solid #00ff88; padding: 5px; font-family: inherit; cursor: pointer;
 }
 
-select {
-  width: 100%;
-  margin-top: 8px;
-  background: black;
-  color: #00ff88;
-  border: 1px solid #00ff88;
-}
-
+/* ALERTA PUSH TÁCTICA */
 .push-alert {
-  position: fixed;
-  top: 120px;
-  left: 10px;
-  background: rgba(0,255,136,0.15);
-  border: 1px solid #00ff88;
-  color: #00ff88;
-  padding: 10px;
-  font-size: 12px;
-  border-radius: 8px;
-  display: none;
-  z-index: 99999;
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  background: rgba(0, 20, 10, 0.95); border: 2px solid #ff0000; color: #ff0000;
+  padding: 20px 40px; font-size: 18px; font-weight: bold; border-radius: 5px;
+  display: none; z-index: 100000; text-transform: uppercase;
+  box-shadow: 0 0 30px rgba(255,0,0,0.5); animation: blink 0.5s infinite;
 }
+@keyframes blink { 50% { opacity: 0.3; } }
+
+/* ESTILO DE LOS ICONOS DE PLATILLOS VOLADORES (UFO) */
+.ufo-icon-container { display: flex; align-items: center; justify-content: center; }
+
+/* El platillo mismo */
+.ufo-svg {
+  width: 24px; height: 24px;
+  fill: #fff; /* Blanco para que el filtro neón lo haga brillar */
+  filter: drop-shadow(0 0 4px #00ff88);
+  transition: all 0.3s;
+}
+
+/* Efecto de pulso (Beacon) alrededor del platillo */
+.ufo-pulse {
+  position: absolute; width: 10px; height: 10px;
+  background: rgba(0, 255, 136, 0.6); border-radius: 50%;
+  animation: pulse-beacon 2s infinite; z-index: -1;
+}
+@keyframes pulse-beacon {
+  0% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(5); opacity: 0; }
+}
+
+/* ESTILO DE LOS POPUPS TÁCTICOS */
+.leaflet-popup-content-wrapper {
+  background: rgba(0, 10, 5, 0.95); border: 1px solid #00ff88;
+  color: #fff; font-family: inherit; font-size: 12px; border-radius: 2px;
+}
+.leaflet-popup-tip { background: #00ff88; }
+.popup-header { color: #00ff88; font-weight: bold; border-bottom: 1px solid #00ff88; margin-bottom: 5px; }
+.popup-type { color: #aaa; text-transform: uppercase; font-size: 10px; }
+.popup-desc { margin: 8px 0; line-height: 1.4; }
+.popup-agent { border-top: 1px solid #333; padding-top: 5px; color: #00ff88; font-size: 11px; }
+
+/* Corrección Leaflet para que el neón se vea mejor */
+.leaflet-container { background-color: #000 !important; }
 </style>
 </head>
 
@@ -62,110 +86,149 @@ select {
 <div id="map"></div>
 
 <div class="ia-panel">
-  <b>AIFU Radar AI LIVE</b>
+  <div class="ia-header">Radar AIFU LIVE</div>
+  <div class="ia-stat">Estado: <span class="ia-value">OPERATIVO ✔</span></div>
+  <div class="ia-stat">Detecciones: <span class="ia-value" id="count">0</span></div>
+  <div class="ia-stat">Densidad: <span class="ia-value" id="densidad">CALCULANDO...</span></div>
 
-  <div>Reportes: <span id="count">0</span></div>
-  <div>Densidad: <span id="densidad">BAJA</span></div>
-
-  <div style="margin-top:8px;">Rango:</div>
   <select id="range" onchange="loadData()">
-    <option value="24h">24 horas</option>
-    <option value="7d">7 días</option>
-    <option value="1m">1 mes</option>
-    <option value="3m">3 meses</option>
-    <option value="6m">6 meses</option>
-    <option value="9m">9 meses</option>
-    <option value="1y">1 año</option>
+    <option value="24h">Últimas 24 horas</option>
+    <option value="7d">Últimos 7 días</option>
+    <option value="1m">Último mes</option>
+    <option value="all" selected>Todo el registro</option>
   </select>
+  <div style="font-size:9px; color:#555; text-align:center; margin-top:5px;">Actualización automática: 30s</div>
 </div>
 
-<div class="push-alert" id="push"></div>
+<div class="push-alert" id="push">🚨 ANOMALÍA DETECTADA 🚨</div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
 
 <script>
+/* ==========================================
+   CONFIGURACIÓN DEL NÚCLEO DEL RADAR
+   ========================================== */
+// Centrado en Uruguay por defecto
+const map = L.map('map', {
+  zoomControl: false, // Ocultar controles de zoom para estética limpia
+  attributionControl: false // Ocultar atribución para estética militar
+}).setView([-33.0, -56.0], 7);
 
-const map = L.map('map').setView([-34.9, -56.2], 6);
-
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+// Capa Base Táctica (CartoDB Dark Matter) - El filtro CSS la hará neón
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
   maxZoom: 18
 }).addTo(map);
 
-let markers = L.layerGroup().addTo(map);
-let heat = L.heatLayer([], { radius: 25, blur: 18 }).addTo(map);
-
+// Grupo para gestionar los marcadores
+let markerLayer = L.layerGroup().addTo(map);
 let reportes = [];
+let lastReportCount = 0;
 
-/* PUSH */
-function push(msg) {
+/* ==========================================
+   DEFINICIÓN DEL ICONO UFO (SVG)
+   ========================================== */
+const ufoIcon = L.divIcon({
+  className: 'ufo-icon-container',
+  html: `
+    <div class="ufo-pulse"></div>
+    <svg class="ufo-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+      <ellipse cx="50" cy="50" rx="45" ry="15"/>
+      <path d="M 25 45 C 25 20, 75 20, 75 45 Z"/>
+      <circle cx="30" cy="58" r="3" fill="#00ff88"/>
+      <circle cx="50" cy="62" r="3" fill="#00ff88"/>
+      <circle cx="70" cy="58" r="3" fill="#00ff88"/>
+    </svg>
+  `,
+  iconSize: [30, 30], // Tamaño del contenedor del icono
+  iconAnchor: [15, 15], // Punto de anclaje (centro)
+  popupAnchor: [0, -15] // Dónde sale el popup respecto al anclaje
+});
+
+/* ==========================================
+   FUNCIONES DE GESTIÓN DE DATOS
+   ========================================== */
+
+// Función Push (Alerta Táctica)
+function triggerPush() {
   const el = document.getElementById("push");
-  el.innerText = msg;
   el.style.display = "block";
-
-  setTimeout(() => el.style.display = "none", 4000);
+  // Sonido opcional (descomentar si se desea)
+  // new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg').play();
+  setTimeout(() => el.style.display = "none", 3000);
 }
 
-/* LOAD DATA (FIX PRINCIPAL) */
+// CARGAR DATOS DESDE LA API DEL BOT
 async function loadData() {
-
   const range = document.getElementById("range").value;
-
+  
   try {
     const res = await fetch(`/api/reports?range=${range}`);
+    if (!res.ok) throw new Error("Error de red");
     reportes = await res.json();
+    console.log(`Telemetría recibida: ${reportes.length} puntos.`);
   } catch (e) {
-
-    console.log("Modo demo activo");
-
+    console.error("Falló la conexión con la Red AIFU. Usando datos de respaldo.");
+    // DATOS DE RESPALDO (SOLO SI FALLA LA API)
     reportes = [
-      { lat: -34.9, lng: -56.2, descripcion: "TEST MONTEVIDEO" },
-      { lat: -34.7, lng: -56.1, descripcion: "TEST SUR" },
-      { lat: -34.8, lng: -55.9, descripcion: "TEST ESTE" }
+      { lat: -34.89, lng: -56.18, tipo: "🛸 Nave", descripcion: "Avistamiento en Rambla de Montevideo", rango: "Comandante" },
+      { lat: -34.47, lng: -57.84, tipo: "💡 Luz", descripcion: "Esfera luminosa sobre Colonia", rango: "Guardaespaldas OVNI" }
     ];
   }
+
+  // Comprobar si hay nuevos reportes para lanzar alerta
+  if (lastReportCount !== 0 && reportes.length > lastReportCount) {
+    triggerPush();
+  }
+  lastReportCount = reportes.length;
 
   render();
 }
 
-/* RENDER */
+// RENDERIZAR PUNTOS EN EL MAPA
 function render() {
-
-  markers.clearLayers();
-
-  let heatData = [];
+  // Limpiar marcadores anteriores
+  markerLayer.clearLayers();
 
   reportes.forEach(r => {
-
+    // Validación de seguridad de coordenadas
     if (!r || !r.lat || !r.lng) return;
 
-    const marker = L.circleMarker([r.lat, r.lng], {
-      radius: 5,
-      color: "#00ff88",
-      fillColor: "#00ff88",
-      fillOpacity: 0.7
-    }).bindPopup(r.descripcion || "evento");
+    // Crear Popup Táctico
+    const popupContent = `
+      <div class="popup-header">ANOMALÍA DETECTADA</div>
+      <div class="popup-type">${r.tipo || 'Objeto No Identificado'}</div>
+      <div class="popup-desc">${r.descripcion || 'Sin descripción detallada.'}</div>
+      <div class="popup-agent">Agente: ${r.rango || 'Observador Inicial'}</div>
+    `;
 
-    markers.addLayer(marker);
-
-    heatData.push([r.lat, r.lng, 0.6]);
+    // Crear marcador UFO y añadirlo a la capa
+    const marker = L.marker([r.lat, r.lng], { icon: ufoIcon })
+      .bindPopup(popupContent);
+    
+    markerLayer.addLayer(marker);
   });
 
-  heat.setLatLngs(heatData);
-
+  // Actualizar estadísticas del panel
   document.getElementById("count").innerText = reportes.length;
 
+  // Cálculo de densidad operativa
   let dens = "BAJA";
-  if (reportes.length > 20) dens = "ALTA";
-  else if (reportes.length > 8) dens = "MEDIA";
-
+  if (reportes.length > 25) dens = "CRÍTICA ⚠️";
+  else if (reportes.length > 10) dens = "MEDIA";
   document.getElementById("densidad").innerText = dens;
-
-  setTimeout(() => map.invalidateSize(), 200);
 }
 
-/* INIT */
+/* ==========================================
+   IGNICIÓN Y BÚSQUEDA AUTOMÁTICA
+   ========================================== */
+// Carga inicial
 loadData();
+
+// BÚSQUEDA AUTOMÁTICA: Recargar datos cada 30 segundos
+setInterval(loadData, 30000);
+
+// Corrección de tamaño al redimensionar ventana
+window.addEventListener('resize', () => map.invalidateSize());
 
 </script>
 
