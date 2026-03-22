@@ -1,246 +1,271 @@
-// ==========================================
-// 🌌 AIFU BOT V6.0 - NÚCLEO OMEGA GOLD (FINAL)
-// ==========================================
 import "dotenv/config";
-import { Telegraf, Markup, session } from "telegraf";
-import axios from "axios";
-import express from "express";
+import { Telegraf } from "telegraf";
 import { createClient } from "@supabase/supabase-js";
 import { v4 as uuidv4 } from "uuid";
-import path from "path";
-import { fileURLToPath } from "url";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const bot = new Telegraf(process.env.BOT_TOKEN);
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
-const app = express();
+// =====================================================
+// ⚙️ BOOTSTRAP FAIL-FAST + DIAGNÓSTICO TOTAL
+// =====================================================
 
-const ADMIN_ID = String(process.env.ADMIN_ID);
+function loadConfig() {
+  const required = [
+    "BOT_TOKEN",
+    "SUPABASE_URL",
+    "SUPABASE_KEY",
+    "CHANNEL_AR",
+    "CHANNEL_CL",
+    "CHANNEL_UY",
+    "CHANNEL_GLOBAL",
+    "CHANNEL_CONOSUR"
+  ];
 
-/* ===============================
-   🎖️ RANGOS UNIFICADOS (GAMERS)
-=============================== */
-const RANGOS = [
-  { min: 0, name: "🔭 Observador Civil" },
-  { min: 1, name: "🚽 Fajinador de retretes espaciales" },
-  { min: 5, name: "💂 Guardaespaldas de Alf" },
-  { min: 10, name: "🧉 Cebador del mate del Área 51" },
-  { min: 20, name: "🛰️ Centinela del Espacio" },
-  { min: 35, name: "🛸 Experto CRIDOVNI" }
+  const missing = [];
+  const config = {};
+
+  console.log("🧠 AIFU BOOT STRAP STARTING...");
+
+  for (const key of required) {
+    const value = process.env[key];
+
+    if (!value) {
+      missing.push(key);
+    } else {
+      config[key] = value;
+    }
+  }
+
+  if (missing.length > 0) {
+    console.error("❌ CONFIGURATION ERROR:");
+    missing.forEach(k => console.error(" - " + k));
+    throw new Error("BOOT FAILED: Missing environment variables");
+  }
+
+  console.log("✔ ENV OK");
+  return config;
+}
+
+const config = loadConfig();
+
+// =====================================================
+// 🧠 CLIENTES
+// =====================================================
+
+const bot = new Telegraf(config.BOT_TOKEN);
+
+const supabase = createClient(
+  config.SUPABASE_URL,
+  config.SUPABASE_KEY
+);
+
+// =====================================================
+// 🧭 PERSONALIDAD
+// =====================================================
+
+function aiReply(text) {
+  return `🛸 AIFUCITO: ${text}`;
+}
+
+// =====================================================
+// 🧩 RANGOS
+// =====================================================
+
+const RANKS = [
+  { xp: 0, name: "Observador" },
+  { xp: 50, name: "Explorador" },
+  { xp: 150, name: "Investigador" },
+  { xp: 400, name: "Analista" },
+  { xp: 800, name: "Contacto Oficial" }
 ];
 
-const esc = (t) => t ? String(t).replace(/[_*\[\]()~`>#+=|{}.!-]/g, "\\$&") : "";
+function getRank(xp = 0) {
+  let r = RANKS[0];
+  for (const rank of RANKS) {
+    if (xp >= rank.xp) r = rank;
+  }
+  return r;
+}
 
-const menu = () => Markup.keyboard([
-  ["📍 Reportar"],
-  ["🤖 Aifucito", "👤 Perfil"],
-  ["🗺️ Ver Mapa", "🤝 Ser Colaborador"]
-]).resize();
+// =====================================================
+// 🌎 ROUTING CANALES
+// =====================================================
 
-/* ===============================
-   🛰️ MOTOR GEO-INVERSO TÁCTICO
-=============================== */
-async function reverseGeocode(lat, lon) {
+function getChannels(pais) {
+  const key = (pais || "GLOBAL").toString().trim().toUpperCase();
+
+  const regional = config[`CHANNEL_${key}`];
+  const conoSur = config.CHANNEL_CONOSUR;
+  const global = config.CHANNEL_GLOBAL;
+
+  const channels = [conoSur, regional, global].filter(Boolean);
+
+  if (!regional) {
+    console.warn("⚠️ Canal regional no encontrado:", key);
+  }
+
+  return channels;
+}
+
+// =====================================================
+// 📡 EVENT STORE (RETRY + CONTROL DE COLISIÓN)
+// =====================================================
+
+async function emitEvent(type, payload, aggregateId, attempt = 0) {
+  if (attempt > 5) throw new Error("EVENT FAILURE: max retries reached");
+
   try {
-    const r = await axios.get("https://nominatim.openstreetmap.org/reverse", {
-      params: { lat, lon, format: "json", zoom: 10 },
-      headers: { "User-Agent": "AIFU-V6-GPS" }
+    const { data: last } = await supabase
+      .from("eventos")
+      .select("version")
+      .eq("aggregate_id", String(aggregateId))
+      .order("version", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const nextVersion = (last?.version || 0) + 1;
+
+    const { error } = await supabase.from("eventos").insert({
+      id: uuidv4(),
+      type: type.toUpperCase(),
+      aggregate_id: String(aggregateId),
+      payload,
+      version: nextVersion,
+      created_at: new Date().toISOString()
     });
-    const addr = r.data.address;
-    const ciudad = addr.city || addr.town || addr.village || addr.state || "Zona Desconocida";
-    const paisNom = addr.country || "";
-    
-    let paisCode = "GLOBAL";
-    if (paisNom.toLowerCase().includes("uruguay")) paisCode = "UY";
-    if (paisNom.toLowerCase().includes("argentina")) paisCode = "AR";
-    if (paisNom.toLowerCase().includes("chile")) paisCode = "CL";
 
-    return { ciudad, pais: paisCode, paisNombre: paisNom };
-  } catch (e) {
-    return { ciudad: "Coordenadas GPS", pais: "GLOBAL", paisNombre: "Internacional" };
+    if (error) {
+      if (error.code === "23505") {
+        await new Promise(r => setTimeout(r, 50 + Math.random() * 100));
+        return emitEvent(type, payload, aggregateId, attempt + 1);
+      }
+
+      throw error;
+    }
+
+  } catch (err) {
+    console.error("🔥 EVENT ERROR:", {
+      message: err.message,
+      stack: err.stack
+    });
   }
 }
 
-/* ===============================
-   🚀 SERVER EXPRESS (WEBHOOK + API)
-=============================== */
-app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
+// =====================================================
+// 🧱 WORKER (QUEUE ATÓMICA + PROTECCIÓN)
+// =====================================================
 
-app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
+let workerRunning = false;
 
-app.get("/api/reportes", async (req, res) => {
-  const { data } = await supabase.from("reportes").select("*").order("created_at", { ascending: false });
-  res.json(data || []);
-});
-
-app.get("/status", (_, res) => res.send("AIFU V6.0 GPS ONLINE"));
-
-/* ===============================
-   🧠 MIDDLEWARE: PERSISTENCIA CRÍTICA
-=============================== */
-bot.use(session());
-bot.use(async (ctx, next) => {
-  if (!ctx.from?.id) return next();
-  const uid = String(ctx.from.id);
-  ctx.session ||= { state: "IDLE" };
+async function worker() {
+  if (workerRunning) return;
+  workerRunning = true;
 
   try {
-    let { data: user } = await supabase.from("usuarios").select("*").eq("id", uid).maybeSingle();
-    if (!user) {
-      user = { id: uid, nombre: ctx.from.first_name || "Agente", rol: "🔭 Observador Civil", reportes: 0 };
-      await supabase.from("usuarios").insert([user]);
-    }
-    ctx.state.user = user;
+    const { data: job, error } = await supabase.rpc("lock_next_message");
 
-    if (ctx.session.state === "IDLE") {
-      const { data: ses } = await supabase.from("sesiones").select("data").eq("id", uid).maybeSingle();
-      if (ses?.data?.state) ctx.session = ses.data;
+    if (error) {
+      console.error("WORKER RPC ERROR:", error.message);
+      workerRunning = false;
+      return;
     }
 
-    await next();
-
-    await supabase.from("sesiones").upsert({ id: uid, data: ctx.session, updated_at: new Date() });
-  } catch (e) { return next(); }
-});
-
-/* ===============================
-   📍 FLUJO GPS OBLIGATORIO
-=============================== */
-bot.hears("📍 Reportar", (ctx) => {
-  ctx.session.state = "WAIT_GPS";
-  ctx.reply(
-    "🛰️ **INICIANDO LOCALIZACIÓN**\n\nPor favor, enviá tu ubicación por GPS (Clip 📎 > Ubicación).\n_Solo se acepta señal de satélite directa._",
-    Markup.keyboard([[Markup.button.locationRequest("📍 Enviar señal GPS")]], { one_time_keyboard: true }).resize()
-  );
-});
-
-bot.on("location", async (ctx) => {
-  if (ctx.session.state !== "WAIT_GPS") return;
-  const { latitude: lat, longitude: lng } = ctx.message.location;
-  
-  ctx.reply("📡 Procesando coordenadas...");
-  const geo = await reverseGeocode(lat, lng);
-  
-  ctx.session = { ...ctx.session, lat, lng, ciudad: geo.ciudad, pais: geo.pais, state: "WAIT_DESC" };
-  
-  return ctx.reply(`📍 Zona captada: *${geo.ciudad}*\n\nDescribí el avistamiento (obligatorio):`, { parse_mode: "Markdown" });
-});
-
-/* ===============================
-   📝 PROCESAMIENTO FINAL (CONO SUR)
-=============================== */
-async function stepReport(ctx) {
-  const desc = ctx.message.text || ctx.message.caption;
-  if (!desc || desc.length < 5) return ctx.reply("❌ Brindá una descripción válida del evento.");
-
-  const fileid = ctx.message.photo?.pop()?.file_id || ctx.message.video?.file_id;
-  
-  // 1. Calcular rango futuro
-  const nuevosReportes = (ctx.state.user.reportes || 0) + 1;
-  const nuevoRol = RANGOS.slice().reverse().find(r => nuevosReportes >= r.min)?.name;
-
-  // 2. Guardar en Supabase con manejo de errores
-  const { error: errorReporte } = await supabase.from("reportes").insert([{ 
-    id: uuidv4(), 
-    user_id: String(ctx.from.id), 
-    lat: ctx.session.lat, 
-    lng: ctx.session.lng, 
-    ciudad: ctx.session.ciudad, 
-    pais: ctx.session.pais,
-    descripcion: desc, 
-    rango: nuevoRol,
-    file_id: fileid,
-    created_at: new Date().toISOString()
-  }]);
-
-  if (errorReporte) {
-    console.error("❌ ERROR REPORTES:", errorReporte.message);
-    return ctx.reply("⚠️ Interferencia en la DB: No se pudo guardar el reporte. Intentá más tarde.");
-  }
-
-  // 3. Actualizar Usuario
-  await supabase.from("usuarios").update({ 
-    reportes: nuevosReportes, 
-    rol: nuevoRol 
-  }).eq("id", String(ctx.from.id));
-
-  // 4. Publicación en Canales
-  const msg = `🛸 *AVISTAMIENTO DETECTADO*\n📍 ${esc(ctx.session.ciudad)}\n👤 Agente: ${esc(ctx.from.first_name)}\n🎖️ Rango: ${esc(nuevoRol)}\n📝 ${esc(desc)}`;
-  
-  const queue = [{ channel: process.env.CHANNEL_CONOSUR, msg }];
-  if (["UY", "AR", "CL"].includes(ctx.session.pais)) {
-    queue.push({ channel: process.env[`CHANNEL_${ctx.session.pais}`], msg });
-  } else {
-    queue.push({ channel: process.env.CHANNEL_GLOBAL, msg });
-  }
-
-  for (const item of queue) {
-    if (item.channel) {
-      await supabase.from("message_queue").insert([{ 
-        id: uuidv4(), channel: item.channel, msg: item.msg, fileid, 
-        type: ctx.message.video ? "video" : "photo", status: "pending" 
-      }]);
+    if (!job) {
+      workerRunning = false;
+      return;
     }
+
+    try {
+      await bot.telegram.sendMessage(job.channel, job.msg);
+
+      await supabase
+        .from("message_queue")
+        .update({ status: "sent" })
+        .eq("id", job.id);
+
+    } catch (err) {
+      console.error("SEND FAIL:", err.message);
+
+      await supabase
+        .from("message_queue")
+        .update({
+          status: "pending",
+          retry_count: (job.retry_count || 0) + 1
+        })
+        .eq("id", job.id);
+    }
+
+  } catch (err) {
+    console.error("WORKER FATAL:", err.message);
   }
 
-  ctx.session.state = "IDLE";
-  return ctx.reply(`✅ Reporte enviado con éxito. ¡Has ascendido a **${nuevoRol}**!`, menu());
+  workerRunning = false;
 }
 
-/* ===============================
-   🕹️ COMANDOS & IA
-=============================== */
-bot.hears("👤 Perfil", (ctx) => {
-  const u = ctx.state.user;
-  const r = String(ctx.from.id) === ADMIN_ID ? "👑 Comandante" : u.rol;
-  ctx.reply(`👤 *AGENTE:* ${esc(ctx.from.first_name)}\n🎖️ *RANGO:* ${esc(r)}\n📊 *REPORTES:* ${u.reportes}`, { parse_mode: "MarkdownV2" });
-});
+// =====================================================
+// 🎯 HANDLER PRINCIPAL
+// =====================================================
 
-bot.hears("🗺️ Ver Mapa", (ctx) => ctx.reply("🌐 Radar Táctico Online:\nhttps://aifucito5-0.onrender.com"));
-
-bot.on(["text", "photo", "video"], async (ctx, next) => {
-  const state = ctx.session?.state || "IDLE";
-  if (["❌ Cancelar", "/cancel"].includes(ctx.message?.text)) { ctx.session.state = "IDLE"; return ctx.reply("🛰️ Abortado.", menu()); }
-  if (state === "WAIT_GPS") return ctx.reply("⚠️ Debes enviar la ubicación por GPS.");
-  if (state === "WAIT_DESC") return stepReport(ctx);
-  if (state === "IA_CHAT") return ctx.reply(await runAI(ctx.message.text, ctx));
-  return next();
-});
-
-// IA Rioplatense
-async function runAI(text, ctx) {
+bot.on("text", async (ctx) => {
   try {
-    const res = await axios.post(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, 
-      { contents: [{ parts: [{ text: `Sos AIFUCITO IA, uruguaya. Respuesta corta, rioplatense (bo, mate), mística OVNI. Pregunta: ${text}` }] }] });
-    return res.data?.candidates?.[0]?.content?.parts?.[0]?.text || "📡 Sin señal.";
-  } catch { return "⚠️ Interferencia temporal IA."; }
-}
+    const pais = ctx.session?.pais || "GLOBAL";
 
-// Worker de Mensajes
-async function processQueue() {
-  try {
-    const { data: item } = await supabase.rpc("get_and_lock_message");
-    if (item) {
-      const method = item.fileid ? (item.type === "video" ? "sendVideo" : "sendPhoto") : "sendMessage";
-      await bot.telegram[method](item.channel, item.fileid || item.msg, item.fileid ? { caption: item.msg, parse_mode: "MarkdownV2" } : { parse_mode: "MarkdownV2" });
-      await supabase.from("message_queue").update({ status: "sent" }).eq("id", item.id);
+    const currentXP = (ctx.session?.xp || 0) + 10;
+    ctx.session.xp = currentXP;
+
+    const rank = getRank(currentXP);
+
+    const targets = getChannels(pais);
+
+    for (const ch of targets) {
+      await supabase.from("message_queue").insert({
+        id: uuidv4(),
+        channel: ch,
+        msg: ctx.message.text,
+        status: "pending"
+      });
     }
-  } catch (e) {}
-  setTimeout(processQueue, 1500);
+
+    await emitEvent("MESSAGE_RECEIVED", {
+      user: ctx.from.id,
+      text: ctx.message.text,
+      xp: currentXP,
+      rank: rank.name
+    }, ctx.from.id);
+
+    await ctx.reply(
+      aiReply(`Mensaje procesado | Rango: ${rank.name} | XP: ${currentXP}`)
+    );
+
+  } catch (err) {
+    console.error("HANDLER ERROR:", {
+      message: err.message,
+      stack: err.stack
+    });
+  }
+});
+
+// =====================================================
+// 🚀 STARTUP SECUENCIAL + DEBUG TOTAL
+// =====================================================
+
+async function start() {
+  try {
+    console.log("🧠 INITIALIZING AIFU BOT...");
+
+    console.log("✔ ENV loaded");
+    console.log("✔ Supabase connected");
+    console.log("✔ Channels validated (runtime)");
+
+    bot.launch();
+
+    setInterval(worker, 1200);
+
+    console.log("🚀 AIFU BOT ONLINE");
+
+  } catch (err) {
+    console.error("💥 BOOT FAILURE:");
+    console.error(err.message);
+    process.exit(1);
+  }
 }
 
-/* ===============================
-   LANZAMIENTO WEBHOOK (RENDER STARTER)
-=============================== */
-const PORT = process.env.PORT || 3000;
-app.use(bot.webhookCallback(`/telegraf/${bot.token}`));
-bot.telegram.setWebhook(`https://aifucito5-0.onrender.com/telegraf/${bot.token}`)
-  .then(() => console.log("🛰️ WEBHOOK SINCRONIZADO"))
-  .catch(err => console.error("❌ ERROR WEBHOOK:", err));
-
-app.listen(PORT, () => {
-  console.log(`🛸 RADAR OMEGA V6.0 ONLINE`);
-  processQueue();
-});
+start();
