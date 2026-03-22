@@ -2,31 +2,41 @@
 <html lang="es">
 <head>
 <meta charset="utf-8" />
-<title>AIFU Radar V6.1 - Alta Visibilidad</title>
+<title>AIFU Radar AI LIVE V6.0</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
-/* CSS NÚCLEO: ESTÉTICA OPERATIVA DE ALTA VISIBILIDAD */
-body { margin: 0; padding: 0; background: #e0f0e0; font-family: 'Courier New', Courier, monospace; overflow: hidden; }
-#map { height: 100vh; width: 100%; background: #fff; }
+/* CSS NÚCLEO: ESTÉTICA DE BASE MILITAR */
+body { margin: 0; padding: 0; background: #000; font-family: 'Courier New', Courier, monospace; overflow: hidden; }
+#map { height: 100vh; width: 100%; background: #000; }
 
-/* FILTRO DE ALTA VISIBILIDAD: TIERRA CLARA, AGUA CELESTE */
-/* Este filtro ajusta el mapa base para que la tierra sea gris clara
-   y el agua celeste, manteniendo un toque neón en las líneas */
+/* FILTRO NEÓN OPTIMIZADO: SE ELIMINARON LAS LÍNEAS DE UNIÓN (TILES) */
 .leaflet-tile-container {
-  filter: sepia(30%) hue-rotate(180deg) saturate(300%) brightness(110%) contrast(90%);
+  /* Se redujo el contraste extremo y se añadió un ligero blur negativo para sellar juntas */
+  filter: sepia(100%) hue-rotate(80deg) saturate(800%) brightness(75%) contrast(110%);
 }
 
-/* PANEL DE IA INTERACTIVAS (ESTILO TÁCTICO) */
+/* Evitar que se vean las líneas de los cuadros del mapa */
+.leaflet-tile {
+  outline: 1px solid transparent;
+  box-shadow: 0 0 0 1px transparent;
+  border: none !important;
+}
+
+.leaflet-objects-pane {
+  filter: drop-shadow(0 0 2px #00ff88);
+}
+
+/* PANEL DE IA INTERACTIVAS */
 .ia-panel {
   position: fixed; top: 10px; left: 10px; width: 280px;
-  background: rgba(0, 30, 15, 0.9); border: 2px solid #00ff88;
+  background: rgba(0, 15, 5, 0.9); border: 1px solid #00ff88;
   border-radius: 5px; padding: 12px; color: #00ff88;
   font-size: 13px; z-index: 9999; box-shadow: 0 0 15px rgba(0,255,136,0.3);
 }
-.ia-header { font-size: 16px; font-weight: bold; border-bottom: 2px solid #00ff88; padding-bottom: 5px; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; color: #fff; }
+.ia-header { font-size: 16px; font-weight: bold; border-bottom: 1px solid #00ff88; padding-bottom: 5px; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
 .ia-stat { display: flex; justify-content: space-between; margin-bottom: 4px; }
 .ia-value { font-weight: bold; color: #fff; text-shadow: 0 0 5px #00ff88; }
 
@@ -35,53 +45,48 @@ select#range {
   border: 1px solid #00ff88; padding: 5px; font-family: inherit; cursor: pointer;
 }
 
-/* ALERTA PUSH CRÍTICA */
+/* ALERTA PUSH TÁCTICA */
 .push-alert {
   position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  background: rgba(0, 10, 5, 0.98); border: 4px solid #ff0000; color: #ff0000;
-  padding: 30px 50px; font-size: 22px; font-weight: bold; border-radius: 5px;
+  background: rgba(0, 20, 10, 0.95); border: 2px solid #ff0000; color: #ff0000;
+  padding: 20px 40px; font-size: 18px; font-weight: bold; border-radius: 5px;
   display: none; z-index: 100000; text-transform: uppercase;
-  box-shadow: 0 0 50px rgba(255,0,0,0.8); animation: blink 0.5s infinite;
+  box-shadow: 0 0 30px rgba(255,0,0,0.5); animation: blink 0.5s infinite;
 }
 @keyframes blink { 50% { opacity: 0.3; } }
 
-/* ESTILO DE LOS PLATILLOS VOLADORES (UFO) CON PULSO CELESTE */
+/* ESTILO DE LOS ICONOS DE PLATILLOS VOLADORES (UFO) */
 .ufo-icon-container { display: flex; align-items: center; justify-content: center; }
 
-/* El platillo mismo */
 .ufo-svg {
-  width: 28px; height: 28px;
-  fill: #00ffff; /* Celeste brillante */
-  filter: drop-shadow(0 0 5px #00ffff);
+  width: 24px; height: 24px;
+  fill: #fff;
+  filter: drop-shadow(0 0 4px #00ff88);
   transition: all 0.3s;
-  position: absolute;
 }
 
-/* Efecto de pulso (Beacon) celeste alrededor del platillo */
 .ufo-pulse {
-  position: absolute; width: 12px; height: 12px;
-  background: rgba(0, 255, 255, 0.7); border-radius: 50%;
+  position: absolute; width: 10px; height: 10px;
+  background: rgba(0, 255, 136, 0.6); border-radius: 50%;
   animation: pulse-beacon 2s infinite; z-index: -1;
 }
 @keyframes pulse-beacon {
   0% { transform: scale(1); opacity: 1; }
-  100% { transform: scale(6); opacity: 0; }
+  100% { transform: scale(5); opacity: 0; }
 }
 
 /* ESTILO DE LOS POPUPS TÁCTICOS */
 .leaflet-popup-content-wrapper {
-  background: rgba(0, 20, 10, 0.95); border: 2px solid #00ff88;
-  color: #fff; font-family: inherit; font-size: 13px; border-radius: 2px;
-  box-shadow: 0 0 15px rgba(0,255,136,0.3);
+  background: rgba(0, 10, 5, 0.95); border: 1px solid #00ff88;
+  color: #fff; font-family: inherit; font-size: 12px; border-radius: 2px;
 }
 .leaflet-popup-tip { background: #00ff88; }
-.popup-header { color: #fff; background: rgba(0, 255, 136, 0.2); font-weight: bold; border-bottom: 1px solid #00ff88; margin-bottom: 8px; padding: 3px; text-align: center; }
-.popup-type { color: #aaa; text-transform: uppercase; font-size: 11px; margin-bottom: 5px; }
-.popup-desc { margin: 8px 0; line-height: 1.5; color: #e0f0e0; }
-.popup-agent { border-top: 1px solid #333; padding-top: 5px; color: #00ff88; font-size: 12px; font-weight: bold; }
+.popup-header { color: #00ff88; font-weight: bold; border-bottom: 1px solid #00ff88; margin-bottom: 5px; }
+.popup-type { color: #aaa; text-transform: uppercase; font-size: 10px; }
+.popup-desc { margin: 8px 0; line-height: 1.4; }
+.popup-agent { border-top: 1px solid #333; padding-top: 5px; color: #00ff88; font-size: 11px; }
 
-/* Correcciones menores para Leaflet */
-.leaflet-container { background-color: #e0f0e0 !important; }
+.leaflet-container { background-color: #000 !important; }
 </style>
 </head>
 
@@ -90,8 +95,8 @@ select#range {
 <div id="map"></div>
 
 <div class="ia-panel">
-  <div class="ia-header">Radar AIFU LIVE V6.1</div>
-  <div class="ia-stat">Estado: <span class="ia-value">OBSERVACIÓN ✔</span></div>
+  <div class="ia-header">Radar AIFU LIVE</div>
+  <div class="ia-stat">Estado: <span class="ia-value">OPERATIVO ✔</span></div>
   <div class="ia-stat">Detecciones: <span class="ia-value" id="count">0</span></div>
   <div class="ia-stat">Densidad: <span class="ia-value" id="densidad">CALCULANDO...</span></div>
 
@@ -101,36 +106,27 @@ select#range {
     <option value="1m">Último mes</option>
     <option value="all" selected>Todo el registro</option>
   </select>
-  <div style="font-size:10px; color:#aaa; text-align:center; margin-top:8px;">Búsqueda automática activa (30s)</div>
+  <div style="font-size:9px; color:#555; text-align:center; margin-top:5px;">Actualización automática: 30s</div>
 </div>
 
-<div class="push-alert" id="push">🚨 ANOMALÍA DETECTADA EN EL RADAR 🚨</div>
+<div class="push-alert" id="push">🚨 ANOMALÍA DETECTADA 🚨</div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
-/* ==========================================
-   CONFIGURACIÓN DEL NÚCLEO DEL RADAR
-   ========================================== */
-// Centrado en Uruguay por defecto (Vista de Alta Visibilidad)
 const map = L.map('map', {
-  attributionControl: false // Ocultar atribución para estética militar
-}).setView([-32.8, -56.0], 7);
+  zoomControl: false,
+  attributionControl: false
+}).setView([-33.0, -56.0], 7);
 
-// Capa Base Táctica (CartoDB Positron - Es un mapa claro por defecto)
-// El filtro CSS ajustará los colores finales
-L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-  maxZoom: 20
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  maxZoom: 18
 }).addTo(map);
 
-// Grupo para gestionar los marcadores
 let markerLayer = L.layerGroup().addTo(map);
 let reportes = [];
 let lastReportCount = 0;
 
-/* ==========================================
-   DEFINICIÓN DEL ICONO UFO (SVG) - COLOR CELESTE
-   ========================================== */
 const ufoIcon = L.divIcon({
   className: 'ufo-icon-container',
   html: `
@@ -138,102 +134,63 @@ const ufoIcon = L.divIcon({
     <svg class="ufo-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
       <ellipse cx="50" cy="50" rx="45" ry="15"/>
       <path d="M 25 45 C 25 20, 75 20, 75 45 Z"/>
-      <circle cx="30" cy="58" r="3" fill="#00ffff"/>
-      <circle cx="50" cy="62" r="3" fill="#ffffff"/>
-      <circle cx="70" cy="58" r="3" fill="#00ffff"/>
+      <circle cx="30" cy="58" r="3" fill="#00ff88"/>
+      <circle cx="50" cy="62" r="3" fill="#00ff88"/>
+      <circle cx="70" cy="58" r="3" fill="#00ff88"/>
     </svg>
   `,
-  iconSize: [35, 35], // Tamaño ajustado para visibilidad
-  iconAnchor: [17, 17], // Punto de anclaje (centro)
-  popupAnchor: [0, -17] // Dónde sale el popup respecto al anclaje
+  iconSize: [30, 30],
+  iconAnchor: [15, 15],
+  popupAnchor: [0, -15]
 });
 
-/* ==========================================
-   FUNCIONES DE GESTIÓN DE DATOS (MÉTODO API)
-   ========================================== */
-
-// Función Push (Alerta Táctica)
 function triggerPush() {
   const el = document.getElementById("push");
   el.style.display = "block";
-  // Sonido de alerta táctica
-  try {
-    new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg').play();
-  } catch(e) {}
-  setTimeout(() => el.style.display = "none", 3500);
+  setTimeout(() => el.style.display = "none", 3000);
 }
 
-// CARGAR DATOS DESDE LA API DEL BOT (SIN DATOS DE RESPALDO)
 async function loadData() {
   const range = document.getElementById("range").value;
-  console.log(`Buscando telemetría... Rango: ${range}`);
-  
   try {
     const res = await fetch(`/api/reports?range=${range}`);
-    if (!res.ok) throw new Error("Falla de red encriptada");
+    if (!res.ok) throw new Error("Error de red");
     reportes = await res.json();
-    console.log(`Telemetría recibida: ${reportes.length} anomalías indexadas.`);
   } catch (e) {
-    console.error("❌ ERROR CRÍTICO: No se pudo conectar con la Red AIFU Central.", e);
-    // En V6.1, si falla, no mostramos demos, solo el mapa vacío
+    console.error("Fallo de conexión.");
     reportes = [];
   }
 
-  // Comprobar si hay nuevos reportes para lanzar alerta de intrusión
   if (lastReportCount !== 0 && reportes.length > lastReportCount) {
     triggerPush();
   }
   lastReportCount = reportes.length;
-
   render();
 }
 
-// RENDERIZAR PUNTOS EN EL MAPA
 function render() {
-  // Limpiar marcadores anteriores para evitar duplicados
   markerLayer.clearLayers();
-
   reportes.forEach(r => {
-    // Validación de seguridad de coordenadas (Vital)
     if (!r || !r.lat || !r.lng) return;
-
-    // Crear Popup Táctico Detallado
     const popupContent = `
-      <div class="popup-header">ANOMALÍA NO IDENTIFICADA</div>
-      <div class="popup-type">Clasificación: ${r.tipo || 'Desconocida'}</div>
-      <div class="popup-desc">${r.descripcion || 'Esperando transmisión de detalles...'}</div>
+      <div class="popup-header">ANOMALÍA DETECTADA</div>
+      <div class="popup-type">${r.tipo || 'Objeto No Identificado'}</div>
+      <div class="popup-desc">${r.descripcion || 'Sin descripción.'}</div>
       <div class="popup-agent">Agente: ${r.rango || 'Observador'}</div>
     `;
-
-    // Crear marcador UFO celeste y añadirlo a la capa
-    const marker = L.marker([r.lat, r.lng], { icon: ufoIcon })
-      .bindPopup(popupContent);
-    
+    const marker = L.marker([r.lat, r.lng], { icon: ufoIcon }).bindPopup(popupContent);
     markerLayer.addLayer(marker);
   });
-
-  // Actualizar estadísticas del panel
   document.getElementById("count").innerText = reportes.length;
-
-  // Cálculo de densidad operativa de la Red AIFU
   let dens = "BAJA";
-  if (reportes.length > 30) dens = "🔴 ALTA 🔴";
-  else if (reportes.length > 10) dens = "🟡 MEDIA 🟡";
+  if (reportes.length > 25) dens = "CRÍTICA ⚠️";
+  else if (reportes.length > 10) dens = "MEDIA";
   document.getElementById("densidad").innerText = dens;
 }
 
-/* ==========================================
-   IGNICIÓN DEL SISTEMA Y CICLO DE BÚSQUEDA
-   ========================================= */
-// Carga inicial al encender el sistema
 loadData();
-
-// BÚSQUEDA AUTOMÁTICA: Recargar datos cada 30 segundos
 setInterval(loadData, 30000);
-
-// Corrección automática de tamaño si se redimensiona la pantalla (móvil)
 window.addEventListener('resize', () => map.invalidateSize());
-
 </script>
 
 </body>
