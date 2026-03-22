@@ -6,214 +6,275 @@ import { createClient } from "@supabase/supabase-js";
 import path from "path";
 
 /* =========================
-    CONFIGURACIÓN DE NÚCLEO
+   CONFIGURACIÓN DE NÚCLEO
 ========================= */
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 const ADMIN_ID = String(process.env.ADMIN_ID);
-
 const app = express();
 
 const STATE = {
   IDLE: "idle",
   WAIT_GPS: "wait_gps",
   WAIT_DESC: "wait_desc",
-  IA: "ia",
-  CONFIRM: "confirm"
+  IA: "ia"
 };
 
 const CHANNELS = {
-  "UY": process.env.CHANNEL_UY,
-  "AR": process.env.CHANNEL_AR,
-  "CL": process.env.CHANNEL_CL
+  UY: process.env.CHANNEL_UY,
+  AR: process.env.CHANNEL_AR,
+  CL: process.env.CHANNEL_CL
 };
 
 /* =========================
-    SERVIDOR WEB (RADAR)
+   SERVIDOR WEB (API & RADAR)
 ========================= */
 app.use(express.static(path.join(process.cwd(), "public")));
+
 app.get("/api/reports", async (req, res) => {
   try {
-    const { data } = await supabase.from("reportes").select("*").order('created_at', { ascending: false });
+    const { data } = await supabase
+      .from("reportes")
+      .select("*")
+      .order("created_at", { ascending: false });
     res.json(data || []);
-  } catch (e) { res.json([]); }
+  } catch (e) {
+    console.error("❌ API ERROR:", e.message);
+    res.json([]);
+  }
 });
-app.get("/", (req, res) => res.sendFile(path.join(process.cwd(), "public", "index.html")));
+
 app.listen(process.env.PORT || 3000, "0.0.0.0");
 
 /* =========================
-    SESIÓN PERSISTENTE
+   SESIÓN PERSISTENTE (REFORZADA)
 ========================= */
 bot.use(async (ctx, next) => {
   if (!ctx.from) return next();
   const id = String(ctx.from.id);
+
   try {
-    const { data } = await supabase.from("sesiones").select("data").eq("id", id).maybeSingle();
+    const { data } = await supabase
+      .from("sesiones")
+      .select("data")
+      .eq("id", id)
+      .maybeSingle();
+
     ctx.session = data?.data || { state: STATE.IDLE };
+
     await next();
-    await supabase.from("sesiones").upsert({ id, data: ctx.session, updated_at: new Date() });
-  } catch (error) { return next(); }
+
+    // Guardado post-acción para asegurar persistencia
+    await supabase.from("sesiones").upsert({
+      id,
+      data: ctx.session,
+      updated_at: new Date()
+    });
+
+  } catch (e) {
+    console.log("⚠️ SESSION ERROR:", e.message);
+    ctx.session = { state: STATE.IDLE };
+    await next();
+  }
 });
 
-async function guardarSesion(id, sessionData) {
-  await supabase.from("sesiones").upsert({ id: String(id), data: sessionData, updated_at: new Date() });
-}
-
 /* =========================
-    UTILIDADES & RANGOS
+   UTILIDADES & RANGOS
 ========================= */
 function menu() {
-  return Markup.keyboard([["📍 Reportar"], ["🗺 Mapa"], ["🤖 Aifucito", "👤 Perfil"]]).resize();
+  return Markup.keyboard([
+    ["📍 Reportar"],
+    ["🗺 Mapa"],
+    ["🤖 Aifucito", "👤 Perfil"]
+  ]).resize();
 }
 
-function obtenerRango(r = 0, id = "") {
-  const num = Number(r);
-  if (String(id) === ADMIN_ID) return "👑 Comandante Intergaláctico";
-  if (num >= 25) return "🛸 CRIDOVNI";
-  if (num >= 15) return "🛡️ Guardaespaldas de Alf";
-  if (num >= 5) return "🧉 Cebador del mate del Área 51";
-  if (num >= 2) return "🧹 Fajinador de retretes espaciales";
-  return "🔭 Observador inicial";
+function rango(r = 0, id = "") {
+  if (String(id) === ADMIN_ID) return "👑 Comandante";
+  if (r >= 25) return "🛸 CRIDOVNI";
+  if (r >= 10) return "🛰️ Agente OVNI";
+  if (r >= 5) return "🧉 Investigador";
+  return "🔭 Observador";
 }
 
 async function reverseGeo(lat, lng) {
   try {
     const r = await axios.get("https://nominatim.openstreetmap.org/reverse", {
       params: { format: "json", lat, lon: lng },
-      headers: { "User-Agent": "AIFUCITO_V5.9" }
+      timeout: 5000
     });
+
     const a = r.data?.address || {};
     return {
-      pais_code: a.country_code?.toUpperCase() || "GLOBAL",
-      ciudad: a.city || a.town || a.village || "Sector Desconocido"
+      pais: a.country_code?.toUpperCase() || "GLOBAL",
+      ciudad: a.city || a.town || "Zona desconocida"
     };
-  } catch { return { pais_code: "GLOBAL", ciudad: "N/A" }; }
-}
-
-/* =========================
-    NÚCLEO IA (PERSONALIDAD)
-========================= */
-async function consultarIA(text, nombre, rango) {
-  try {
-    const sistema = `Eres AIFUCITO, la IA más alegre, divertida y conspiranoica de la Red AIFU. ¡Amas los OVNIS! 
-    Usuario: ${nombre}, Rango: ${rango}. Habla con mucha energía, usa emojis espaciales (🛸✨👽) y sé siempre positivo.`;
-    
-    const r = await axios.post(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${process.env.GEMINI_API_KEY}`, 
-    { contents: [{ parts: [{ text: `${sistema}\n\nPregunta: ${text}` }] }] });
-    return r.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  } catch { return "¡Interferencia de los reptilianos! Intenta de nuevo. 🦎"; }
-}
-
-/* =========================
-    FLUJO TÁCTICO
-========================= */
-
-bot.start(async (ctx) => {
-  const id = String(ctx.from.id);
-  await supabase.from("usuarios").upsert({ id, nombre: ctx.from.first_name, rol: id === ADMIN_ID ? "admin" : "user" });
-  ctx.session.state = STATE.IDLE;
-  ctx.reply("🛸 ¡SISTEMA AIFU ONLINE! ¡Bienvenido a la resistencia, Agente! 👽✨", menu());
-});
-
-bot.hears("📍 Reportar", async (ctx) => {
-  ctx.session.state = STATE.WAIT_GPS;
-  await guardarSesion(ctx.from.id, ctx.session);
-  ctx.reply("📡 ¡INICIANDO TRIANGULACIÓN! Envía tu posición GPS para localizar la anomalía... 🌍", 
-    Markup.keyboard([[{ text: "📡 ENVIAR MI POSICIÓN", request_location: true }], ["❌ Cancelar"]]).resize().oneTime());
-});
-
-bot.on("location", async (ctx) => {
-  if (ctx.session.state !== STATE.WAIT_GPS) return;
-  
-  ctx.session.lat = ctx.message.location.latitude;
-  ctx.session.lng = ctx.message.location.longitude;
-  const geo = await reverseGeo(ctx.session.lat, ctx.session.lng);
-  ctx.session.pais_code = geo.pais_code;
-  ctx.session.ciudad = geo.ciudad;
-  
-  ctx.session.state = STATE.WAIT_DESC;
-  await guardarSesion(ctx.from.id, ctx.session);
-
-  let msg = `✨ ¡POSICIÓN CAPTURADA EN ${geo.ciudad}! ✨\n\nSector: **${geo.pais_code}**.`;
-  const channelId = CHANNELS[geo.pais_code] || process.env.CHANNEL_GLOBAL;
-  const buttons = [];
-
-  if (channelId) {
-    try {
-      const link = await ctx.telegram.createChatInviteLink(channelId, { member_limit: 1 });
-      buttons.push([{ text: `🛰️ Unirse a Red AIFU ${geo.pais_code}`, url: link.invite_link }]);
-      msg += `\n\n¿Quieres unirte a la unidad táctica de este sector? 🛰️`;
-    } catch (e) { console.log("Error de link"); }
+  } catch {
+    return { pais: "GLOBAL", ciudad: "Zona desconocida" };
   }
+}
 
-  await ctx.reply(msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } });
-  setTimeout(() => {
-    ctx.reply("👾 **SIGUIENTE PASO:** ¡Rápido! Describe lo que viste. ¿Fue un platillo? ¿Luces? ¡Cuéntalo todo! ✍️", Markup.removeKeyboard());
-  }, 1200);
+/* =========================
+   COMANDOS INICIALES
+========================= */
+bot.start(async (ctx) => {
+  await supabase.from("usuarios").upsert({
+    id: String(ctx.from.id),
+    nombre: ctx.from.first_name
+  });
+
+  ctx.session.state = STATE.IDLE;
+
+  return ctx.reply("🛸 Sistema AIFU activo. Bienvenido a bordo.", {
+    reply_markup: menu().reply_markup
+  });
+});
+
+/* =========================
+   PERFIL & MAPA
+========================= */
+bot.hears("👤 Perfil", async (ctx) => {
+  const { data } = await supabase
+    .from("usuarios")
+    .select("*")
+    .eq("id", String(ctx.from.id))
+    .maybeSingle();
+
+  return ctx.reply(
+    `👤 **NOMBRE:** ${data?.nombre}\n📊 **REPORTES:** ${data?.reportes || 0}\n🎖 **RANGO:** ${rango(data?.reportes, ctx.from.id)}`,
+    { parse_mode: "Markdown", reply_markup: menu().reply_markup }
+  );
+});
+
+bot.hears("🗺 Mapa", (ctx) => {
+  return ctx.reply("🌐 **RADAR EN VIVO:**", {
+    reply_markup: {
+      inline_keyboard: [[
+        { text: "🛰️ Abrir mapa", url: "https://aifucito5-0.onrender.com" }
+      ]]
+    }
+  });
+});
+
+/* =========================
+   SISTEMA DE TEXTO & IA
+========================= */
+bot.hears("🤖 Aifucito", (ctx) => {
+  ctx.session.state = STATE.IA;
+  return ctx.reply("🤖 **IA ACTIVA.** ¿Qué anomalía quieres discutir?");
 });
 
 bot.on("text", async (ctx) => {
   const text = ctx.message.text;
+
   if (text === "❌ Cancelar") {
     ctx.session.state = STATE.IDLE;
-    return ctx.reply("¡Operación cancelada! Volviendo a la base.", menu());
+    return ctx.reply("🚫 Operación cancelada", { reply_markup: menu().reply_markup });
   }
 
-  if (ctx.session.state === STATE.WAIT_DESC) {
-    if (text.length < 10) return ctx.reply("¡Necesito un poco más de telemetría! (mín. 10 letras) 🛸");
-    ctx.session.pending = { lat: ctx.session.lat, lng: ctx.session.lng, desc: text, pais: ctx.session.pais_code, ciudad: ctx.session.ciudad };
-    ctx.session.state = STATE.CONFIRM;
-    await guardarSesion(ctx.from.id, ctx.session);
-
-    return ctx.reply(`📝 **VERIFICACIÓN**\n\n📍 **Lugar:** ${ctx.session.ciudad}\n💬 **Evidencia:** ${text}\n\n¿Transmitimos? 📡✨`,
-      { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
-          [{ text: "✔ ¡SÍ, TRANSMITIR!", callback_data: `ok:${ctx.from.id}` }],
-          [{ text: "❌ REHACER / ABORTAR", callback_data: `no:${ctx.from.id}` }]
-      ]}});
-  }
-
+  // MANEJO DE IA
   if (ctx.session.state === STATE.IA) {
-    const { data } = await supabase.from("usuarios").select("*").eq("id", String(ctx.from.id)).maybeSingle();
-    const r = await consultarIA(text, ctx.from.first_name, obtenerRango(data?.reportes, ctx.from.id));
-    return ctx.reply(`🤖 **AIFUCITO:** ${r}`, { parse_mode: "Markdown" });
+    ctx.session.state = STATE.IDLE;
+    // Aquí puedes integrar tu llamada a Gemini si lo deseas, por ahora fallback estable
+    return ctx.reply("👽 **AIFUCITO:** Recibido, Agente. Procesando datos estelares...", {
+      reply_markup: menu().reply_markup
+    });
+  }
+
+  // MANEJO DE DESCRIPCIÓN (REPORTE)
+  if (ctx.session.state === STATE.WAIT_DESC) {
+    if (!ctx.session.lat) {
+      ctx.session.state = STATE.IDLE;
+      return ctx.reply("⚠️ Error de sesión: Coordenadas perdidas. Reiniciá el reporte.", {
+        reply_markup: menu().reply_markup
+      });
+    }
+
+    if (text.length < 10) return ctx.reply("✍️ Por favor, danos más detalles (mín. 10 caracteres).");
+
+    try {
+      await supabase.from("reportes").insert([{
+        user_id: String(ctx.from.id),
+        lat: ctx.session.lat,
+        lng: ctx.session.lng,
+        descripcion: text,
+        pais: ctx.session.pais || "GLOBAL"
+      }]);
+
+      const { data: u } = await supabase.from("usuarios").select("reportes").eq("id", String(ctx.from.id)).maybeSingle();
+      const total = (u?.reportes || 0) + 1;
+      await supabase.from("usuarios").upsert({ id: String(ctx.from.id), nombre: ctx.from.first_name, reportes: total });
+
+      ctx.session.state = STATE.IDLE;
+      return ctx.reply(`✅ **REPORTE GUARDADO.**\n🎖 **Rango:** ${rango(total, ctx.from.id)}`, {
+        reply_markup: menu().reply_markup
+      });
+    } catch (e) {
+      console.log("Error guardando reporte:", e.message);
+      return ctx.reply("❌ Error al guardar en base de datos.");
+    }
   }
 });
 
-bot.action(/^ok:(\d+)$/, async (ctx) => {
-  if (String(ctx.from.id) !== ctx.match[1]) return ctx.answerCbQuery("❌");
-  const r = ctx.session.pending;
-  try {
-    await supabase.from("reportes").insert([{ user_id: ctx.match[1], lat: r.lat, lng: r.lng, descripcion: r.desc, pais: r.pais }]);
-    const { data: u } = await supabase.from("usuarios").select("reportes").eq("id", ctx.match[1]).maybeSingle();
-    const nuevosPuntos = (Number(u?.reportes) || 0) + 1;
-    await supabase.from("usuarios").upsert({ id: ctx.match[1], nombre: ctx.from.first_name, reportes: nuevosPuntos });
-    ctx.session.state = STATE.IDLE;
-    await guardarSesion(ctx.from.id, ctx.session);
-    ctx.reply(`✅ **REPORTE INDEXADO**\n\n¡Gracias por colaborar! Rango actual: **${obtenerRango(nuevosPuntos, ctx.from.id)}**`, menu());
-  } catch (e) { ctx.reply("❌ Error en la Red AIFU."); }
-});
+/* =========================
+   FLUJO DE REPORTE (GPS)
+========================= */
+bot.hears("📍 Reportar", (ctx) => {
+  ctx.session = { state: STATE.WAIT_GPS };
 
-bot.action(/^no:(\d+)$/, async (ctx) => {
-  ctx.session.state = STATE.IDLE;
-  await guardarSesion(ctx.from.id, ctx.session);
-  ctx.reply("Memoria limpia. ¡A seguir vigilando! 🔭", menu());
-});
-
-bot.hears("🤖 Aifucito", (ctx) => {
-  ctx.session.state = STATE.IA;
-  ctx.reply("🤖 ¡HOLA! Aifucito activo. ¿Qué conspiración vamos a investigar hoy? 👽✨");
-});
-
-bot.hears("👤 Perfil", async (ctx) => {
-  const { data } = await supabase.from("usuarios").select("*").eq("id", String(ctx.from.id)).maybeSingle();
-  ctx.reply(`👤 **AGENTE:** ${data?.nombre}\n**RANGO:** ${obtenerRango(data?.reportes, ctx.from.id)}`, menu());
-});
-
-bot.hears("🗺 Mapa", (ctx) => {
-  ctx.reply("🌐 ¡Abriendo el Radar Táctico! 🛰️🛸", {
-    reply_markup: { inline_keyboard: [[{ text: "🛰️ VER RADAR", url: "https://aifucito5-0.onrender.com" }]] }
+  return ctx.reply("📡 **ENVIÁ TU UBICACIÓN GPS:**", {
+    reply_markup: Markup.keyboard([
+      [{ text: "📍 Enviar mi ubicación", request_location: true }],
+      ["❌ Cancelar"]
+    ]).resize().oneTime().reply_markup
   });
 });
 
-bot.launch();
-console.log("🚀 RED AIFU V5.9: SISTEMA TOTALMENTE OPERATIVO");
+/* GPS (CLAVE DE ESTABILIDAD) */
+bot.on("location", async (ctx) => {
+  console.log("📍 GPS recibido del usuario", ctx.from.id);
+
+  if (ctx.session.state !== STATE.WAIT_GPS) {
+    console.log("⚠️ Intento de GPS fuera de estado:", ctx.session.state);
+    return;
+  }
+
+  try {
+    ctx.session.lat = ctx.message.location.latitude;
+    ctx.session.lng = ctx.message.location.longitude;
+
+    const geo = await reverseGeo(ctx.session.lat, ctx.session.lng);
+    ctx.session.pais = geo.pais;
+    ctx.session.state = STATE.WAIT_DESC;
+
+    await ctx.reply(`📍 **UBICACIÓN CAPTURADA:**\n${geo.ciudad} (${geo.pais})`);
+
+    // Separamos el remove_keyboard para evitar bugs visuales (Ajuste 2)
+    return ctx.reply(
+      "✍️ **DESCRIBÍ LO QUE VISTE:**",
+      { reply_markup: { remove_keyboard: true } }
+    );
+  } catch (e) {
+    console.error("Error procesando GPS:", e);
+    return ctx.reply("❌ Error procesando coordenadas.");
+  }
+});
+
+/* =========================
+   ERRORES & ESTABILIDAD
+========================= */
+bot.catch((err) => {
+  console.log("🔥 ERROR GLOBAL:", err);
+});
+
+bot.launch({ dropPendingUpdates: true });
+
+// Heartbeat para Render (Ajuste 4)
+setInterval(() => {
+  console.log("🟢 [HEARTBEAT] Bot activo:", new Date().toLocaleTimeString());
+}, 300000);
+
+process.once("SIGINT", () => bot.stop("SIGINT"));
+process.once("SIGTERM", () => bot.stop("SIGTERM"));
+
+console.log("🚀 RED AIFU V6.0: PROTOCOLO FINAL BLINDADO");
