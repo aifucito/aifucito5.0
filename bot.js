@@ -32,11 +32,11 @@ const aiModel = new GoogleGenerativeAI(process.env.GEMINI_API_KEY).getGenerative
 
 // Ranking de Agentes
 const RANKS = [
-  { xp: 0, name: "Fajinador de Retretes" },
-  { xp: 50, name: "Observador de Satélites" },
+  { xp: 0, name: "Fajinador de Retretes espaciales" },
+  { xp: 50, name: "Observador de Satélites starlink" },
   { xp: 150, name: "Guardaespalda de Alf" },
-  { xp: 400, name: "Vigilante del Patio" },
-  { xp: 800, name: "Agente de Campo" },
+  { xp: 400, name: "Vigilante del Patio cridovni" },
+  { xp: 800, name: "Agente de Campo nasa" },
   { xp: 2000, name: "Investigador RADAR AIFU" }
 ];
 
