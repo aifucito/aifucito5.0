@@ -27,7 +27,7 @@ const CHANNELS = { UY: process.env.CHANNEL_UY, GLOBAL: process.env.CHANNEL_GLOBA
 /* ==========================================
    🧠 MOTOR IA
 ========================================== */
-const AIFU_PROMPT = `Eres Aifucito, investigador uruguayo sociable. Usa lenguaje rioplatense neutro con modismos suaves como "bo", "ta". Ayudas en análisis de OVNIs.`;
+const AIFU_PROMPT = `Eres Aifucito, investigador uruguayo sociable. Usa lenguaje rioplatense neutro con modismos suaves como  "ta". Ayudas en análisis de OVNIs.`;
 
 /* ==========================================
    📂 SESIONES (FIX: sincronización segura)
