@@ -2,9 +2,9 @@
   "name": "aifucito_5.0",
   "version": "1.0.0",
   "type": "module",
-  "main": "server.js",
+  "main": "bot.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node bot.js"
   },
   "dependencies": {
     "telegraf": "^4.16.3",
@@ -15,6 +15,7 @@
     "compression": "^1.7.4",
     "uuid": "^9.0.1",
     "fs-extra": "^11.2.0",
-    "@supabase/supabase-js": "^2.39.7"
+    "@supabase/supabase-js": "^2.39.7",
+    "@google/generative-ai": "^0.21.0"
   }
 }
