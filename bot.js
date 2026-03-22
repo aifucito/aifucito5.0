@@ -1,129 +1,207 @@
 import "dotenv/config";
-import { Telegraf, session, Markup } from "telegraf";
+import { Telegraf, Markup } from "telegraf";
 import { createClient } from "@supabase/supabase-js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { v4 as uuidv4 } from "uuid";
-import express from "express";
 import axios from "axios";
+import express from "express";
 
-// 🆔 CONFIGURACIÓN DE MANDO
-const OWNER_ID = "7662736311"; // Tu ID de Administrador
+// ==========================================
+// 🔴 CONFIGURACIÓN Y RUTAS DE CANALES
+// ==========================================
+const OWNER_ID = "7662736311";
 
-const app = express();
-const PORT = process.env.PORT || 10000;
-app.get("/", (req, res) => res.send("🛰️ NODO AIFU V9.8 - ONLINE"));
-app.listen(PORT, () => console.log(`🚀 Puerto ${PORT} activo.`));
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const aiModel = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
-const bot = new Telegraf(process.env.BOT_TOKEN);
-
-const RANKS = [
-  { xp: 0, name: "🚽 Fajinador de Retretes Espaciales" },
-  { xp: 50, name: "🔭 Observador de Satélites Starlink" },
-  { xp: 150, name: "💂 Guardaespalda de Alf" },
-  { xp: 400, name: "🏡 Vigilante del Patio de Criridovni" },
-  { xp: 800, name: "🕶️ Te Siguen los Hombres de Negro" },
-  { xp: 2000, name: "🛸 Comandante Intergaláctico" }
-];
-
-bot.use(session());
-
-// =====================================================
-// 🎯 MENÚ PRINCIPAL RECALIBRADO
-// =====================================================
-const mainKeyboard = (isOwner) => {
-  return Markup.keyboard([
-    ["📍 Iniciar Reporte", "🛰️ Ver Radar (Mapa)"],
-    ["👤 Mi Perfil", "🤝 Hazte Colaborador"],
-    ["🤖 Hablar con Aifucito"]
-  ]).resize();
+const CHANNELS = {
+  UY: process.env.CHANNEL_UY,
+  AR: process.env.CHANNEL_AR,
+  CL: process.env.CHANNEL_CL,
+  GLOBAL: process.env.CHANNEL_GLOBAL, // 🌎 AQUÍ VAN TODOS LOS DEMÁS PAÍSES
+  CONOSUR: process.env.CHANNEL_CONOSUR // 🛰️ CANAL MAESTRO (TODO LLEGA AQUÍ)
 };
 
-bot.start((ctx) => {
-  const isOwner = String(ctx.from.id) === OWNER_ID;
-  ctx.session = { state: "IDLE", xp: isOwner ? 5000 : (ctx.session?.xp || 0) };
-  
-  return ctx.reply(`🌌 **Bienvenido al Nodo AIFU V9.8**\nSistemas listos para el rastreo, Comandante.`, 
-    { parse_mode: "Markdown", ...mainKeyboard(isOwner) });
+const REQUIRED_ENV = ["BOT_TOKEN", "SUPABASE_URL", "SUPABASE_KEY", "GEMINI_API_KEY", "CHANNEL_CONOSUR"];
+if (REQUIRED_ENV.some(k => !process.env[k])) throw new Error("Faltan variables críticas.");
+
+// Clientes
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+const bot = new Telegraf(process.env.BOT_TOKEN);
+const aiModel = new GoogleGenerativeAI(process.env.GEMINI_API_KEY).getGenerativeModel({
+  model: "gemini-1.5-flash",
+  tools: [{ googleSearchRetrieval: {} }]
 });
 
-// =====================================================
-// 🛰️ SECCIÓN MAPA / RADAR
-// =====================================================
-bot.hears("🛰️ Ver Radar (Mapa)", (ctx) => {
-  ctx.reply("🌍 **Radar Global AIFU:**\nAquí puedes ver todos los reportes en tiempo real y el mapa de calor.", 
-    Markup.inlineKeyboard([
-      [Markup.button.url("🗺️ Abrir Mapa Interactivo", "https://aifucito5-0.onrender.com")]
-    ]));
-});
+// Ranking de Agentes
+const RANKS = [
+  { xp: 0, name: "Fajinador de Retretes" },
+  { xp: 50, name: "Observador de Satélites" },
+  { xp: 150, name: "Guardaespalda de Alf" },
+  { xp: 400, name: "Vigilante del Patio" },
+  { xp: 800, name: "Agente de Campo" },
+  { xp: 2000, name: "Investigador RADAR AIFU" }
+];
 
-// =====================================================
-// 🤝 SECCIÓN COLABORADOR (SISTEMA DE APOYO)
-// =====================================================
-bot.hears("🤝 Hazte Colaborador", (ctx) => {
-  ctx.reply("✨ **¡Apoya la Investigación!**\nTu colaboración ayuda a mantener los servidores y el radar activos 24/7.\n\nElige tu método preferido:", 
-    Markup.inlineKeyboard([
-      [Markup.button.url("💳 Prex / Uruguay", "https://www.prexcard.com")],
-      [Markup.button.url("🟦 Mercado Pago", "https://www.mercadopago.com.uy")],
-      [Markup.button.url("🌎 PayPal (Internacional)", "https://www.paypal.com")]
-    ]));
-});
-
-// =====================================================
-// 👤 PERFIL Y RANGOS
-// =====================================================
-bot.hears("👤 Mi Perfil", (ctx) => {
-  const isOwner = String(ctx.from.id) === OWNER_ID;
-  const xp = isOwner ? 5000 : (ctx.session?.xp || 0);
-  const rank = isOwner ? RANKS[5].name : ([...RANKS].reverse().find(r => xp >= r.xp)?.name || RANKS[0].name);
-  
-  ctx.reply(`🎖️ *FICHA DE AGENTE AIFU*\n\n👤 *Nombre:* ${ctx.from.first_name}\n📊 *Puntos de Investigación:* ${xp}\n🏆 *Rango Actual:* ${rank}`, { parse_mode: "Markdown" });
-});
-
-// =====================================================
-// 🤖 IA AIFUCITO (MODO URUGUAYO AMABLE)
-// =====================================================
-bot.hears("🤖 Hablar con Aifucito", (ctx) => {
-  ctx.session.state = "IA_CHAT";
-  ctx.reply("🛸 **Aifucito:** ¡Hola! Qué alegría saludarte. Aquí estoy, tomando unos mates y mirando el radar. ¿En qué te puedo ayudar tú hoy, bo?", { parse_mode: "Markdown" });
-});
-
-bot.on("text", async (ctx) => {
-  const text = ctx.message.text;
-
-  if (ctx.session?.state === "IA_CHAT" && text !== "📍 Iniciar Reporte") {
-    try {
-      await ctx.sendChatAction("typing");
-      const prompt = `Eres Aifucito, experto uruguayo en OVNIs. Muy amable, sociable y humilde. TUTEA siempre (di Tú, Te cuento). NO hables como porteño (nada de chamuyo, bardo, ni laburo). Habla como un vecino de Uruguay tomando mate. Pregunta: ${text}`;
-      const result = await aiModel.generateContent(prompt);
-      const response = await result.response;
-      return ctx.reply(`🛸 **Aifucito:** ${response.text()}`, { parse_mode: "Markdown" });
-    } catch (e) {
-      return ctx.reply("⚠️ Se me cortó la señal, che. ¿Me repites?");
-    }
+// ==========================================
+// 🧠 MOTOR DE SESIÓN Y PERFILES
+// ==========================================
+const getProfile = async (userId) => {
+  const { data, error } = await supabase.from("sessions").select("*").eq("user_id", userId).maybeSingle();
+  if (error || !data) {
+    const fresh = { user_id: userId, state: "IDLE", xp: 0, ai_count: 0, is_premium: false, updated_at: new Date() };
+    await supabase.from("sessions").upsert(fresh);
+    return fresh;
   }
+  return data;
+};
 
-  // Lógica de Reporte (Simplificada para la prueba)
-  if (ctx.session?.state === "WAITING_DESC") {
-    ctx.session.state = "IDLE";
-    ctx.reply("✅ **Reporte Guardado.** ¡Buen trabajo, Agente!", mainKeyboard(String(ctx.from.id) === OWNER_ID));
-  }
+const updateSession = async (userId, updateData) => {
+  await supabase.from("sessions").update({ ...updateData, updated_at: new Date() }).eq("user_id", userId);
+};
+
+// ==========================================
+// 🚀 COMANDOS Y MENÚ PRINCIPAL
+// ==========================================
+bot.start(async (ctx) => {
+  await getProfile(String(ctx.from.id));
+  const menu = Markup.keyboard([
+    ["📍 Iniciar Reporte", "🛰️ Ver Radar"],
+    ["👤 Mi Perfil", "🤖 Hablar con Aifucito"],
+    ["🤝 Hacerse Colaborador"]
+  ]).resize();
+
+  return ctx.reply("🌌 **RADAR AIFU ACTIVADO**\n\nBienvenido Agente. Sistema de monitoreo de fenómenos anómalos en tiempo real. ¿Qué misión tenemos tú hoy?", { parse_mode: "Markdown", ...menu });
 });
 
-// Protocolo GPS (Igual al anterior, asegurando el User-Agent)
-bot.hears("📍 Iniciar Reporte", (ctx) => {
-  ctx.session.state = "WAITING_LOCATION";
-  ctx.reply("🛰️ **Protocolo de Ubicación:** Enviá tu posición para el radar.", 
-    Markup.keyboard([[Markup.button.locationRequest("📍 Compartir mi Ubicación")]]).oneTime().resize());
+// Middleware para resetear estado al salir de la IA
+bot.hears(["📍 Iniciar Reporte", "👤 Mi Perfil", "🛰️ Ver Radar", "🤝 Hacerse Colaborador"], async (ctx, next) => {
+  await updateSession(String(ctx.from.id), { state: "IDLE" });
+  return next();
+});
+
+// ==========================================
+// 📍 SISTEMA DE REPORTES GEOGRÁFICOS
+// ==========================================
+bot.hears("📍 Iniciar Reporte", async (ctx) => {
+  await updateSession(String(ctx.from.id), { state: "WAITING_LOCATION" });
+  return ctx.reply("📡 **RADAR AIFU:** Compartí tu ubicación actual para geolocalizar el fenómeno.", 
+    Markup.keyboard([[Markup.button.locationRequest("📍 Compartir Ubicación")]]).oneTime().resize());
 });
 
 bot.on("location", async (ctx) => {
-  if (ctx.session.state !== "WAITING_LOCATION") return;
+  const userId = String(ctx.from.id);
+  const session = await getProfile(userId);
+  if (session.state !== "WAITING_LOCATION") return;
+
   const { latitude: lat, longitude: lng } = ctx.message.location;
-  ctx.session = { ...ctx.session, lat, lng, state: "WAITING_DESC" };
-  ctx.reply("📍 Ubicación recibida. Ahora describí brevemente qué viste:", Markup.removeKeyboard());
+  let pais = "GLOBAL"; // Default
+  let ciudad = "Zona Rural";
+
+  try {
+    const geo = await axios.get(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, { timeout: 4000 });
+    const code = geo.data?.address?.country_code?.toUpperCase();
+    
+    // Filtro de routing por país
+    if (["UY", "AR", "CL"].includes(code)) pais = code;
+    ciudad = geo.data?.address?.city || geo.data?.address?.town || geo.data?.address?.village || "Coordenadas GPS";
+  } catch (e) { console.warn("Geo Fallback"); }
+
+  await updateSession(userId, { state: "WAITING_DESC", lat, lng, ciudad, pais });
+  ctx.reply(`📍 **Localizado en:** ${ciudad} (${pais}).\n\n¿Qué fue lo que viste tú? Describilo con tranquilidad.`, Markup.removeKeyboard());
 });
 
+// ==========================================
+// 🤖 PROCESAMIENTO DE TEXTO (IA Y REPORTES)
+// ==========================================
+bot.on("text", async (ctx) => {
+  const userId = String(ctx.from.id);
+  const user = await getProfile(userId);
+  const text = ctx.message.text;
+
+  // 1. FINALIZAR REPORTE
+  if (user.state === "WAITING_DESC") {
+    const reportId = uuidv4();
+    const { error } = await supabase.from("reportes").insert({
+      id: reportId, user_id: userId, lat: user.lat, lng: user.lng, descripcion: text, ciudad: user.ciudad, pais: user.pais
+    });
+
+    if (error) return ctx.reply("⚠️ Error de conexión con la base de datos.");
+
+    const alerta = `🚨 **NUEVO REPORTE EN RADAR**\n📍 ${user.ciudad} (${user.pais})\n👤 Agente: ${ctx.from.first_name}\n📝 ${text}\n🌍 [Abrir Mapa](https://aifucito5-0.onrender.com)`;
+
+    // Routing: Al canal del país (o Global) + Canal Maestro (Cono Sur)
+    const canalDestino = CHANNELS[user.pais] || CHANNELS.GLOBAL;
+    bot.telegram.sendMessage(canalDestino, alerta).catch(() => {});
+    bot.telegram.sendMessage(CHANNELS.CONOSUR, alerta).catch(() => {});
+
+    await updateSession(userId, { state: "IDLE", xp: (user.xp || 0) + 25 });
+    return ctx.reply("✅ **Sincronizado.** Tu reporte ya está en la red de RADAR AIFU.", 
+      Markup.keyboard([["📍 Iniciar Reporte", "🛰️ Ver Radar"], ["👤 Mi Perfil", "🤖 Hablar con Aifucito"]]).resize());
+  }
+
+  // 2. MODO IA (AIFUCITO)
+  if (user.state === "IA_CHAT" && !text.startsWith("/")) {
+    if (!user.is_premium && (user.ai_count || 0) >= 3) {
+      return ctx.reply("⚠️ **Límite alcanzado.**\nComo usuario gratuito tienes 3 consultas diarias. Hazte Colaborador para hablar sin límites.",
+        Markup.inlineKeyboard([[Markup.button.url("🤝 Ser Colaborador", "https://tu-link.com")]]));
+    }
+
+    try {
+      await ctx.sendChatAction("typing");
+      const prompt = `Eres Aifucito de RADAR AIFU. Uruguayo, humilde y amable. Tuteas siempre ("tú"). Responde de forma clara y breve. Usuario: ${text}`;
+      const res = await aiModel.generateContent(prompt);
+      
+      await supabase.from("sessions").update({ ai_count: (user.ai_count || 0) + 1 }).eq("user_id", userId);
+      return ctx.reply(`🛸 **Aifucito:** ${res.response.text()}`);
+    } catch (e) { return ctx.reply("⚠️ Interferencia en la señal de la IA."); }
+  }
+});
+
+// ==========================================
+// 🛠️ BOTONES DE NAVEGACIÓN
+// ==========================================
+bot.hears("🤖 Hablar con Aifucito", async (ctx) => {
+  await updateSession(String(ctx.from.id), { state: "IA_CHAT" });
+  ctx.reply("🛸 **Aifucito:** ¡Hola! Un gusto charlar contigo tú hoy. ¿Qué me quieres contar?");
+});
+
+bot.hears("🛰️ Ver Radar", (ctx) => {
+  ctx.reply("🌍 **RADAR AIFU - Mapa en Vivo:**", Markup.inlineKeyboard([
+    [Markup.button.url("🗺️ Abrir Mapa Interactivo", "https://aifucito5-0.onrender.com")]
+  ]));
+});
+
+bot.hears("👤 Mi Perfil", async (ctx) => {
+  const user = await getProfile(String(ctx.from.id));
+  const rank = [...RANKS].reverse().find(r => user.xp >= r.xp)?.name || RANKS[0].name;
+  ctx.reply(`🎖️ **FICHA DE AGENTE**\n👤 **Nombre:** ${ctx.from.first_name}\n📊 **XP:** ${user.xp}\n🏆 **Rango:** ${rank}\n💎 **Estado:** ${user.is_premium ? "Colaborador" : "Gratuito"}`);
+});
+
+bot.hears("🤝 Hacerse Colaborador", (ctx) => {
+  ctx.reply("🤝 **Apoyá la investigación de RADAR AIFU:**\n\nCon tu colaboración desbloqueas el Radar Histórico completo e IA ilimitada.", 
+    Markup.inlineKeyboard([[Markup.button.url("💳 Mercado Pago / Prex", "https://tu-link.com")]]));
+});
+
+// ==========================================
+// 📢 MANDO COMANDANTE (BROADCAST SEGURO)
+// ==========================================
+bot.command("broadcast", async (ctx) => {
+  if (String(ctx.from.id) !== OWNER_ID) return;
+  const msg = ctx.message.text.replace("/broadcast ", "");
+  if (!msg || msg === "/broadcast") return ctx.reply("Escribí un mensaje, tú.");
+
+  const { data: users } = await supabase.from("sessions").select("user_id");
+  ctx.reply(`🚀 Enviando a ${users.length} agentes...`);
+
+  for (const u of users || []) {
+    await new Promise(r => setTimeout(r, 300)); // Delay para evitar baneo
+    bot.telegram.sendMessage(u.user_id, `📢 **AVISO RADAR AIFU:**\n\n${msg}`).catch(() => {});
+  }
+  ctx.reply("✅ Broadcast completado.");
+});
+
+// Lanzamiento
 bot.launch();
+
+// Server para Render
+const app = express();
+app.get("/", (req, res) => res.send("📡 RADAR AIFU OPERATIVO"));
+app.listen(process.env.PORT || 10000);
