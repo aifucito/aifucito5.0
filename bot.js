@@ -1,262 +1,204 @@
-// ===============================
-// 🔥 AIFU BOT V6.5 FINAL (FULL)
-// ===============================
-
+// ==========================================
+// 🌌 AIFU BOT V6.0 - OMEGA HYBRID CORE (FINAL STABLE)
+// ==========================================
 import "dotenv/config";
-import { Telegraf, Markup } from "telegraf";
+import { Telegraf, Markup, session } from "telegraf";
 import axios from "axios";
 import express from "express";
 import { createClient } from "@supabase/supabase-js";
 import { v4 as uuidv4 } from "uuid";
 
-// ===============================
-// 0. ANTIFRAGIL GLOBAL
-// ===============================
-process.on("uncaughtException", (e) => console.error("🔥 CRASH:", e.message));
-process.on("unhandledRejection", (e) => console.error("🔥 PROMISE:", e?.message));
-
-// ===============================
-// 1. CONFIG
-// ===============================
-const REQ = [
-  "BOT_TOKEN","SUPABASE_URL","SUPABASE_KEY","GEMINI_API_KEY",
-  "CHANNEL_UY","CHANNEL_AR","CHANNEL_CL","CHANNEL_CONO_SUR","CHANNEL_BACKUP"
-];
-REQ.forEach(v => { if (!process.env[v]) { console.error("❌ FALTA:", v); process.exit(1);} });
-
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
-const ADMIN_ID = String(process.env.ADMIN_ID);
 const app = express();
+const ADMIN_ID = String(process.env.ADMIN_ID);
 
-const STATE = { IDLE:"idle", WAIT_GPS:"wait_gps", WAIT_DESC:"wait_desc", IA:"ia" };
-let botActivo = false;
-let lastHeartbeat = Date.now();
+/* ===============================
+   CONFIGURACIÓN + RANGOS (INTOCABLES)
+=============================== */
+const RANGOS = [
+  { min: 0, name: "🔭 Observador Civil" },
+  { min: 2, name: "🚽 Fajinador de retretes espaciales" },
+  { min: 5, name: "💂 Guardaespaldas de Alf" },
+  { min: 10, name: "🧉 Cebador del mate del Área 51" },
+  { min: 15, name: "🛰️ Centinela del Espacio" },
+  { min: 25, name: "🛸 Experto CRIDOVNI" }
+];
 
-const CANALES = {
-  UY: process.env.CHANNEL_UY,
-  AR: process.env.CHANNEL_AR,
-  CL: process.env.CHANNEL_CL,
-  GLOBAL: process.env.CHANNEL_CONO_SUR
+const esc = (t) => t ? String(t).replace(/[_*\[\]()~`>#+=|{}.!-]/g, "\\$&") : "";
+const menu = () => Markup.keyboard([["📍 Reportar"], ["🤖 Aifucito", "👤 Perfil"]]).resize();
+
+/* ===============================
+   CACHE GEO + EXPRESS
+=============================== */
+const geoCache = new Map();
+const CACHE_TTL = 1000 * 60 * 60;
+const setGeoCache = (k, v) => geoCache.set(k, { v, t: Date.now() });
+const getGeoCache = (k) => {
+  const c = geoCache.get(k);
+  if (!c) return null;
+  if (Date.now() - c.t > CACHE_TTL) { geoCache.delete(k); return null; }
+  return c.v;
 };
 
-// ===============================
-// 2. UTILIDADES
-// ===============================
-const esc = (t)=> t? t.replace(/[_*\[\]()~`>#+=|{}.!-]/g,"\\$&") : "";
+app.get("/", (_, res) => res.send("AIFU V6.0 OK"));
+app.listen(process.env.PORT || 3000);
 
-function rango(n = 0, id = "") {
-  if (String(id) === ADMIN_ID) return "👑 Comandante Intergaláctico";
-  if (n >= 25) return "🛸 Experto CRIDOVNI";
-  if (n >= 15) return "🛰️ Centinela del Espacio";
-  if (n >= 10) return "🧉 Cebador del mate del Área 51";
-  if (n >= 5)  return "💂 Guardaespaldas de Alf";
-  if (n >= 2)  return "🚽 Fajinador espacial";
-  return "🔭 Observador Civil";
-}
+/* ===============================
+   SESSION + USER MIDDLEWARE (PERSISTENCIA TOTAL)
+=============================== */
+bot.use(session());
 
-async function enviarConRetry(chatId, msj, intentos=3){
-  for(let i=0;i<intentos;i++){
-    try{
-      await bot.telegram.sendMessage(chatId, msj, {parse_mode:"MarkdownV2"});
-      return true;
-    }catch(e){
-      if(e.response?.error_code===429){
-        const wait=e.response.parameters?.retry_after||5;
-        await new Promise(r=>setTimeout(r,wait*1000)); i--; continue;
-      }
-      await new Promise(r=>setTimeout(r,2000));
+bot.use(async (ctx, next) => {
+  if (!ctx.from?.id) return next();
+  const uid = String(ctx.from.id);
+  ctx.session ||= { state: "IDLE" };
+
+  try {
+    let { data: user } = await supabase.from("usuarios").select("*").eq("id", uid).maybeSingle();
+    if (!user) {
+      user = { id: uid, nombre: ctx.from.first_name || "Agente", reportes: 0, premium: false };
+      await supabase.from("usuarios").insert([user]);
     }
-  }
-  return false;
-}
+    ctx.state.user = user;
 
-async function enviarConBackup(canal, msj){
-  const ok = await enviarConRetry(canal, msj);
-
-  if(!ok){
-    await enviarConRetry(process.env.CHANNEL_BACKUP, `🚨 FALLÓ PUBLICACIÓN\n\n${msj}`);
-  }
-
-  // backup SIEMPRE
-  await enviarConRetry(process.env.CHANNEL_BACKUP, `🗄 BACKUP\n\n${msj}`);
-
-  return ok;
-}
-
-// ===============================
-// 3. API + KEEP ALIVE
-// ===============================
-app.get("/ping", (req,res)=>res.send("OK"));
-
-app.get("/api/reports", async (req,res)=>{
-  try{
-    const limit = Math.min(parseInt(req.query.limit)||100,200);
-    const {data}=await supabase.from("reportes").select("*").order("created_at",{ascending:false}).limit(limit);
-    res.json(data||[]);
-  }catch{res.json([])}
-});
-
-app.listen(process.env.PORT||3000,"0.0.0.0");
-
-// ===============================
-// 4. IA
-// ===============================
-async function hablarIA(text,nombre,r){
-  try{
-    const prompt=`Eres AIFUCITO. Usuario:${nombre}. Rango:${r}. Responde breve.`;
-    const rta=await axios.post(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-    {contents:[{parts:[{text:prompt+" "+text}]}]},{timeout:8000});
-    return rta.data?.candidates?.[0]?.content?.parts?.[0]?.text||"👽 Sin señal";
-  }catch{return"📡 Error IA"}
-}
-
-// ===============================
-// 5. SESIÓN
-// ===============================
-bot.use(async (ctx,next)=>{
-  lastHeartbeat=Date.now();
-  if(!ctx.from?.id) return;
-  const id=String(ctx.from.id);
-  try{
-    const {data}=await supabase.from("sesiones").select("data").eq("id",id).maybeSingle();
-    ctx.session=data?.data||{state:STATE.IDLE,last_activity:Date.now()};
-
-    if(Date.now()-ctx.session.last_activity>600000){
-      ctx.session.state=STATE.IDLE;
-      delete ctx.session.sending;
+    // Restauración segura de sesión desde DB
+    if (!ctx.session.state || ctx.session.state === "IDLE") {
+      const { data: ses } = await supabase.from("sesiones").select("data").eq("id", uid).maybeSingle();
+      if (ses?.data?.state) ctx.session = ses.data;
     }
 
-    ctx.session.last_activity=Date.now();
     await next();
 
-    await supabase.from("sesiones").upsert({id,data:ctx.session,updated_at:new Date()});
-
-  }catch{ctx.session={state:STATE.IDLE}; await next();}
+    // Guardado post-acción
+    await supabase.from("sesiones").upsert({ id: uid, data: ctx.session, updated_at: new Date() });
+  } catch (e) { console.log("Middleware error:", e.message); return next(); }
 });
 
-// ===============================
-// 6. UI
-// ===============================
-const menu=()=>Markup.keyboard([["📍 Reportar"],["🤖 Aifucito","👤 Perfil"]]).resize();
-
-bot.start(async ctx=>{
-  await supabase.from("usuarios").upsert({id:String(ctx.from.id),nombre:ctx.from.first_name});
-  ctx.reply("🛸 RED AIFU ONLINE",menu());
-});
-
-bot.hears("👤 Perfil", async ctx=>{
-  const {data:u}=await supabase.from("usuarios").select("*").eq("id",String(ctx.from.id)).maybeSingle();
-  ctx.reply(`👤 ${esc(u?.nombre)}\n🎖 ${esc(rango(u?.reportes||0,ctx.from.id))}\n📊 ${u?.reportes||0}`,{parse_mode:"MarkdownV2"});
-});
-
-bot.hears("🤖 Aifucito",ctx=>{
-  ctx.session.state=STATE.IA;
-  ctx.reply("🤖 Pregunta lo que quieras",{parse_mode:"MarkdownV2"});
-});
-
-// ===============================
-// 7. GEO
-// ===============================
-async function geo(lat,lng){
-  try{
-    const r=await axios.get("https://nominatim.openstreetmap.org/reverse",{params:{format:"json",lat,lon:lng},headers:{"User-Agent":"AIFU"}});
-    const a=r.data.address;
-    const p=a?.country_code?.toUpperCase();
-    return{pais:["UY","AR","CL"].includes(p)?p:"UY",ciudad:a?.city||a?.town||"Zona"};
-  }catch{return{pais:"UY",ciudad:"Remoto"}}
+/* ===============================
+   MOTOR IA (RESILIENTE)
+=============================== */
+async function runAI(text, ctx) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const rango = String(ctx.from.id) === ADMIN_ID ? "👑 Comandante Intergaláctico" : 
+                  RANGOS.slice().reverse().find((x) => ctx.state.user.reportes >= x.min)?.name;
+    const prompt = `Sos AIFUCITO IA, uruguaya. Usuario: ${ctx.from.first_name}. Rango: ${rango}. Respuesta corta, rioplatense (bo, botija, mate), mística OVNI. Pregunta: ${text}`;
+    
+    const res = await axios.post(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, 
+      { contents: [{ parts: [{ text: prompt }] }] }, { signal: controller.signal });
+    
+    clearTimeout(timeout);
+    return res.data?.candidates?.[0]?.content?.parts?.[0]?.text || "📡 Sin señal.";
+  } catch { return "⚠️ Interferencia temporal IA."; }
 }
 
-// ===============================
-// 8. REPORTES
-// ===============================
-bot.hears("📍 Reportar",ctx=>{
-  if(ctx.session.last_report_time && Date.now()-ctx.session.last_report_time<45000)
-    return ctx.reply("⏳ Espera");
-  ctx.session.state=STATE.WAIT_GPS;
-  ctx.reply("📡 Enviar GPS",Markup.keyboard([[Markup.button.locationRequest("📍 GPS")],["❌ Cancelar"]]).resize());
-});
+/* ===============================
+   GEO & ROUTER
+=============================== */
+async function resolveGeo(txt) {
+  const cached = getGeoCache(txt);
+  if (cached) return cached;
+  try {
+    const r = await axios.get("https://nominatim.openstreetmap.org/search", { params: { q: txt, format: "json", limit: 1 }, headers: { "User-Agent": "AIFU-V6" } });
+    const d = r.data?.[0];
+    if (!d) return null;
+    const geo = { lat: parseFloat(d.lat), lng: parseFloat(d.lon), ciudad: d.display_name.split(",")[0], pais: "UY" };
+    setGeoCache(txt, geo);
+    return geo;
+  } catch { return null; }
+}
 
-bot.on("location",async ctx=>{
-  if(ctx.session.state!==STATE.WAIT_GPS) return;
-  ctx.session.lat=ctx.message.location.latitude;
-  ctx.session.lng=ctx.message.location.longitude;
-  const g=await geo(ctx.session.lat,ctx.session.lng);
-  ctx.session.pais=g.pais; ctx.session.ciudad=g.ciudad;
-  ctx.session.state=STATE.WAIT_DESC;
-  ctx.reply(`📍 ${esc(g.ciudad)} (${g.pais})\n✍️ Describe`,{parse_mode:"MarkdownV2"});
-});
-
-bot.on("text",async(ctx,next)=>{
-  const t=ctx.message.text;
-  const id=String(ctx.from.id);
-
-  if(t==="❌ Cancelar"){ctx.session.state=STATE.IDLE; return ctx.reply("🚫",menu());}
-
-  if(ctx.session.state===STATE.IA){
-    const {data:u}=await supabase.from("usuarios").select("reportes").eq("id",id).maybeSingle();
-    const r=rango(u?.reportes||0,id);
-    const resp=await hablarIA(t,ctx.from.first_name,r);
-    ctx.session.state=STATE.IDLE;
-    return ctx.reply(`🤖 ${esc(resp)}`,{parse_mode:"MarkdownV2",...menu()});
+bot.on(["text", "location", "photo", "video"], async (ctx, next) => {
+  const state = ctx.session?.state || "IDLE";
+  if (["❌ Cancelar", "/cancel"].includes(ctx.message?.text)) {
+    ctx.session.state = "IDLE";
+    return ctx.reply("🛰️ Abortado.", menu());
   }
-
-  if(ctx.session.state===STATE.WAIT_DESC){
-    if(t.length<5) return ctx.reply("Muy corto");
-    if(ctx.session.sending) return;
-
-    const hash=`${id}-${t.slice(0,15)}-${Math.floor(Date.now()/60000)}`;
-    if(ctx.session.last_hash===hash) return;
-
-    try{
-      ctx.session.sending=true;
-
-      await Promise.race([
-        supabase.from("reportes").insert([{id:uuidv4(),user_id:id,lat:ctx.session.lat,lng:ctx.session.lng,descripcion:t,pais:ctx.session.pais,hash}]),
-        new Promise((_,r)=>setTimeout(()=>r(new Error("timeout")),7000))
-      ]);
-
-      const {data:user}=await supabase.from("usuarios").select("reportes").eq("id",id).maybeSingle();
-      await supabase.from("usuarios").upsert({id,nombre:ctx.from.first_name,reportes:(user?.reportes||0)+1});
-
-      const msj=`🛸 *AVISTAMIENTO*\n\n📍 ${esc(ctx.session.ciudad)} (${ctx.session.pais})\n👤 ${esc(ctx.from.first_name)}\n📝 ${esc(t)}`;
-
-      await enviarConBackup(CANALES[ctx.session.pais],msj);
-      await enviarConBackup(CANALES.GLOBAL,`🌎 *RED*\n${msj}`);
-
-      ctx.session.last_report_time=Date.now();
-      ctx.session.last_hash=hash;
-      ctx.session.state=STATE.IDLE;
-
-      return ctx.reply("✅ Enviado",{parse_mode:"MarkdownV2",...menu()});
-
-    }catch(e){
-      await supabase.from("backup_reportes").insert([{user_id:id,contenido:t}]);
-      return ctx.reply("⚠️ Guardado backup");
-    }finally{delete ctx.session.sending}
-  }
-
+  const map = { WAIT_GPS: stepGPS, WAIT_DESC: stepReport, IA_CHAT: stepAI };
+  if (map[state]) return map[state](ctx);
   return next();
 });
 
-// ===============================
-// 9. WATCHDOG
-// ===============================
-async function iniciarBot(){
-  try{
-    try{await bot.stop();}catch{}
-    await bot.launch({dropPendingUpdates:true});
-    botActivo=true;
-    console.log("🟢 ONLINE");
-  }catch{setTimeout(iniciarBot,5000)}
+/* ===============================
+   HANDLERS DE REPORTE
+=============================== */
+async function stepGPS(ctx) {
+  let geo = ctx.message.location ? { lat: ctx.message.location.latitude, lng: ctx.message.location.longitude, ciudad: "GPS", pais: "UY" } : await resolveGeo(ctx.message.text);
+  if (!geo) return ctx.reply("❌ No se pudo ubicar la zona.");
+  ctx.session = { ...ctx.session, ...geo, state: "WAIT_DESC" };
+  return ctx.reply("🛰️ Zona fijada. Describí el evento:");
 }
 
-setInterval(async()=>{
-  try{
-    await bot.telegram.getMe();
-    if(botActivo && Date.now()-lastHeartbeat>120000){botActivo=false; await iniciarBot();}
-  }catch{botActivo=false; await iniciarBot();}
-},60000);
+async function stepReport(ctx) {
+  const desc = ctx.message.text || ctx.message.caption || "Sin descripción";
+  const fileid = ctx.message.photo?.pop()?.file_id || ctx.message.video?.file_id;
+  
+  await supabase.from("reportes").insert([{ id: uuidv4(), user_id: String(ctx.from.id), ...ctx.session, descripcion: desc, file_id: fileid }]);
+  await supabase.rpc("increment_report_count", { user_id_param: String(ctx.from.id) });
 
-bot.catch(err=>console.error("🔥",err.message));
-iniciarBot();
+  const msg = `🛸 *REPORTE*\n📍 ${esc(ctx.session.ciudad)}\n👤 ${esc(ctx.from.first_name)}\n📝 ${esc(desc)}`;
+  const channels = [process.env.CHANNEL_GLOBAL, process.env[`CHANNEL_${ctx.session.pais}`]];
+  
+  for (const c of channels) {
+    if (c) await supabase.from("message_queue").insert([{ id: uuidv4(), channel: c, msg, fileid, type: ctx.message.video ? "video" : "photo", status: "pending" }]);
+  }
+  ctx.session.state = "IDLE";
+  return ctx.reply("✅ Reporte enviado.", menu());
+}
+
+async function stepAI(ctx) { ctx.reply(await runAI(ctx.message.text || "", ctx)); }
+
+/* ===============================
+   QUEUE WORKER (RETRY LOGIC)
+=============================== */
+async function processQueue() {
+  try {
+    const { data: item } = await supabase.rpc("get_and_lock_message");
+    if (item) {
+      try {
+        const method = item.fileid ? (item.type === "video" ? "sendVideo" : "sendPhoto") : "sendMessage";
+        const payload = item.fileid ? [item.channel, item.fileid, { caption: item.msg, parse_mode: "MarkdownV2" }] : [item.channel, item.msg, { parse_mode: "MarkdownV2" }];
+        await bot.telegram[method](...payload);
+        await supabase.from("message_queue").update({ status: "sent" }).eq("id", item.id);
+      } catch {
+        await supabase.from("message_queue").update({ status: "pending", attempts: (item.attempts || 0) + 1 }).eq("id", item.id);
+      }
+    }
+  } catch (e) { console.log("Queue error:", e?.message); }
+  setTimeout(processQueue, 1200);
+}
+
+/* ===============================
+   COMANDOS DE COMANDANTE
+=============================== */
+bot.start((ctx) => ctx.reply("🛸 AIFU V6.0 ONLINE", menu()));
+
+bot.hears("📍 Reportar", (ctx) => {
+  ctx.session.state = "WAIT_GPS";
+  ctx.reply("📡 Enviá ubicación o ciudad:", Markup.keyboard([[Markup.button.locationRequest("📍 GPS")], ["❌ Cancelar"]]).resize());
+});
+
+bot.hears("🤖 Aifucito", (ctx) => { ctx.session.state = "IA_CHAT"; ctx.reply("🤖 IA activada. ¿Qué investigamos, bo?"); });
+
+bot.hears("👤 Perfil", (ctx) => {
+  const r = String(ctx.from.id) === ADMIN_ID ? "👑 Comandante Intergaláctico" : 
+            RANGOS.slice().reverse().find((x) => ctx.state.user.reportes >= x.min)?.name;
+  ctx.reply(`👤 *AGENTE:* ${esc(ctx.from.first_name)}\n🎖️ *RANGO:* ${esc(r)}\n📊 *REPORTES:* ${ctx.state.user.reportes}`, { parse_mode: "MarkdownV2" });
+});
+
+bot.command("radar", async (ctx) => {
+  if (String(ctx.from.id) !== ADMIN_ID) return;
+  const { count: u } = await supabase.from("usuarios").select("*", { count: "exact", head: true });
+  const { count: r } = await supabase.from("reportes").select("*", { count: "exact", head: true });
+  const { count: q } = await supabase.from("message_queue").select("*", { count: "exact", head: true }).eq("status", "pending");
+  ctx.reply(`🛡️ **PANEL V6.0 OMEGA**\n\n👥 Agentes: ${u}\n🛸 Reportes: ${r}\n📦 En cola: ${q}\n🟢 Sistema OK`);
+});
+
+/* ===============================
+   LAUNCH
+=============================== */
+bot.launch();
+processQueue();
+console.log("🛸 AIFU V6.0 HYBRID CORE ONLINE - PROTOCOLO OMEGA ACTIVADO");
