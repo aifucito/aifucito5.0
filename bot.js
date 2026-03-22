@@ -6,22 +6,27 @@ import { v4 as uuidv4 } from "uuid";
 import express from "express";
 import axios from "axios";
 
-// ⚙️ SERVIDOR RENDER
+// =====================================================
+// ⚙️ NODO DE ENERGÍA (PUERTO RENDER)
+// =====================================================
 const app = express();
 const PORT = process.env.PORT || 10000;
-app.get("/", (req, res) => res.send("🛰️ NODO AIFU V8.9 - ONLINE"));
+app.get("/", (req, res) => res.send("🛰️ NODO AIFU V9.2 - SISTEMAS NOMINALES"));
 app.listen(PORT, () => console.log(`🚀 Puerto ${PORT} activo.`));
 
-// 🧠 CONFIGURACIÓN IA (CORREGIDA)
+// =====================================================
+// 🧠 CEREBRO GÉMINIS (CONFIGURACIÓN ESTABLE)
+// =====================================================
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-// Usamos la versión estable "gemini-1.5-flash"
+// Usamos el modelo base sin sufijos beta para evitar el 404
 const aiModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-// 🧪 CLIENTES CORE
+// =====================================================
+// 🧪 CLIENTES CORE (TELEGRAM & SUPABASE)
+// =====================================================
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
-// 🎖️ JERARQUÍA AIFU
 const RANKS = [
   { xp: 0, name: "🚽 Fajinador de Retretes Espaciales" },
   { xp: 50, name: "🔭 Observador de Satélites Starlink" },
@@ -31,7 +36,9 @@ const RANKS = [
   { xp: 2000, name: "🛸 Comandante Intergaláctico" }
 ];
 
-// 🌎 ROUTING
+// =====================================================
+// 🌎 ROUTING DE REPORTES
+// =====================================================
 function getChannels(pais) {
   const key = (pais || "GLOBAL").toString().trim().toUpperCase();
   const regional = process.env[`CHANNEL_${key}`];
@@ -40,7 +47,9 @@ function getChannels(pais) {
   return [...new Set(targets)]; 
 }
 
-// 🧱 WORKER
+// =====================================================
+// 🧱 PROCESADOR DE COLA (WORKER)
+// =====================================================
 let workerRunning = false;
 async function worker() {
   if (workerRunning) return;
@@ -61,12 +70,14 @@ async function worker() {
   workerRunning = false;
 }
 
-// 🎯 LÓGICA DEL BOT
+// =====================================================
+// 🎯 LÓGICA DE COMANDO Y CONTROL
+// =====================================================
 bot.use(session());
 
 bot.start((ctx) => {
   ctx.session = { state: "IDLE", xp: ctx.session?.xp || 0 };
-  return ctx.reply(`🌌 NODO AIFU V8.9\nSistemas listos, Comandante.`, 
+  return ctx.reply(`🌌 NODO AIFU V9.2\nOperativo, Comandante. Clave de IA validada.`, 
     Markup.keyboard([["📍 Iniciar Reporte", "👤 Mi Perfil"], ["🤖 IA Aifucito"]]).resize());
 });
 
@@ -90,36 +101,39 @@ bot.on("location", async (ctx) => {
     const pais = (geo.data?.address?.country_code || "GLOBAL").toUpperCase();
     const ciudad = geo.data?.address?.city || geo.data?.address?.town || "Zona Rural";
     ctx.session = { ...ctx.session, lat, lng, pais, ciudad, state: "WAITING_DESC" };
-    ctx.reply(`📍 Ubicación: ${ciudad}, ${pais}.\n\nDescribí el avistamiento:`, Markup.removeKeyboard());
+    ctx.reply(`📍 Ubicación detectada: ${ciudad}, ${pais}.\n\nDescribí el avistamiento:`, Markup.removeKeyboard());
   } catch (e) {
     ctx.session.state = "WAITING_DESC";
-    ctx.reply("⚠️ Error GPS. Escribí tu reporte:");
+    ctx.reply("⚠️ Error GPS. Escribí tu reporte directamente:");
   }
 });
 
 bot.on("text", async (ctx) => {
   const text = ctx.message.text;
 
-  // 🤖 CHAT CON IA
+  // --- 🤖 MODO CHAT CON IA ---
   if (text === "🤖 IA Aifucito") {
     ctx.session.state = "IA_CHAT";
-    return ctx.reply("🛸 AIFUCITO IA: Escaneo frecuencias cósmicas... ¿Qué necesitás saber, Agente?");
+    return ctx.reply("🛸 AIFUCITO IA: Línea directa con el cosmos abierta. ¿Qué querés saber, bo?");
   }
 
   if (ctx.session?.state === "IA_CHAT" && text !== "📍 Iniciar Reporte") {
     try {
       await ctx.sendChatAction("typing");
-      // Prompt optimizado
-      const result = await aiModel.generateContent(`Actúa como Aifucito, un experto en OVNIs del Cono Sur. Respondé de forma breve y con modismos uruguayos/argentinos. Usuario: ${text}`);
+      
+      // Llamada simplificada: sin prompts complejos para testear estabilidad
+      const result = await aiModel.generateContent(`Contexto: Sos Aifucito, experto uruguayo en OVNIs. Respuesta corta. Usuario dice: ${text}`);
       const response = await result.response;
-      return ctx.reply(`🛸 AIFUCITO: ${response.text()}`, { parse_mode: "Markdown" });
-    } catch (e) { 
-      console.error(e);
-      return ctx.reply("⚠️ Error en la conexión mental con Géminis. Intentá más tarde."); 
+      const textResponse = response.text();
+      
+      return ctx.reply(`🛸 AIFUCITO: ${textResponse}`, { parse_mode: "Markdown" });
+    } catch (e) {
+      console.error("❌ ERROR GÉMINIS:", e.message);
+      return ctx.reply("⚠️ AIFUCITO: Fallo en el enlace mental. Si el error persiste, chequeá la cuota en AI Studio.");
     }
   }
 
-  // 📝 PROCESAR REPORTE
+  // --- 📝 PROCESAR REPORTE ---
   if (ctx.session?.state === "WAITING_DESC") {
     const targets = getChannels(ctx.session.pais);
     const xp = (ctx.session.xp || 0) + 25;
@@ -131,17 +145,23 @@ bot.on("text", async (ctx) => {
       descripcion: text, ciudad: ctx.session.ciudad, pais: ctx.session.pais
     });
 
-    const alerta = `🚨 *AVISTAMIENTO*\n📍 *Lugar:* ${ctx.session.ciudad}\n👤 *Agente:* ${ctx.from.first_name}\n🎖️ *Rango:* ${rank.name}\n📝 *Relato:* ${text}`;
+    const alerta = `🚨 *REPORTE CONFIRMADO*\n📍 *Lugar:* ${ctx.session.ciudad}\n👤 *Agente:* ${ctx.from.first_name}\n🎖️ *Rango:* ${rank.name}\n📝 *Relato:* ${text}`;
 
     for (const ch of targets) {
       await supabase.from("message_queue").insert({ id: uuidv4(), channel: ch, msg: alerta, status: "pending" });
     }
 
     ctx.session.state = "IDLE";
-    ctx.reply(`✅ Reporte enviado al Radar. Tu nuevo rango es: ${rank.name}`, 
+    ctx.reply(`✅ Reporte enviado al Radar. Nuevo Rango: ${rank.name}`, 
       Markup.keyboard([["📍 Iniciar Reporte", "👤 Mi Perfil"], ["🤖 IA Aifucito"]]).resize());
   }
 });
 
-bot.launch().then(() => console.log("🚀 AIFU BOT V8.9 OPERATIVO"));
+// =====================================================
+// 🚀 LANZAMIENTO
+// =====================================================
+bot.launch().then(() => console.log("🚀 AIFU BOT V9.2 OPERATIVO"));
 setInterval(worker, 1500);
+
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
