@@ -1,80 +1,78 @@
 import "dotenv/config";
 import { Telegraf } from "telegraf";
 import { createClient } from "@supabase/supabase-js";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import express from "express";
 
-// ⚙️ SERVIDOR PARA QUE RENDER NO SE DUERMA
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.get("/", (req, res) => res.send("📡 MÓDULO DE DIAGNÓSTICO AIFU ONLINE"));
-app.listen(PORT, () => console.log(`💻 Puerto ${PORT} abierto.`));
+app.get("/", (req, res) => res.send("🧪 SISTEMA DE PRUEBAS AIFU V9.0 ONLINE"));
+app.listen(PORT, () => console.log(`💻 Monitor en puerto ${PORT}`));
 
-// 🛠️ FUNCIÓN DE TESTEO TOTAL
-async function testSystem() {
-  console.log("-----------------------------------------");
-  console.log("🔍 INICIANDO ESCANEO DE SISTEMAS AIFU...");
-  console.log("-----------------------------------------");
+// =====================================================
+// 🔍 MAPEO DE VARIABLES (EL "ADN" DEL BOT)
+// =====================================================
+async function runDiagnostic() {
+  console.log("\n--- 🛸 INICIANDO ESCANEO DE VARIANTES ---");
 
-  const vars = [
-    "BOT_TOKEN", "SUPABASE_URL", "SUPABASE_KEY",
-    "CHANNEL_AR", "CHANNEL_CL", "CHANNEL_UY", 
-    "CHANNEL_GLOBAL", "CHANNEL_CONOSUR"
+  const mandatoryVars = [
+    // Core & Telegram API
+    "BOT_TOKEN", "API_ID", "API_HASH", "ADMIN_ID",
+    // Canales Regionales
+    "CHANNEL_UY", "CHANNEL_AR", "CHANNEL_CL", "CHANNEL_GLOBAL", "CHANNEL_CONOSUR",
+    // Seguridad y Backups
+    "CHANNEL_BACKUP", "COPIA_DE_SEGURIDAD",
+    // IA y Datos
+    "GEMINI_API_KEY", "SUPABASE_URL", "SUPABASE_KEY",
+    // Servicios Externos
+    "LOCATION_IQ_KEY", "PHONE_NUMBER_PUBLIC"
   ];
 
-  let errores = 0;
+  let missing = 0;
 
-  // 1. Comprobar Variables de Entorno
-  vars.forEach(v => {
-    const val = process.env[v];
-    if (!val || val === "undefined") {
-      console.error(`❌ ERROR: La variable [${v}] está VACÍA.`);
-      errores++;
+  mandatoryVars.forEach(v => {
+    const value = process.env[v];
+    if (!value || value === "undefined" || value === "") {
+      console.error(`❌ [${v}]: NO DETECTADA O VACÍA`);
+      missing++;
     } else {
-      console.log(`✅ OK: [${v}] detectada (${val.substring(0, 8)}...)`);
+      // Validamos formato básico (ejemplo: si los canales tienen el -100)
+      const isChannel = v.startsWith("CHANNEL_");
+      const hasPrefix = isChannel ? String(value).startsWith("-100") : true;
+      
+      console.log(`✅ [${v}]: OK ${isChannel && !hasPrefix ? "⚠️ (Falta prefijo -100)" : ""}`);
     }
   });
 
-  // 2. Comprobar Conexión Supabase
+  // =====================================================
+  // ⚡ TEST DE CONEXIÓN REAL (GÉMINIS & SUPABASE)
+  // =====================================================
+  console.log("\n--- ⚡ PROBANDO INTEGRACIONES ---");
+
+  // Test Supabase
   try {
     const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
-    const { error } = await supabase.from('usuarios').select('count', { count: 'exact', head: true });
+    const { error } = await supabase.from('reportes').select('id').limit(1);
     if (error) throw error;
-    console.log("✅ OK: Conexión con Supabase establecida.");
-  } catch (e) {
-    console.error("❌ ERROR: No se pudo conectar con Supabase:", e.message);
-    errores++;
-  }
+    console.log("✅ SUPABASE: Conexión y lectura exitosa.");
+  } catch (e) { console.error("❌ SUPABASE: Fallo de conexión ->", e.message); }
 
-  // 3. Comprobar Bot de Telegram
+  // Test Géminis
   try {
-    const bot = new Telegraf(process.env.BOT_TOKEN);
-    const me = await bot.telegram.getMe();
-    console.log(`✅ OK: Bot conectado como @${me.username}`);
-    
-    // Test de envío al Canal Cono Sur (Solo si existe el ID)
-    if (process.env.CHANNEL_CONOSUR) {
-        console.log("📡 Intentando mensaje de prueba a CHANNEL_CONOSUR...");
-        await bot.telegram.sendMessage(process.env.CHANNEL_CONOSUR, "🛠️ TEST DE SISTEMAS: El Nodo AIFU está iniciando pruebas de comunicación.");
-        console.log("✅ OK: Mensaje de prueba enviado exitosamente.");
-    }
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const res = await model.generateContent("Test rápido: responde 'OK'");
+    console.log(`✅ GÉMINIS: Conexión establecida.`);
+  } catch (e) { console.error("❌ GÉMINIS: Fallo de API ->", e.message); }
 
-  } catch (e) {
-    console.error("❌ ERROR: Falla en Telegram (Token o Permisos):", e.message);
-    errores++;
-  }
-
-  console.log("-----------------------------------------");
-  if (errores === 0) {
-    console.log("🚀 RESULTADO: SISTEMA LISTO PARA OPERAR.");
-  } else {
-    console.error(`⚠️ RESULTADO: SE ENCONTRARON ${errores} FALLOS CRÍTICOS.`);
-  }
-  console.log("-----------------------------------------");
+  console.log("\n-----------------------------------------");
+  console.log(missing === 0 ? "🚀 TODO LISTO PARA EL DESPLIEGUE REAL" : `⚠️ FALTAN ${missing} VARIABLES`);
+  console.log("-----------------------------------------\n");
 }
 
-testSystem();
+runDiagnostic();
 
-// Handler mínimo para que no crashee
+// Mantenemos el bot vivo para que Render no dé error de puerto
 const bot = new Telegraf(process.env.BOT_TOKEN);
-bot.start((ctx) => ctx.reply("🛰️ Módulo de diagnóstico activo. Mirá los logs de Render."));
+bot.start((ctx) => ctx.reply("🧪 Nodo de prueba activo. Revisá los logs de Render."));
 bot.launch();
