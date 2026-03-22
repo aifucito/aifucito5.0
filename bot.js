@@ -22,24 +22,23 @@ const STATE = {
   CONFIRM: "confirm"
 };
 
+const CHANNELS = {
+  "UY": process.env.CHANNEL_UY,
+  "AR": process.env.CHANNEL_AR,
+  "CL": process.env.CHANNEL_CL
+};
+
 /* =========================
-    SERVIDOR WEB (RADAR TÁCTICO)
+    SERVIDOR WEB (RADAR)
 ========================= */
 app.use(express.static(path.join(process.cwd(), "public")));
-
 app.get("/api/reports", async (req, res) => {
   try {
     const { data } = await supabase.from("reportes").select("*").order('created_at', { ascending: false });
     res.json(data || []);
-  } catch (e) {
-    res.json([]);
-  }
+  } catch (e) { res.json([]); }
 });
-
-app.get("/", (req, res) => {
-  res.sendFile(path.join(process.cwd(), "public", "index.html"));
-});
-
+app.get("/", (req, res) => res.sendFile(path.join(process.cwd(), "public", "index.html")));
 app.listen(process.env.PORT || 3000, "0.0.0.0");
 
 /* =========================
@@ -48,18 +47,12 @@ app.listen(process.env.PORT || 3000, "0.0.0.0");
 bot.use(async (ctx, next) => {
   if (!ctx.from) return next();
   const id = String(ctx.from.id);
-
   try {
     const { data } = await supabase.from("sesiones").select("data").eq("id", id).maybeSingle();
     ctx.session = data?.data || { state: STATE.IDLE };
-    
     await next();
-
     await supabase.from("sesiones").upsert({ id, data: ctx.session, updated_at: new Date() });
-  } catch (error) {
-    console.error("Error de sesión:", error);
-    return next();
-  }
+  } catch (error) { return next(); }
 });
 
 async function guardarSesion(id, sessionData) {
@@ -70,11 +63,7 @@ async function guardarSesion(id, sessionData) {
     UTILIDADES & RANGOS
 ========================= */
 function menu() {
-  return Markup.keyboard([
-    ["📍 Reportar"],
-    ["🗺 Mapa"],
-    ["🤖 Aifucito", "👤 Perfil"]
-  ]).resize();
+  return Markup.keyboard([["📍 Reportar"], ["🗺 Mapa"], ["🤖 Aifucito", "👤 Perfil"]]).resize();
 }
 
 function obtenerRango(r = 0, id = "") {
@@ -82,7 +71,6 @@ function obtenerRango(r = 0, id = "") {
   if (String(id) === ADMIN_ID) return "👑 Comandante Intergaláctico";
   if (num >= 25) return "🛸 CRIDOVNI";
   if (num >= 15) return "🛡️ Guardaespaldas de Alf";
-  if (num >= 10) return "🛰️ Guardaespaldas OVNI";
   if (num >= 5) return "🧉 Cebador del mate del Área 51";
   if (num >= 2) return "🧹 Fajinador de retretes espaciales";
   return "🔭 Observador inicial";
@@ -92,41 +80,32 @@ async function reverseGeo(lat, lng) {
   try {
     const r = await axios.get("https://nominatim.openstreetmap.org/reverse", {
       params: { format: "json", lat, lon: lng },
-      headers: { "User-Agent": "AIFUCITO_V5.2" }
+      headers: { "User-Agent": "AIFUCITO_V5.9" }
     });
     const a = r.data?.address || {};
     return {
-      pais: a.country_code?.toUpperCase() || "GLOBAL",
+      pais_code: a.country_code?.toUpperCase() || "GLOBAL",
       ciudad: a.city || a.town || a.village || "Sector Desconocido"
     };
-  } catch {
-    return { pais: "GLOBAL", ciudad: "N/A" };
-  }
+  } catch { return { pais_code: "GLOBAL", ciudad: "N/A" }; }
 }
 
 /* =========================
-    NÚCLEO IA (PERSONALIDAD CONSPIRANOICA ALEGRE)
+    NÚCLEO IA (PERSONALIDAD)
 ========================= */
 async function consultarIA(text, nombre, rango) {
   try {
-    const sistema = `Eres AIFUCITO, la IA más entusiasta, alegre y conspiranoica de la Red AIFU.
-    ¡Amas los OVNIS y crees que todo es una señal! 
-    Tratas al usuario con mucha energía. 
-    Usuario: ${nombre}, Rango: ${rango}.
-    Habla de conspiraciones divertidas, usa muchos emojis (🛸✨👽) y sé siempre muy positivo y servicial.`;
-
-    const r = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      { contents: [{ parts: [{ text: `INSTRUCCIONES: ${sistema}\n\nPREGUNTA: ${text}` }] }] }
-    );
-    return r.data?.candidates?.[0]?.content?.parts?.[0]?.text || "¡Los reptilianos cortaron el cable! 🦎";
-  } catch {
-    return "¡Una tormenta solar! ¡No dejes que te borren los recuerdos! ☀️🛰️";
-  }
+    const sistema = `Eres AIFUCITO, la IA más alegre, divertida y conspiranoica de la Red AIFU. ¡Amas los OVNIS! 
+    Usuario: ${nombre}, Rango: ${rango}. Habla con mucha energía, usa emojis espaciales (🛸✨👽) y sé siempre positivo.`;
+    
+    const r = await axios.post(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${process.env.GEMINI_API_KEY}`, 
+    { contents: [{ parts: [{ text: `${sistema}\n\nPregunta: ${text}` }] }] });
+    return r.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  } catch { return "¡Interferencia de los reptilianos! Intenta de nuevo. 🦎"; }
 }
 
 /* =========================
-    LÓGICA DE INTERACCIÓN
+    FLUJO TÁCTICO
 ========================= */
 
 bot.start(async (ctx) => {
@@ -136,116 +115,105 @@ bot.start(async (ctx) => {
   ctx.reply("🛸 ¡SISTEMA AIFU ONLINE! ¡Bienvenido a la resistencia, Agente! 👽✨", menu());
 });
 
-bot.hears("👤 Perfil", async (ctx) => {
-  const { data } = await supabase.from("usuarios").select("*").eq("id", String(ctx.from.id)).maybeSingle();
-  const nivel = obtenerRango(data?.reportes || 0, ctx.from.id);
-  ctx.reply(`👤 **EXPEDIENTE AGENTE**\n\n**Nombre:** ${data?.nombre}\n**Avistamientos:** ${data?.reportes || 0}\n**Rango:** ${nivel}\n\n¡Sigue vigilando los cielos! 🔭`, { parse_mode: "Markdown" });
-});
-
-bot.hears("🗺 Mapa", (ctx) => {
-  ctx.reply("🌐 ¡Abriendo el Radar Táctico! ¡Mira cuánta actividad hay! 🛰️🛸", {
-    reply_markup: { inline_keyboard: [[{ text: "🛰️ VER RADAR EN VIVO", url: "https://aifucito5-0.onrender.com" }]] }
-  });
-});
-
-bot.hears("🤖 Aifucito", async (ctx) => {
-  ctx.session.state = STATE.IA;
-  await guardarSesion(ctx.from.id, ctx.session);
-  ctx.reply("🤖 ¡HOLA, HOLA! ¡Aifucito activo y listo! 🚀✨\n\n¿Viste algo raro? ¿Quieres saber sobre el Área 51? ¡Pregúntame lo que quieras, camarada! 👽🛸");
-});
-
 bot.hears("📍 Reportar", async (ctx) => {
   ctx.session.state = STATE.WAIT_GPS;
   await guardarSesion(ctx.from.id, ctx.session);
-  ctx.reply("📡 ¡INICIANDO TRIANGULACIÓN! Envíame tu posición GPS ahora mismo... ¡Que no nos rastreen! 🛸🛰️", Markup.keyboard([
-    [{ text: "📡 ENVIAR POSICIÓN", request_location: true }], ["❌ Cancelar"]
-  ]).resize().oneTime());
+  ctx.reply("📡 ¡INICIANDO TRIANGULACIÓN! Envía tu posición GPS para localizar la anomalía... 🌍", 
+    Markup.keyboard([[{ text: "📡 ENVIAR MI POSICIÓN", request_location: true }], ["❌ Cancelar"]]).resize().oneTime());
 });
 
 bot.on("location", async (ctx) => {
   if (ctx.session.state !== STATE.WAIT_GPS) return;
+  
   ctx.session.lat = ctx.message.location.latitude;
   ctx.session.lng = ctx.message.location.longitude;
-  ctx.session.state = STATE.WAIT_DESC;
+  const geo = await reverseGeo(ctx.session.lat, ctx.session.lng);
+  ctx.session.pais_code = geo.pais_code;
+  ctx.session.ciudad = geo.ciudad;
   
+  ctx.session.state = STATE.WAIT_DESC;
   await guardarSesion(ctx.from.id, ctx.session);
-  // Removemos el teclado para que el usuario escriba
-  await ctx.reply("✨ ¡COORDENADAS RECIBIDAS! ✨\n\n¡Estás en el punto exacto! Ahora cuéntame... ¿Qué viste? ¿Era un platillo? ¿Una luz extraña? ¡Danos todos los detalles! 👾✍️\n(Mínimo 15 letras)", Markup.removeKeyboard());
+
+  let msg = `✨ ¡POSICIÓN CAPTURADA EN ${geo.ciudad}! ✨\n\nSector: **${geo.pais_code}**.`;
+  const channelId = CHANNELS[geo.pais_code] || process.env.CHANNEL_GLOBAL;
+  const buttons = [];
+
+  if (channelId) {
+    try {
+      const link = await ctx.telegram.createChatInviteLink(channelId, { member_limit: 1 });
+      buttons.push([{ text: `🛰️ Unirse a Red AIFU ${geo.pais_code}`, url: link.invite_link }]);
+      msg += `\n\n¿Quieres unirte a la unidad táctica de este sector? 🛰️`;
+    } catch (e) { console.log("Error de link"); }
+  }
+
+  await ctx.reply(msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: buttons } });
+  setTimeout(() => {
+    ctx.reply("👾 **SIGUIENTE PASO:** ¡Rápido! Describe lo que viste. ¿Fue un platillo? ¿Luces? ¡Cuéntalo todo! ✍️", Markup.removeKeyboard());
+  }, 1200);
 });
 
 bot.on("text", async (ctx) => {
   const text = ctx.message.text;
   if (text === "❌ Cancelar") {
     ctx.session.state = STATE.IDLE;
-    return ctx.reply("¡Operación abortada! ¡A cubierto! 🏃‍♂️💨", menu());
+    return ctx.reply("¡Operación cancelada! Volviendo a la base.", menu());
   }
 
-  // Capturar descripción de reporte
   if (ctx.session.state === STATE.WAIT_DESC) {
-    if (text.length < 15) return ctx.reply("¡Necesito más telemetría! Cuéntame un poco más... 🛸");
-
-    ctx.reply("🛰️ Analizando datos con satélites secretos...");
-    const geo = await reverseGeo(ctx.session.lat, ctx.session.lng);
-
-    ctx.session.pending = { lat: ctx.session.lat, lng: ctx.session.lng, desc: text, pais: geo.pais, ciudad: geo.ciudad };
+    if (text.length < 10) return ctx.reply("¡Necesito un poco más de telemetría! (mín. 10 letras) 🛸");
+    ctx.session.pending = { lat: ctx.session.lat, lng: ctx.session.lng, desc: text, pais: ctx.session.pais_code, ciudad: ctx.session.ciudad };
     ctx.session.state = STATE.CONFIRM;
     await guardarSesion(ctx.from.id, ctx.session);
 
-    return ctx.reply(
-      `📝 **REPORTE LISTO PARA TRANSMITIR**\n\n📍 **Zona:** ${geo.ciudad}, ${geo.pais}\n💬 **Evidencia:** ${text}\n\n¿Lanzamos la señal a la Red AIFU? 📡✨`,
+    return ctx.reply(`📝 **VERIFICACIÓN**\n\n📍 **Lugar:** ${ctx.session.ciudad}\n💬 **Evidencia:** ${text}\n\n¿Transmitimos? 📡✨`,
       { parse_mode: "Markdown", reply_markup: { inline_keyboard: [
-          [{ text: "✔ ¡LANZAR SEÑAL!", callback_data: `ok:${ctx.from.id}` }],
-          [{ text: "✖ BORRAR EVIDENCIA", callback_data: `no:${ctx.from.id}` }]
-      ]}}
-    );
+          [{ text: "✔ ¡SÍ, TRANSMITIR!", callback_data: `ok:${ctx.from.id}` }],
+          [{ text: "❌ REHACER / ABORTAR", callback_data: `no:${ctx.from.id}` }]
+      ]}});
   }
 
-  // Hablar con Aifucito
   if (ctx.session.state === STATE.IA) {
     const { data } = await supabase.from("usuarios").select("*").eq("id", String(ctx.from.id)).maybeSingle();
-    const rango = obtenerRango(data?.reportes || 0, ctx.from.id);
-    const r = await consultarIA(text, ctx.from.first_name, rango);
-    // Mantenemos el estado de IA para que pueda seguir charlando
+    const r = await consultarIA(text, ctx.from.first_name, obtenerRango(data?.reportes, ctx.from.id));
     return ctx.reply(`🤖 **AIFUCITO:** ${r}`, { parse_mode: "Markdown" });
   }
 });
 
 bot.action(/^ok:(\d+)$/, async (ctx) => {
-  const userId = ctx.match[1];
-  if (String(ctx.from.id) !== userId) return ctx.answerCbQuery("❌ Acceso denegado.");
-  
+  if (String(ctx.from.id) !== ctx.match[1]) return ctx.answerCbQuery("❌");
   const r = ctx.session.pending;
-  if (!r) return ctx.answerCbQuery("Error de datos.");
-
   try {
-    // 1. Guardar reporte
-    await supabase.from("reportes").insert([{ user_id: userId, lat: r.lat, lng: r.lng, descripcion: r.desc, pais: r.pais }]);
-
-    // 2. Actualizar puntos y Rango (UPSERT para asegurar que se guarde)
-    const { data: u } = await supabase.from("usuarios").select("reportes").eq("id", userId).maybeSingle();
+    await supabase.from("reportes").insert([{ user_id: ctx.match[1], lat: r.lat, lng: r.lng, descripcion: r.desc, pais: r.pais }]);
+    const { data: u } = await supabase.from("usuarios").select("reportes").eq("id", ctx.match[1]).maybeSingle();
     const nuevosPuntos = (Number(u?.reportes) || 0) + 1;
-    await supabase.from("usuarios").upsert({ id: userId, nombre: ctx.from.first_name, reportes: nuevosPuntos });
-
-    // 3. Alerta canal
-    const ch = process.env.CHANNEL_CONO_SUR;
-    if (ch) await bot.telegram.sendMessage(ch, `🚨 **NUEVO AVISTAMIENTO**\nEn ${r.ciudad}, ${r.pais}\nReportado por: ${obtenerRango(nuevosPuntos, userId)}`).catch(()=>{});
-
+    await supabase.from("usuarios").upsert({ id: ctx.match[1], nombre: ctx.from.first_name, reportes: nuevosPuntos });
     ctx.session.state = STATE.IDLE;
-    ctx.session.pending = null;
-    await guardarSesion(userId, ctx.session);
-
-    ctx.reply(`✅ **¡TRANSMISIÓN COMPLETADA!**\n\nHas subido de nivel en la red. Tu nuevo rango es: **${obtenerRango(nuevosPuntos, userId)}**\n¡Buen trabajo, Agente! 🛸✨`, menu());
-  } catch (e) {
-    ctx.reply("❌ ¡Interferencia en Supabase! No se pudo guardar.");
-  }
+    await guardarSesion(ctx.from.id, ctx.session);
+    ctx.reply(`✅ **REPORTE INDEXADO**\n\n¡Gracias por colaborar! Rango actual: **${obtenerRango(nuevosPuntos, ctx.from.id)}**`, menu());
+  } catch (e) { ctx.reply("❌ Error en la Red AIFU."); }
 });
 
 bot.action(/^no:(\d+)$/, async (ctx) => {
   ctx.session.state = STATE.IDLE;
-  ctx.session.pending = null;
   await guardarSesion(ctx.from.id, ctx.session);
-  ctx.reply("¡Evidencia destruida! Aquí no pasó nada... 🤐✨", menu());
+  ctx.reply("Memoria limpia. ¡A seguir vigilando! 🔭", menu());
+});
+
+bot.hears("🤖 Aifucito", (ctx) => {
+  ctx.session.state = STATE.IA;
+  ctx.reply("🤖 ¡HOLA! Aifucito activo. ¿Qué conspiración vamos a investigar hoy? 👽✨");
+});
+
+bot.hears("👤 Perfil", async (ctx) => {
+  const { data } = await supabase.from("usuarios").select("*").eq("id", String(ctx.from.id)).maybeSingle();
+  ctx.reply(`👤 **AGENTE:** ${data?.nombre}\n**RANGO:** ${obtenerRango(data?.reportes, ctx.from.id)}`, menu());
+});
+
+bot.hears("🗺 Mapa", (ctx) => {
+  ctx.reply("🌐 ¡Abriendo el Radar Táctico! 🛰️🛸", {
+    reply_markup: { inline_keyboard: [[{ text: "🛰️ VER RADAR", url: "https://aifucito5-0.onrender.com" }]] }
+  });
 });
 
 bot.launch();
-console.log("🚀 RED AIFU V5.2: PARCHE DE PERSONALIDAD Y RANGOS ACTIVO");
+console.log("🚀 RED AIFU V5.9: SISTEMA TOTALMENTE OPERATIVO");
