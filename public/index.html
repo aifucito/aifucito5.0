@@ -6,7 +6,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
 
 <style>
 body {
@@ -83,6 +82,7 @@ select {
 <div class="push-alert" id="push"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
 
 <script>
 
@@ -97,38 +97,38 @@ let heat = L.heatLayer([], { radius: 25, blur: 18 }).addTo(map);
 
 let reportes = [];
 
-/* =========================
-   PUSH
-========================= */
-
+/* PUSH */
 function push(msg) {
   const el = document.getElementById("push");
   el.innerText = msg;
   el.style.display = "block";
 
-  setTimeout(() => {
-    el.style.display = "none";
-  }, 4000);
+  setTimeout(() => el.style.display = "none", 4000);
 }
 
-/* =========================
-   LOAD DATA
-========================= */
-
+/* LOAD DATA (FIX PRINCIPAL) */
 async function loadData() {
 
   const range = document.getElementById("range").value;
 
-  const res = await fetch(`/api/reports?range=${range}`);
-  reportes = await res.json();
+  try {
+    const res = await fetch(`/api/reports?range=${range}`);
+    reportes = await res.json();
+  } catch (e) {
+
+    console.log("Modo demo activo");
+
+    reportes = [
+      { lat: -34.9, lng: -56.2, descripcion: "TEST MONTEVIDEO" },
+      { lat: -34.7, lng: -56.1, descripcion: "TEST SUR" },
+      { lat: -34.8, lng: -55.9, descripcion: "TEST ESTE" }
+    ];
+  }
 
   render();
 }
 
-/* =========================
-   RENDER MAPA
-========================= */
-
+/* RENDER */
 function render() {
 
   markers.clearLayers();
@@ -137,16 +137,16 @@ function render() {
 
   reportes.forEach(r => {
 
-    if (!r.lat || !r.lng) return;
+    if (!r || !r.lat || !r.lng) return;
 
-    markers.addLayer(
-      L.circleMarker([r.lat, r.lng], {
-        radius: 5,
-        color: "#00ff88",
-        fillColor: "#00ff88",
-        fillOpacity: 0.7
-      }).bindPopup(r.descripcion || "evento")
-    );
+    const marker = L.circleMarker([r.lat, r.lng], {
+      radius: 5,
+      color: "#00ff88",
+      fillColor: "#00ff88",
+      fillOpacity: 0.7
+    }).bindPopup(r.descripcion || "evento");
+
+    markers.addLayer(marker);
 
     heatData.push([r.lat, r.lng, 0.6]);
   });
@@ -160,12 +160,11 @@ function render() {
   else if (reportes.length > 8) dens = "MEDIA";
 
   document.getElementById("densidad").innerText = dens;
+
+  setTimeout(() => map.invalidateSize(), 200);
 }
 
-/* =========================
-   INIT
-========================= */
-
+/* INIT */
 loadData();
 
 </script>
