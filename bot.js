@@ -5,24 +5,30 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { v4 as uuidv4 } from "uuid";
 import axios from "axios";
 import express from "express";
+import path from "path";
+import { fileURLToPath } from "url";
+import cors from "cors";
 
 // ==========================================
 // 🔴 CONFIGURACIÓN Y RUTAS DE CANALES
 // ==========================================
 const OWNER_ID = "7662736311";
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const CHANNELS = {
   UY: process.env.CHANNEL_UY,
   AR: process.env.CHANNEL_AR,
   CL: process.env.CHANNEL_CL,
-  GLOBAL: process.env.CHANNEL_GLOBAL, // 🌎 AQUÍ VAN TODOS LOS DEMÁS PAÍSES
-  CONOSUR: process.env.CHANNEL_CONOSUR // 🛰️ CANAL MAESTRO (TODO LLEGA AQUÍ)
+  GLOBAL: process.env.CHANNEL_GLOBAL,
+  CONOSUR: process.env.CHANNEL_CONOSUR 
 };
 
 const REQUIRED_ENV = ["BOT_TOKEN", "SUPABASE_URL", "SUPABASE_KEY", "GEMINI_API_KEY", "CHANNEL_CONOSUR"];
 if (REQUIRED_ENV.some(k => !process.env[k])) throw new Error("Faltan variables críticas.");
 
-// Clientes
+// Clientes Core
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const aiModel = new GoogleGenerativeAI(process.env.GEMINI_API_KEY).getGenerativeModel({
@@ -30,7 +36,7 @@ const aiModel = new GoogleGenerativeAI(process.env.GEMINI_API_KEY).getGenerative
   tools: [{ googleSearchRetrieval: {} }]
 });
 
-// Ranking de Agentes
+// 🎖️ TUS RANGOS PERSONALIZADOS
 const RANKS = [
   { xp: 0, name: "Fajinador de Retretes espaciales" },
   { xp: 50, name: "Observador de Satélites starlink" },
@@ -71,7 +77,6 @@ bot.start(async (ctx) => {
   return ctx.reply("🌌 **RADAR AIFU ACTIVADO**\n\nBienvenido Agente. Sistema de monitoreo de fenómenos anómalos en tiempo real. ¿Qué misión tenemos tú hoy?", { parse_mode: "Markdown", ...menu });
 });
 
-// Middleware para resetear estado al salir de la IA
 bot.hears(["📍 Iniciar Reporte", "👤 Mi Perfil", "🛰️ Ver Radar", "🤝 Hacerse Colaborador"], async (ctx, next) => {
   await updateSession(String(ctx.from.id), { state: "IDLE" });
   return next();
@@ -92,14 +97,12 @@ bot.on("location", async (ctx) => {
   if (session.state !== "WAITING_LOCATION") return;
 
   const { latitude: lat, longitude: lng } = ctx.message.location;
-  let pais = "GLOBAL"; // Default
+  let pais = "GLOBAL"; 
   let ciudad = "Zona Rural";
 
   try {
     const geo = await axios.get(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, { timeout: 4000 });
     const code = geo.data?.address?.country_code?.toUpperCase();
-    
-    // Filtro de routing por país
     if (["UY", "AR", "CL"].includes(code)) pais = code;
     ciudad = geo.data?.address?.city || geo.data?.address?.town || geo.data?.address?.village || "Coordenadas GPS";
   } catch (e) { console.warn("Geo Fallback"); }
@@ -116,7 +119,6 @@ bot.on("text", async (ctx) => {
   const user = await getProfile(userId);
   const text = ctx.message.text;
 
-  // 1. FINALIZAR REPORTE
   if (user.state === "WAITING_DESC") {
     const reportId = uuidv4();
     const { error } = await supabase.from("reportes").insert({
@@ -127,7 +129,6 @@ bot.on("text", async (ctx) => {
 
     const alerta = `🚨 **NUEVO REPORTE EN RADAR**\n📍 ${user.ciudad} (${user.pais})\n👤 Agente: ${ctx.from.first_name}\n📝 ${text}\n🌍 [Abrir Mapa](https://aifucito5-0.onrender.com)`;
 
-    // Routing: Al canal del país (o Global) + Canal Maestro (Cono Sur)
     const canalDestino = CHANNELS[user.pais] || CHANNELS.GLOBAL;
     bot.telegram.sendMessage(canalDestino, alerta).catch(() => {});
     bot.telegram.sendMessage(CHANNELS.CONOSUR, alerta).catch(() => {});
@@ -137,7 +138,6 @@ bot.on("text", async (ctx) => {
       Markup.keyboard([["📍 Iniciar Reporte", "🛰️ Ver Radar"], ["👤 Mi Perfil", "🤖 Hablar con Aifucito"]]).resize());
   }
 
-  // 2. MODO IA (AIFUCITO)
   if (user.state === "IA_CHAT" && !text.startsWith("/")) {
     if (!user.is_premium && (user.ai_count || 0) >= 3) {
       return ctx.reply("⚠️ **Límite alcanzado.**\nComo usuario gratuito tienes 3 consultas diarias. Hazte Colaborador para hablar sin límites.",
@@ -192,16 +192,45 @@ bot.command("broadcast", async (ctx) => {
   ctx.reply(`🚀 Enviando a ${users.length} agentes...`);
 
   for (const u of users || []) {
-    await new Promise(r => setTimeout(r, 300)); // Delay para evitar baneo
+    await new Promise(r => setTimeout(r, 300)); 
     bot.telegram.sendMessage(u.user_id, `📢 **AVISO RADAR AIFU:**\n\n${msg}`).catch(() => {});
   }
   ctx.reply("✅ Broadcast completado.");
 });
 
-// Lanzamiento
 bot.launch();
 
-// Server para Render
+// ==========================================
+// 🌐 SERVIDOR WEB PARA EL RADAR (EXPRESS)
+// ==========================================
 const app = express();
-app.get("/", (req, res) => res.send("📡 RADAR AIFU OPERATIVO"));
-app.listen(process.env.PORT || 10000);
+app.use(cors());
+app.use(express.json());
+
+// Hace pública la carpeta 'public' para el index.html
+app.use(express.static(path.join(__dirname, "public")));
+
+// API que alimenta el mapa neón
+app.get("/api/reportes", async (req, res) => {
+  const { range } = req.query;
+  let query = supabase.from("reportes").select("*");
+
+  if (range === "24h") {
+    query = query.gt('created_at', new Date(Date.now() - 24*60*60*1000).toISOString());
+  } else if (range === "7d") {
+    query = query.gt('created_at', new Date(Date.now() - 7*24*60*60*1000).toISOString());
+  }
+
+  const { data, error } = await query.order("created_at", { ascending: false });
+  if (error) return res.status(500).json(error);
+  res.json(data);
+});
+
+// Servir el index.html en la raíz
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+app.listen(process.env.PORT || 10000, () => {
+  console.log("📡 RADAR AIFU OPERATIVO - Puerta 10000 abierta.");
+});
