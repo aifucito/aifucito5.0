@@ -7,18 +7,30 @@ import express from "express";
 import axios from "axios";
 
 // =====================================================
-// ⚙️ NODO DE ENERGÍA (PUERTO RENDER)
+// ⚙️ NODO DE ENERGÍA (OPTIMIZADO PARA 0.5 CPU)
 // =====================================================
 const app = express();
 const PORT = process.env.PORT || 10000;
-app.get("/", (req, res) => res.send("🛰️ NODO AIFU V9.5 - SISTEMAS NOMINALES"));
-app.listen(PORT, () => console.log(`🚀 Puerto ${PORT} activo.`));
+
+// Respuesta inmediata para evitar el "trancado" en el despliegue de Render
+app.get("/", (req, res) => res.status(200).send("🛰️ NODO AIFU V9.5 - SISTEMAS NOMINALES"));
+
+// Forzamos la escucha en 0.0.0.0 para entornos cloud
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Puerto ${PORT} activo. Concurrencia limitada a 1 para estabilidad.`);
+    
+    // Lanzamiento del bot con un pequeño delay para no saturar el inicio de la CPU
+    setTimeout(() => {
+        bot.launch()
+            .then(() => console.log("🚀 AIFU BOT V9.5 OPERATIVO CON FLASH-LATEST"))
+            .catch(err => console.error("❌ Fallo de ignición:", err));
+    }, 1500);
+});
 
 // =====================================================
-// 🧠 CEREBRO GÉMINIS (AJUSTADO SEGÚN TU CURL)
+// 🧠 CEREBRO GÉMINIS (gemini-flash-latest)
 // =====================================================
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-// Usamos el nombre exacto que te funcionó en el comando curl
 const aiModel = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
 
 // =====================================================
@@ -48,7 +60,7 @@ function getChannels(pais) {
 }
 
 // =====================================================
-// 🧱 PROCESADOR DE COLA (WORKER)
+// 🧱 PROCESADOR DE COLA (Ajustado a 2000ms para 0.5 CPU)
 // =====================================================
 let workerRunning = false;
 async function worker() {
@@ -94,7 +106,7 @@ bot.hears("📍 Iniciar Reporte", (ctx) => {
 });
 
 bot.on("location", async (ctx) => {
-  if (ctx.session.state !== "WAITING_LOCATION") return;
+  if (ctx.session?.state !== "WAITING_LOCATION") return;
   const { latitude: lat, longitude: lng } = ctx.message.location;
   try {
     const geo = await axios.get(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`);
@@ -111,30 +123,23 @@ bot.on("location", async (ctx) => {
 bot.on("text", async (ctx) => {
   const text = ctx.message.text;
 
-  // --- 🤖 MODO CHAT CON IA (MEJORADO CON FLASH-LATEST) ---
   if (text === "🤖 IA Aifucito") {
     ctx.session.state = "IA_CHAT";
-    return ctx.reply("🛸 AIFUCITO IA: Escaneo completado. ¿Qué necesitás saber sobre los cielos, Agente?");
+    return ctx.reply("🛸 AIFUCITO IA: Escaneo completado. ¿Qué necesitás saber?");
   }
 
   if (ctx.session?.state === "IA_CHAT" && text !== "📍 Iniciar Reporte") {
     try {
       await ctx.sendChatAction("typing");
-      
-      const prompt = `Actúa como Aifucito, un experto en ufología de Uruguay y el Cono Sur. Respondé de forma breve y con modismos uruguayos/argentinos. Usuario pregunta: ${text}`;
-      
+      const prompt = `Actúa como Aifucito, experto en ufología. Responde breve y con modismos uruguayos/argentinos. Pregunta: ${text}`;
       const result = await aiModel.generateContent(prompt);
       const response = await result.response;
-      const textResponse = response.text();
-      
-      return ctx.reply(`🛸 AIFUCITO: ${textResponse}`, { parse_mode: "Markdown" });
+      return ctx.reply(`🛸 AIFUCITO: ${response.text()}`, { parse_mode: "Markdown" });
     } catch (e) {
-      console.error("❌ ERROR IA:", e.message);
-      return ctx.reply("⚠️ AIFUCITO: Error de enlace. El modelo 'flash-latest' no respondió. Reintentá en un minuto.");
+      return ctx.reply("⚠️ Error de enlace IA. Reintentá.");
     }
   }
 
-  // --- 📝 PROCESAR REPORTE ---
   if (ctx.session?.state === "WAITING_DESC") {
     const targets = getChannels(ctx.session.pais);
     const xp = (ctx.session.xp || 0) + 25;
@@ -153,16 +158,20 @@ bot.on("text", async (ctx) => {
     }
 
     ctx.session.state = "IDLE";
-    ctx.reply(`✅ Reporte enviado al Radar. Rango actual: ${rank.name}`, 
+    ctx.reply(`✅ Reporte enviado al Radar. Rango: ${rank.name}`, 
       Markup.keyboard([["📍 Iniciar Reporte", "👤 Mi Perfil"], ["🤖 IA Aifucito"]]).resize());
   }
 });
 
 // =====================================================
-// 🚀 LANZAMIENTO
+// 🚀 MANTENIMIENTO Y TRÁFICO
 // =====================================================
-bot.launch().then(() => console.log("🚀 AIFU BOT V9.5 OPERATIVO CON FLASH-LATEST"));
-setInterval(worker, 1500);
+setInterval(worker, 2000); // 2 segundos para no agotar el 0.5 CPU
+
+// Anti-hibernación (Pulso cada 10 min)
+setInterval(() => {
+  axios.get(`http://localhost:${PORT}/`).catch(() => {});
+}, 600000);
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
