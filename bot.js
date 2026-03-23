@@ -9,10 +9,12 @@ import { v4 as uuidv4 } from "uuid";
    🔒 CONTROL DE INSTANCIA ÚNICA
 ========================================== */
 if (global.__AIFU_RUNNING__) {
-  console.log("⚠️ Instancia duplicada detectada. Abortando.");
+  console.log("⚠️ Instancia duplicada detectada.");
   process.exit(0);
 }
 global.__AIFU_RUNNING__ = true;
+
+console.log("🛰️ Iniciando sistemas AIFU...");
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -179,7 +181,6 @@ bot.on("text", async (ctx) => {
     const newCount = (user.reports_count || 0) + 1;
     await updateProfile(id, { state: "IDLE", reports_count: newCount });
     
-    // Alerta al canal
     bot.telegram.sendMessage(process.env.CHANNEL_CONOSUR, `🚨 **AVISTAMIENTO DETECTADO**\n📝 Desc: ${text}\n🗺️ GPS: ${user.lat}, ${user.lng}\n👤 Por: ${ctx.from.first_name}`).catch(()=>{});
     
     return ctx.reply(`✅ Reporte archivado.\n📈 Total de reportes: ${newCount}\n🎖️ Rango: ${getRank(newCount)}`, menu);
@@ -192,7 +193,8 @@ bot.on("text", async (ctx) => {
 const app = express();
 app.use(express.static("public"));
 
-// Endpoint de salud para Render
+// Endpoint de salud CRÍTICO para Render
+app.get("/", (req, res) => res.status(200).send("AIFU CENTRAL OPERATIVA"));
 app.get("/health", (req, res) => res.status(200).send("OK"));
 
 app.get("/api/reports", async (req, res) => {
@@ -212,27 +214,36 @@ app.get("/api/reports", async (req, res) => {
 });
 
 /* ==========================================
-   🔥 ARRANQUE DEL SISTEMA
+   🔥 ARRANQUE DEL SISTEMA (RENDER FIX)
 ========================================== */
 const PORT = process.env.PORT || 10000;
 
 async function start() {
   try {
-    await bot.launch({ dropPendingUpdates: true });
-    
+    // 1. Iniciar servidor Express ANTES que el bot
     app.listen(PORT, "0.0.0.0", () => {
-      console.log(`🌐 Radar operativo en puerto ${PORT}`);
+      console.log(`✅ Servidor HTTP escuchando en puerto ${PORT}`);
     });
 
-    // Mantener vivo en Render
-    setInterval(() => {
-      axios.get(`${process.env.PUBLIC_URL}/health`).catch(() => {});
-    }, 600000); 
+    // 2. Lanzar Bot de Telegram
+    await bot.launch({ dropPendingUpdates: true });
+    console.log("✅ Bot de Telegram lanzado correctamente.");
+
+    // 3. Keep-alive
+    if (process.env.PUBLIC_URL) {
+      setInterval(() => {
+        axios.get(`${process.env.PUBLIC_URL}/health`).catch(() => {});
+      }, 600000); 
+    }
 
   } catch (err) {
-    console.error("❌ Fallo en el lanzamiento:", err);
+    console.error("❌ Fallo catastrófico en el arranque:", err);
     process.exit(1);
   }
 }
 
 start();
+
+// Manejo de cierre limpio
+process.once("SIGINT", () => bot.stop("SIGINT"));
+process.once("SIGTERM", () => bot.stop("SIGTERM"));
