@@ -5,7 +5,15 @@ import { v4 as uuidv4 } from "uuid";
 import axios from "axios";
 import express from "express";
 
-/* ================= CONFIG ================= */
+/* ================= SAFE SINGLE INSTANCE ================= */
+
+if (global.__AIFU_RUNNING__) {
+  console.log("⚠️ Instancia duplicada bloqueada");
+  process.exit(0);
+}
+global.__AIFU_RUNNING__ = true;
+
+/* ================= CORE INIT ================= */
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
@@ -14,21 +22,32 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
+/* ================= GROUPS ================= */
+
 const GROUPS = {
-  CONO_SUR: process.env.GROUP_CONO_SUR, // RADAR SOLO REPORTES
+  CONO_SUR: process.env.GROUP_CONO_SUR, // RADAR
   UY: process.env.GROUP_UY,
   AR: process.env.GROUP_AR,
   CL: process.env.GROUP_CL,
   GLOBAL: process.env.GROUP_GLOBAL
 };
 
-/* ================= SERVER ================= */
+/* ================= EXPRESS ================= */
 
 const app = express();
 app.use(express.static("public"));
 
 app.get("/", (_, res) => res.send("AIFU ONLINE"));
 app.get("/health", (_, res) => res.send("OK"));
+
+/* ================= CACHE ================= */
+
+const cache = {
+  reports: null,
+  timestamp: 0
+};
+
+const CACHE_MS = 15000;
 
 /* ================= MEMORY ================= */
 
@@ -37,14 +56,14 @@ const memory = new Map();
 async function getProfile(id) {
   if (memory.has(id)) return memory.get(id);
 
-  let { data } = await supabase
+  const { data } = await supabase
     .from("sessions")
     .select("*")
     .eq("user_id", id)
     .maybeSingle();
 
-  if (!data) {
-    data = {
+  const profile =
+    data || {
       user_id: id,
       state: "IDLE",
       role: "free",
@@ -52,25 +71,32 @@ async function getProfile(id) {
       lng: null
     };
 
-    await supabase.from("sessions").upsert(data);
-  }
+  await supabase.from("sessions").upsert(profile);
+  memory.set(id, profile);
 
-  memory.set(id, data);
-  return data;
+  return profile;
 }
 
-async function updateProfile(id, payload) {
+async function updateProfile(id, patch) {
   const current = await getProfile(id);
-  const updated = { ...current, ...payload };
+  const updated = { ...current, ...patch };
 
   memory.set(id, updated);
 
-  await supabase
-    .from("sessions")
-    .update(payload)
-    .eq("user_id", id);
+  await supabase.from("sessions").update(patch).eq("user_id", id);
 
   return updated;
+}
+
+/* ================= SAFE SEND ================= */
+
+async function safeSend(chatId, msg) {
+  try {
+    if (!chatId) return;
+    await bot.telegram.sendMessage(chatId, msg);
+  } catch (e) {
+    console.log("⚠️ Telegram error:", e.message);
+  }
 }
 
 /* ================= GEO ================= */
@@ -87,7 +113,11 @@ async function getLocation(lat, lng) {
       countryCode: res.data.countryCode || "XX"
     };
   } catch {
-    return { city: "Desconocido", country: "Desconocido", countryCode: "XX" };
+    return {
+      city: "Desconocido",
+      country: "Desconocido",
+      countryCode: "XX"
+    };
   }
 }
 
@@ -103,41 +133,33 @@ async function IA(prompt) {
 
     return (
       res.data?.candidates?.[0]?.content?.parts?.[0]?.text ||
-      "sin respuesta"
+      "sin respuesta IA"
     );
   } catch {
-    return "interferencia IA";
+    return "IA OFFLINE";
   }
 }
 
 /* ================= CLASSIFIER ================= */
 
 async function classifyEvent(text) {
-  const res = await IA(`
-Clasifica SOLO en: luz / nave / anomalía / desconocido
-
-Texto:
-${text}
-`);
-
-  return res.toLowerCase().trim();
+  const r = await IA(`Clasifica: luz / nave / anomalía / desconocido\n${text}`);
+  return r.toLowerCase().trim();
 }
 
-/* ================= REPORT ================= */
+/* ================= REPORT FORMAT ================= */
 
-function formatReport(user, location, type, desc, lat, lng) {
+function formatReport(user, loc, type, desc, lat, lng) {
   return `
-🛸 REPORTE AIFU RADAR
-────────────────────
+🛸 AIFU RADAR
+──────────────────
 👤 Usuario: ${user}
-🌍 Ubicación: ${location.city}, ${location.country}
+🌍 Ubicación: ${loc.city}, ${loc.country}
 📡 Tipo: ${type}
-📅 Fecha: ${new Date().toLocaleString()}
 📍 GPS: ${lat}, ${lng}
-
-🧠 Descripción:
-${desc}
-────────────────────
+📅 ${new Date().toLocaleString()}
+──────────────────
+🧠 ${desc}
 ID: ${uuidv4()}
 `;
 }
@@ -151,17 +173,35 @@ function getChatGroup(code) {
   return GROUPS.GLOBAL;
 }
 
-/* ================= FILTER MAP ================= */
+/* ================= ROLE ACCESS ================= */
 
-function filterReports(reports, user) {
-  if (user.role === "vip" || user.role === "collaborator") {
-    return reports;
-  }
-
-  return reports.filter(() => Math.random() < 0.4);
+function getAccessRole(user) {
+  if (user?.role === "vip") return "vip";
+  if (user?.role === "collaborator") return "vip";
+  return "free";
 }
 
-/* ================= UI MENU ================= */
+/* ================= BOOT CHECK ================= */
+
+async function bootCheck() {
+  try {
+    const ok =
+      !!process.env.BOT_TOKEN &&
+      !!process.env.SUPABASE_URL &&
+      !!process.env.SUPABASE_KEY;
+
+    if (!ok) throw new Error("ENV missing");
+
+    console.log("🟢 SYSTEM OK");
+  } catch (e) {
+    console.log("🔴 BOOT FAIL:", e.message);
+    process.exit(1);
+  }
+}
+
+/* ================= BOT ================= */
+
+bot.use(session());
 
 const menu = Markup.keyboard([
   ["📍 Nuevo Reporte"],
@@ -171,18 +211,13 @@ const menu = Markup.keyboard([
 
 /* ================= START ================= */
 
-bot.use(session());
-
 bot.start(async (ctx) => {
   await getProfile(String(ctx.from.id));
 
-  return ctx.reply(
-    "🛸 AIFU RADAR ONLINE\nSelecciona una opción:",
-    menu
-  );
+  return ctx.reply("Bienvenido, agente", menu);
 });
 
-/* ================= BUTTONS ================= */
+/* ================= FLOW ================= */
 
 bot.hears("📍 Nuevo Reporte", async (ctx) => {
   await updateProfile(String(ctx.from.id), {
@@ -190,44 +225,12 @@ bot.hears("📍 Nuevo Reporte", async (ctx) => {
   });
 
   return ctx.reply(
-    "📡 Envíe su ubicación GPS",
+    "📡 Enviar ubicación GPS",
     Markup.keyboard([
       [Markup.button.locationRequest("📍 Enviar GPS")]
-    ]).resize().oneTime()
-  );
-});
-
-bot.hears("🗺 Mapa", (ctx) => {
-  return ctx.reply("🌍 Radar en vivo:", {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: "Abrir mapa", url: process.env.BASE_URL }]
-      ]
-    }
-  });
-});
-
-bot.hears("💬 Comunidad", (ctx) => {
-  return ctx.reply("💬 Grupos disponibles:", {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: "🇺🇾 Uruguay", url: process.env.GROUP_UY }],
-        [{ text: "🇦🇷 Argentina", url: process.env.GROUP_AR }],
-        [{ text: "🇨🇱 Chile", url: process.env.GROUP_CL }],
-        [{ text: "🌍 Global", url: process.env.GROUP_GLOBAL }]
-      ]
-    }
-  });
-});
-
-bot.hears("👤 Mi Perfil", async (ctx) => {
-  const user = await getProfile(String(ctx.from.id));
-
-  return ctx.reply(
-    `👤 PERFIL AIFU
-Estado: ${user.state}
-Rol: ${user.role}
-GPS: ${user.lat || "-"} / ${user.lng || "-"}`
+    ])
+      .resize()
+      .oneTime()
   );
 });
 
@@ -237,9 +240,7 @@ bot.on("location", async (ctx) => {
   const id = String(ctx.from.id);
   const user = await getProfile(id);
 
-  if (user.state !== "WAIT_LOCATION") {
-    return ctx.reply("⚠️ Inicie primero un reporte");
-  }
+  if (user.state !== "WAIT_LOCATION") return;
 
   await updateProfile(id, {
     state: "WAIT_DESC",
@@ -247,75 +248,151 @@ bot.on("location", async (ctx) => {
     lng: ctx.message.location.longitude
   });
 
-  return ctx.reply("🧠 Describa lo que observó");
+  return ctx.reply("🧠 Describe lo observado");
 });
 
 /* ================= TEXT FLOW ================= */
 
 bot.on("text", async (ctx) => {
   const id = String(ctx.from.id);
-  const text = ctx.message.text;
   const user = await getProfile(id);
 
   if (user.state !== "WAIT_DESC") return;
 
-  const location = await getLocation(user.lat, user.lng);
-  const type = await classifyEvent(text);
-  const expanded = await IA(`Mejora sin inventar datos:\n${text}`);
+  const loc = await getLocation(user.lat, user.lng);
+  const type = await classifyEvent(ctx.message.text);
+  const desc = await IA(ctx.message.text);
 
   const report = formatReport(
     id,
-    location,
+    loc,
     type,
-    expanded,
+    desc,
     user.lat,
     user.lng
   );
 
-  /* RADAR SOLO */
-  await bot.telegram.sendMessage(GROUPS.CONO_SUR, report);
+  await safeSend(GROUPS.CONO_SUR, report);
+  await safeSend(getChatGroup(loc.countryCode), "📡 Nuevo reporte");
 
-  /* CHAT SOCIAL */
-  const chatGroup = getChatGroup(location.countryCode);
-
-  await bot.telegram.sendMessage(
-    chatGroup,
-    `📡 Nuevo reporte desde ${location.city}`
-  );
-
-  /* SAVE DB */
   await supabase.from("reportes").insert({
     id: uuidv4(),
     user_id: id,
-    city: location.city,
-    country: location.country,
+    city: loc.city,
+    country: loc.country,
     type,
-    description: expanded,
+    description: desc,
     lat: user.lat,
-    lng: user.lng
+    lng: user.lng,
+    created_at: new Date().toISOString()
   });
 
   await updateProfile(id, { state: "IDLE" });
 
-  return ctx.reply("✅ Reporte enviado al radar AIFU", menu);
+  return ctx.reply("✅ Reporte enviado", menu);
 });
 
 /* ================= MAP API ================= */
 
-app.get("/api/reports", async (_, res) => {
-  const { data } = await supabase
-    .from("reportes")
-    .select("*")
-    .order("created_at", { ascending: false });
+app.get("/api/reports", async (req, res) => {
+  try {
+    const role = req.query.role || "free";
 
-  res.json(data || []);
+    const now = Date.now();
+
+    if (role === "free" && cache.reports && now - cache.timestamp < CACHE_MS) {
+      return res.json(cache.reports);
+    }
+
+    const cutoff =
+      role === "free"
+        ? new Date(Date.now() - 16 * 60 * 60 * 1000)
+        : null;
+
+    let query = supabase
+      .from("reportes")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (cutoff) {
+      query = query.gte("created_at", cutoff.toISOString());
+    }
+
+    const { data } = await query;
+
+    if (role === "free") {
+      cache.reports = data || [];
+      cache.timestamp = now;
+    }
+
+    res.json(data || []);
+  } catch (e) {
+    res.json([]);
+  }
 });
 
-/* ================= RUN ================= */
+/* ================= COMMUNITY ================= */
 
-const PORT = process.env.PORT || 10000;
+bot.hears("💬 Comunidad", (ctx) => {
+  return ctx.reply("💬 Grupos activos:", {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "Uruguay", url: process.env.GROUP_UY }],
+        [{ text: "Argentina", url: process.env.GROUP_AR }],
+        [{ text: "Chile", url: process.env.GROUP_CL }],
+        [{ text: "Global", url: process.env.GROUP_GLOBAL }]
+      ]
+    }
+  });
+});
 
-app.listen(PORT, "0.0.0.0", async () => {
+/* ================= MAP ================= */
+
+bot.hears("🗺 Mapa", async (ctx) => {
+  const user = await getProfile(String(ctx.from.id));
+  const role = getAccessRole(user);
+
+  const url = `${process.env.BASE_URL}/public/index.html?role=${role}`;
+
+  return ctx.reply("🌍 Radar activo", {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "Abrir mapa", url }]
+      ]
+    }
+  });
+});
+
+/* ================= PROFILE ================= */
+
+bot.hears("👤 Mi Perfil", async (ctx) => {
+  const u = await getProfile(String(ctx.from.id));
+
+  return ctx.reply(
+    `👤 PERFIL
+Rol: ${u.role}
+Estado: ${u.state}`
+  );
+});
+
+/* ================= ERROR HANDLING ================= */
+
+bot.catch((err) => {
+  console.log("⚠️ BOT ERROR:", err);
+});
+
+/* ================= START SYSTEM ================= */
+
+async function start() {
+  await bootCheck();
+
+  app.listen(process.env.PORT || 10000, "0.0.0.0", () => {
+    console.log("🌐 WEB OK");
+  });
+
   await bot.launch();
-  console.log("🛸 AIFU BOT ONLINE");
-});
+
+  console.log("🛸 AIFU ONLINE");
+}
+
+start();
