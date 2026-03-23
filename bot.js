@@ -70,7 +70,7 @@ app.get("/api/reportes", async (req, res) => {
 const memory = new Map();
 
 async function getProfile(id) {
-  if (memory.size > 1000) memory.clear(); // 🛡️ Anti-overflow RAM
+  if (memory.size > 1000) memory.clear(); 
   if (memory.has(id)) return memory.get(id);
 
   try {
@@ -169,7 +169,7 @@ bot.on("text", async (ctx) => {
     if (text.length < 2) return; 
     try {
       await ctx.sendChatAction("typing");
-      const prompt = `Eres Aifucito, experto en ufología uruguaya. Responde corto y con modismos: ${text}`;
+      const prompt = `Eres Aifucito, experto en ufología uruguaya. Responde corto y con modismos locales: ${text}`;
       const result = await aiModel.generateContent(prompt);
       const response = await result.response;
       return ctx.reply(`🛸 AIFUCITO: ${response.text()}`);
@@ -218,7 +218,7 @@ bot.hears("🛰️ Ver Radar", (ctx) => {
 });
 
 /* ==========================================
-    🧪 PRE-FLIGHT CHECK (MEJORADO)
+    🧪 PRE-FLIGHT CHECK (MODO SEGURO)
 ========================================== */
 async function preFlight() {
   console.log("🔍 ===============================");
@@ -248,7 +248,9 @@ async function preFlight() {
     process.env.CHANNEL_UY, process.env.CHANNEL_AR, process.env.CHANNEL_CL
   ].filter(Boolean);
 
-  if (canales.length > 0) { console.log(`✅ Canales detectados: ${canales.length}`); status.canales = true;
+  if (canales.length > 0) { 
+    console.log(`✅ Canales detectados: ${canales.length}`); 
+    status.canales = true;
   } else { console.log("❌ No hay canales configurados"); }
 
   const allOK = Object.values(status).every(v => v === true);
@@ -265,15 +267,26 @@ async function preFlight() {
 }
 
 /* ==========================================
-    🚀 START & ANTI-CRASH
+    🚀 IGNICIÓN (OPTIMIZADO PARA RENDER)
 ========================================== */
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, '0.0.0.0', async () => {
-  console.log(`🌐 SERVER ON ${PORT}`);
-  await preFlight();
-  setTimeout(() => { bot.launch().then(() => console.log("🛸 BOT ONLINE")); }, 1000);
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🌐 Puerto ${PORT} abierto. Avisando a Render...`);
+  
+  // Ejecutamos el chequeo y el arranque del bot después de abrir el puerto
+  preFlight().then(() => {
+    setTimeout(() => { 
+      bot.launch()
+        .then(() => console.log("🛸 BOT ONLINE"))
+        .catch(err => console.error("❌ Fallo Launch:", err.message)); 
+    }, 1000);
+  });
 });
 
+/* ==========================================
+    🛡️ BLINDAJE ANTI-CRASH
+========================================== */
 process.on("unhandledRejection", (err) => { console.error("❌ Fallo Promesa:", err.message); });
 process.on("uncaughtException", (err) => { console.error("❌ Error Crítico:", err.message); });
 process.once("SIGINT", () => bot.stop("SIGINT"));
