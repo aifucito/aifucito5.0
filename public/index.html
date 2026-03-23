@@ -40,28 +40,37 @@ body {
 .popup-desc { margin-top: 5px; }
 .popup-footer { margin-top: 5px; font-size: 10px; opacity: 0.6; }
 
-.ufo-icon-container { position: relative; }
+/* --- CORRECCIÓN DE POSICIONAMIENTO --- */
+.ufo-icon-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 
 .ufo-pulse {
   position: absolute;
-  width: 30px;
-  height: 30px;
+  width: 40px;
+  height: 40px;
   border: 2px solid #00ff88;
   border-radius: 50%;
-  transform: translate(-50%, -50%);
+  /* Eliminado el transform negativo que causaba el desplazamiento */
   animation: pulse 2s infinite;
+  pointer-events: none; /* No interfiere con los clicks */
 }
 
 @keyframes pulse {
-  0% { transform: scale(0.5); opacity: 1; }
-  100% { transform: scale(2); opacity: 0; }
+  0% { transform: scale(0.4); opacity: 1; }
+  100% { transform: scale(1.5); opacity: 0; }
 }
 
 .ufo-svg {
   width: 32px;
   height: 32px;
   filter: drop-shadow(0 0 5px #00ff88);
+  position: relative;
+  z-index: 10;
 }
+/* -------------------------------------- */
 
 #range {
   margin-top: 5px;
@@ -81,6 +90,14 @@ body {
   display: none;
   z-index: 999;
 }
+
+/* Estilo para que el popup combine con el radar */
+.leaflet-popup-content-wrapper {
+  background: rgba(0,0,0,0.85);
+  color: #fff;
+  border: 1px solid #00ff88;
+}
+.leaflet-popup-tip { background: #00ff88; }
 </style>
 </head>
 
@@ -103,13 +120,13 @@ body {
 
 <script>
 // ===============================
-// 🛰 RADAR CORE (TU CÓDIGO ORIGINAL)
+// 🛰 RADAR CORE
 // ===============================
 
 const map = L.map('map', {
   zoomControl: false,
   attributionControl: false
-}).setView([-34.6, -58.4], 6);
+}).setView([-30.0, -60.0], 4); // Vista inicial más amplia para ver Latam
 
 L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
   maxZoom: 18
@@ -118,7 +135,7 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
 let markerLayer = L.layerGroup().addTo(map);
 let lastDataHash = "";
 
-// ICONO
+// ICONO CORREGIDO
 const ufoIcon = L.divIcon({
   className: 'ufo-icon-container',
   html: `
@@ -131,112 +148,85 @@ const ufoIcon = L.divIcon({
       <circle cx="70" cy="62" r="2" fill="#00ff88"/>
     </svg>
   `,
-  iconSize: [32, 32],
-  iconAnchor: [16, 16]
+  iconSize: [40, 40],
+  iconAnchor: [20, 20] // Centrado total
 });
 
-// ALERTA
 function triggerPush() {
   const el = document.getElementById("push");
   el.style.display = "block";
   setTimeout(() => el.style.display = "none", 4000);
 }
 
-// LOAD
 async function loadData() {
   const range = document.getElementById("range").value;
-
   try {
     const res = await fetch(`/api/reportes?range=${range}`, { cache: "no-store" });
     if (!res.ok) return;
-
     const reportes = await res.json();
-    const hash = JSON.stringify(reportes.map(r => r.id || `${r.lat}${r.lng}`));
-
+    const hash = JSON.stringify(reportes.map(r => r.id));
     if (hash === lastDataHash) return;
     lastDataHash = hash;
-
     render(reportes);
   } catch {}
 }
 
-// RENDER
 function render(reportes) {
   markerLayer.clearLayers();
-
   reportes.forEach(r => {
     if (!r.lat || !r.lng) return;
-
     const fecha = new Date(r.created_at).toLocaleString('es-UY');
-
     const popupContent = `
       <div class="popup-header">AVISTAMIENTO</div>
-      <div class="popup-loc">${r.ciudad || 'Zona desconocida'}</div>
+      <div class="popup-loc">COORD: ${r.lat.toFixed(2)}, ${r.lng.toFixed(2)}</div>
       <div class="popup-desc">${r.descripcion || ''}</div>
       <div class="popup-footer">${fecha}</div>
     `;
-
-    const marker = L.marker([r.lat, r.lng], { icon: ufoIcon })
-      .bindPopup(popupContent);
-
-    markerLayer.addLayer(marker);
+    L.marker([r.lat, r.lng], { icon: ufoIcon })
+      .bindPopup(popupContent)
+      .addTo(markerLayer);
   });
 
   document.getElementById("count").innerText = reportes.length;
-
   let dens = "BAJA";
   if (reportes.length > 20) dens = "CRÍTICA 🚨";
   else if (reportes.length > 8) dens = "ACTIVA 🛰️";
-
   document.getElementById("densidad").innerText = dens;
 }
 
-// LOOP
+// Escuchar cambios en el selector para recargar datos inmediatamente
+document.getElementById("range").addEventListener("change", loadData);
+
 loadData();
 setInterval(loadData, 5000);
 window.addEventListener('resize', () => map.invalidateSize());
 
-
 // ===============================
-// 🛰 REALTIME (AGREGADO)
+// 🛰 REALTIME SUPABASE
 // ===============================
-
 const SUPABASE_URL = "https://jphasudsyxvxarpemfmj.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpwaGFzdWRzeXh2eGFycGVtZm1qIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MjQ2MjIzOSwiZXhwIjoyMDg4MDM4MjM5fQ.19pUTaRB_Z9T-Ga-UjRxzonKX0ExRqn0VwhEOr49JKg";
-
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 supabaseClient
   .channel('realtime-reportes')
-  .on('postgres_changes',
-    { event: 'INSERT', schema: 'public', table: 'reportes' },
-    (payload) => {
+  .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reportes' }, (payload) => {
       const r = payload.new;
       if (!r.lat || !r.lng) return;
-
       const fecha = new Date(r.created_at).toLocaleString('es-UY');
-
       const popupContent = `
-        <div class="popup-header">AVISTAMIENTO</div>
-        <div class="popup-loc">${r.ciudad || 'Zona desconocida'}</div>
+        <div class="popup-header">AVISTAMIENTO NUEVO</div>
+        <div class="popup-loc">COORD: ${r.lat.toFixed(2)}, ${r.lng.toFixed(2)}</div>
         <div class="popup-desc">${r.descripcion || ''}</div>
         <div class="popup-footer">${fecha}</div>
       `;
-
-      const marker = L.marker([r.lat, r.lng], { icon: ufoIcon })
-        .bindPopup(popupContent);
-
-      markerLayer.addLayer(marker);
-
+      L.marker([r.lat, r.lng], { icon: ufoIcon })
+        .bindPopup(popupContent)
+        .addTo(markerLayer);
       triggerPush();
-
-      const countEl = document.getElementById("count");
-      countEl.innerText = parseInt(countEl.innerText || 0) + 1;
-    }
-  )
+  })
   .subscribe();
 
 </script>
-
 </body>
 </html>
