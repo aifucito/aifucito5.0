@@ -15,43 +15,39 @@ bot.use(session());
 const userState = new Map();
 
 /* ==========================================
-   🧠 NÚCLEO DE INTELIGENCIA (MODO ASISTENTE NEUTRO)
+   🧠 NÚCLEO DE INTELIGENCIA (ANALISTA PROFESIONAL)
 ========================================== */
 
 async function procesarAvistamientoIA(descripcion) {
   try {
     const urlIA = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`;
     const body = {
-      contents: [{ parts: [{ text: `Actúa como un analista técnico de radar. Clasifica este reporte: "${descripcion}". Devuelve un resumen de 1 línea con emojis informativos. Usa español latino neutro y sé muy breve.` }] }]
+      contents: [{ parts: [{ text: `Actúa como un experto analista de radares. Analiza: "${descripcion}". Clasifica el fenómeno y redacta un informe técnico breve y profesional. Usa español latino neutro y emojis informativos.` }] }]
     };
     const r = await axios.post(urlIA, body);
     return r.data?.candidates?.[0]?.content?.parts?.[0]?.text || descripcion;
-  } catch (error) { return `[REPORTE]: ${descripcion}`; }
+  } catch (error) { return `[INFORME TÉCNICO]: ${descripcion}`; }
 }
 
 async function charlaMisticaIA(userId, texto) {
   try {
     const urlIA = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`;
     
-    // Filtramos solo los últimos 2 mensajes para velocidad
-    const { data: recuerdos } = await supabase.from("memoria_ia").select("rol, contenido").eq("user_id", userId).order('id', { ascending: false }).limit(2);
-    const contexto = recuerdos?.map(r => `${r.rol}: ${r.contenido}`).reverse().join("\n") || "";
-
-    const prompt = `Eres el asistente del sistema AIFU. 
-    INSTRUCCIONES:
-    1. Responde en MÁXIMO 2 líneas.
-    2. Usa español latino neutro (sin mística, sin poesía).
-    3. Si te saludan, responde amablemente: "Hola, ¿en qué puedo ayudarte?".
-    Contexto previo: ${contexto}
-    Usuario: ${texto}`;
+    const prompt = `Eres el asistente oficial del sistema AIFU.
+    REGLAS:
+    1. Usa español latino neutro y tono profesional.
+    2. Responde de forma clara y coherente (entre 2 y 4 líneas).
+    3. Si te saludan, preséntate como el asistente del radar y ofrece ayuda con los reportes.
+    4. Evita el lenguaje poético o místico excesivo.
+    Usuario dice: ${texto}`;
 
     const r = await axios.post(urlIA, { contents: [{ parts: [{ text: prompt }] }] });
-    const respuesta = r.data?.candidates?.[0]?.content?.parts?.[0]?.text || "Sistema en espera.";
+    const respuesta = r.data?.candidates?.[0]?.content?.parts?.[0]?.text || "Sistema en línea. ¿En qué puedo ayudarle?";
     
     // Guardado en segundo plano
     supabase.from("memoria_ia").insert([{ user_id: userId, rol: "user", contenido: texto }, { user_id: userId, rol: "model", contenido: respuesta }]).then();
     return respuesta;
-  } catch (error) { return "Hola, ¿en qué puedo ayudarte?"; }
+  } catch (error) { return "Hola. Soy el asistente de AIFU, ¿en qué puedo ayudarle con el radar hoy?"; }
 }
 
 /* ==========================================
@@ -63,17 +59,16 @@ const menuPrincipal = Markup.keyboard([
   ["🤖 Charla con Aifucito", "❌ Cancelar Operación"]
 ]).resize();
 
-bot.start((ctx) => ctx.reply("SISTEMA AIFU ONLINE.\nSeleccione una opción para iniciar el monitoreo.", menuPrincipal));
+bot.start((ctx) => ctx.reply("SISTEMA AIFU ONLINE.\nPlataforma de vigilancia activa del Cono Sur.", menuPrincipal));
 
 bot.on("text", async (ctx) => {
   const userId = String(ctx.from.id);
   const state = userState.get(ctx.from.id);
   const texto = ctx.message.text;
 
-  // PRIORIDADES DE COMANDOS
   if (texto === "❌ Cancelar Operación") {
     userState.delete(ctx.from.id);
-    return ctx.reply("Operación cancelada. Regresando al menú.", menuPrincipal);
+    return ctx.reply("Operación cancelada. Regresando al menú principal.", menuPrincipal);
   }
 
   if (texto === "🛰️ Ver Radar") {
@@ -82,27 +77,29 @@ bot.on("text", async (ctx) => {
 
   if (texto === "📍 Nuevo Reporte") {
     userState.set(ctx.from.id, { step: "ESPERANDO_GPS" });
-    return ctx.reply("Por favor, envíe su ubicación GPS mediante el botón de Telegram:", 
+    return ctx.reply("📡 INICIANDO PROTOCOLO:\nPor favor, envíe su ubicación GPS mediante el botón de Telegram:", 
       Markup.keyboard([[Markup.button.locationRequest("📍 ENVIAR MI POSICIÓN")]]).resize());
   }
 
   if (texto === "🤖 Charla con Aifucito") {
     userState.set(ctx.from.id, { step: "IA_MISTICA" });
-    return ctx.reply("Hola, soy el asistente AIFU. ¿En qué información está interesado?");
+    return ctx.reply("Sistema de consulta activado. ¿Qué información necesita?");
   }
 
-  // FLUJO DE REPORTE (ANÁLISIS Y ENVÍO)
   if (state?.step === "ESPERANDO_DESC") {
-    ctx.reply("Analizando datos...");
+    ctx.reply("Analizando datos del fenómeno...");
     const informeIA = await procesarAvistamientoIA(texto);
     userState.set(ctx.from.id, { ...state, step: "CONFIRMAR", informe: informeIA });
-    return ctx.reply(`📋 **INFORME TÉCNICO:**\n\n${informeIA}\n\n¿Confirmar transmisión al radar continental?`,
+    return ctx.reply(`📋 **INFORME PREPARADO:**\n\n${informeIA}\n\n¿Desea transmitir este registro al radar?`,
       Markup.keyboard([["✅ CONFIRMAR", "❌ Cancelar Operación"]]).resize());
   }
 
   if (texto === "✅ CONFIRMAR" && state?.step === "CONFIRMAR") {
     try {
-      // INSERCIÓN CORREGIDA
+      // REGISTRO AUTOMÁTICO DE USUARIO (Para evitar error de Foreign Key)
+      await supabase.from("sessions").upsert({ user_id: userId, state: 'IDLE' }, { onConflict: 'user_id' });
+
+      // INSERCIÓN DEL REPORTE
       const { error } = await supabase.from("reportes").insert([
         {
           user_id: userId,
@@ -113,19 +110,19 @@ bot.on("text", async (ctx) => {
       ]);
       if (error) throw error;
 
-      // LINK DE GOOGLE MAPS CORREGIDO (Sintaxis estándar)
+      // LINK CORREGIDO
       const mapaLink = `https://www.google.com/maps?q=${state.lat},${state.lng}`;
       
-      await bot.telegram.sendMessage(CHANNEL_ID, `🚨 **ALERTA DE RADAR** 🚨\n\n${state.informe}\n\n📍 Ver ubicación: ${mapaLink}`);
+      await bot.telegram.sendMessage(CHANNEL_ID, `🚨 **AVISTAMIENTO REGISTRADO** 🚨\n\n${state.informe}\n\n📍 Ver en mapa: ${mapaLink}`);
 
       userState.delete(ctx.from.id);
-      return ctx.reply("🚀 Transmisión exitosa. El reporte ya es visible en el radar.", menuPrincipal);
+      return ctx.reply("🚀 Transmisión exitosa. Los datos ya son visibles en el radar.", menuPrincipal);
     } catch (err) { 
-      return ctx.reply("❌ Error técnico al guardar en la base de datos."); 
+      console.error("Error SQL:", err.message);
+      return ctx.reply("❌ Error técnico al guardar. Intente nuevamente."); 
     }
   }
 
-  // MODO CHARLA (ASISTENTE NEUTRO)
   if (state?.step === "IA_MISTICA") {
     ctx.sendChatAction("typing");
     const r = await charlaMisticaIA(userId, texto);
@@ -153,6 +150,6 @@ app.get("/api/reportes", async (req, res) => {
 });
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`✅ AIFU V12.9 ONLINE`);
+  console.log(`✅ AIFU V13.1 ONLINE`);
   bot.launch();
 });
