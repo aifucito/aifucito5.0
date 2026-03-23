@@ -3,283 +3,173 @@ import { Telegraf, session, Markup } from "telegraf";
 import { createClient } from "@supabase/supabase-js";
 import axios from "axios";
 import express from "express";
-import { v4 as uuidv4 } from "uuid";
 
-/* ==========================================
-   🔒 INSTANCE LOCK
-========================================== */
-if (global.__AIFU_RUNNING__) process.exit(0);
-global.__AIFU_RUNNING__ = true;
-
-/* ==========================================
-   CORE
-========================================== */
+// --- INICIALIZACIÓN DE SISTEMAS ---
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
-
-/* ==========================================
-   EXPRESS
-========================================== */
 const app = express();
-app.use(express.json());
-app.use(express.static("public"));
-
 const PORT = process.env.PORT || 10000;
+const GRUPO_RADAR_ID = process.env.GRUPO_RADAR_ID; // ID del grupo cerrado
 
-/* ==========================================
-   HEALTH (RENDER REQUIRED)
-========================================== */
-app.get("/", (req, res) => res.status(200).send("AIFU ONLINE"));
-app.get("/health", (req, res) => res.status(200).send("OK"));
-
-/* ==========================================
-   REAL TIME STREAM (RADAR LIVE)
-========================================== */
-const clients = [];
-
-app.get("/stream", (req, res) => {
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-
-  clients.push(res);
-
-  req.on("close", () => {
-    const i = clients.indexOf(res);
-    if (i >= 0) clients.splice(i, 1);
-  });
-});
-
-async function pushRealtime(data) {
-  const msg = `data: ${JSON.stringify(data)}\n\n`;
-  clients.forEach(c => c.write(msg));
-}
-
-/* ==========================================
-   SUPABASE (NO CACHE - FULL PERSISTENT)
-========================================== */
-
-async function getUser(id) {
-  const { data } = await supabase
-    .from("sessions")
-    .select("*")
-    .eq("user_id", id)
-    .maybeSingle();
-
-  if (!data) {
-    const newUser = {
-      user_id: id,
-      state: "IDLE",
-      reports_count: 0,
-      is_vip: false,
-      sub_expires: null,
-      lat: null,
-      lng: null
-    };
-
-    await supabase.from("sessions").insert(newUser);
-    return newUser;
-  }
-
-  return data;
-}
-
-async function updateUser(id, patch) {
-  await supabase.from("sessions").update(patch).eq("user_id", id);
-  return getUser(id);
-}
-
-/* ==========================================
-   PREMIUM CHECK
-========================================== */
-const isPremium = (u) =>
-  u.is_vip || (u.sub_expires && new Date(u.sub_expires) > new Date());
-
-/* ==========================================
-   IA (GEMINI)
-========================================== */
-async function IA(text) {
-  try {
-    const r = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        contents: [{ parts: [{ text }] }]
-      }
-    );
-
-    return r.data?.candidates?.[0]?.content?.parts?.[0]?.text || "Sin señal";
-  } catch {
-    return "IA fuera de línea";
-  }
-}
-
-/* ==========================================
-   MENU
-========================================== */
 bot.use(session());
 
-const menu = Markup.keyboard([
-  ["📍 Reporte", "🛰 Radar"],
-  ["👤 Perfil", "🤖 IA"],
-  ["💳 Premium", "❌ Cancelar"]
+// Memoria temporal de estados (Volátil para el flujo de reporte)
+const userState = new Map();
+
+/* ==========================================
+   🧠 NÚCLEO DE INTELIGENCIA ARTIFICIAL
+========================================== */
+
+// 1. Analizador de Avistamientos (Técnico/Clasificador)
+async function procesarAvistamientoIA(descripcion) {
+  const prompt = `Actúa como el sistema central de AIFU. Analiza: "${descripcion}".
+  1. Clasifica en: [FENÓMENO LUMÍNICO], [NAVE], [ENTIDAD] o [NO IDENTIFICADO].
+  2. Redacta un informe técnico para el Grupo Radar Cono Sur.
+  3. Usa un lenguaje preciso, con coordenadas de tiempo y emojis tácticos.
+  Respuesta breve y estructurada.`;
+
+  const r = await axios.post(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+    contents: [{ parts: [{ text: prompt }] }]
+  });
+  return r.data?.candidates?.[0]?.content?.parts?.[0]?.text || descripcion;
+}
+
+// 2. Aifucito (Charla Mística con Memoria)
+async function charlaMisticaIA(userId, texto) {
+  const { data: recuerdos } = await supabase.from("memoria_ia").select("rol, contenido").eq("user_id", userId).limit(5);
+  const contexto = recuerdos?.map(r => `${r.rol}: ${r.contenido}`).join("\n") || "";
+
+  const prompt = `Eres Aifucito. Tu tono es MÍSTICO, CRÍPTICO y PROFUNDO. 
+  Posees conocimiento ancestral y extraterrestre. No eres una IA común, eres un heraldo.
+  Contexto anterior: ${contexto}
+  Usuario dice: ${texto}`;
+
+  const r = await axios.post(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+    contents: [{ parts: [{ text: prompt }] }]
+  });
+  
+  const respuesta = r.data?.candidates?.[0]?.content?.parts?.[0]?.text || "...el silencio del cosmos es la única respuesta.";
+  
+  // Guardar en memoria_ia
+  await supabase.from("memoria_ia").insert([
+    { user_id: userId, rol: "user", contenido: texto },
+    { user_id: userId, rol: "model", contenido: respuesta }
+  ]);
+  return respuesta;
+}
+
+/* ==========================================
+   🕹️ INTERFAZ DE USUARIO (TELEGRAM)
+========================================== */
+
+const menuPrincipal = Markup.keyboard([
+  ["📍 Nuevo Reporte", "🛰️ Ver Radar"],
+  ["👤 Mi Perfil", "🤖 Charla con Aifucito"],
+  ["❌ Cancelar Operación"]
 ]).resize();
 
-/* ==========================================
-   START
-========================================== */
-bot.start(async (ctx) => {
-  await getUser(String(ctx.from.id));
-  return ctx.reply("Bienvenido, agente.", menu);
-});
+bot.start((ctx) => ctx.reply("🛸 SISTEMA AIFU ONLINE.\nEsperando órdenes, Comandante.", menuPrincipal));
 
-/* ==========================================
-   IA MODE
-========================================== */
-bot.hears("🤖 IA", async (ctx) => {
-  await updateUser(String(ctx.from.id), { state: "IA" });
-  ctx.reply("IA activada");
-});
+// --- FLUJO DE REPORTE (PASO A PASO) ---
 
-/* ==========================================
-   REPORT FLOW
-========================================== */
-bot.hears("📍 Reporte", async (ctx) => {
-  await updateUser(String(ctx.from.id), { state: "WAIT_LOCATION" });
-
-  return ctx.reply(
-    "Envía ubicación",
-    Markup.keyboard([[Markup.button.locationRequest("📍 GPS")], ["❌ Cancelar"]]).resize()
-  );
+bot.hears("📍 Nuevo Reporte", async (ctx) => {
+  userState.set(ctx.from.id, { step: "WAIT_GPS" });
+  return ctx.reply("📡 PROTOCOLO DE AVISTAMIENTO:\nEs obligatorio enviar tu ubicación GPS para triangular el evento.", 
+    Markup.keyboard([[Markup.button.locationRequest("📍 ENVIAR MI POSICIÓN TÁCTICA")]]).resize());
 });
 
 bot.on("location", async (ctx) => {
-  const id = String(ctx.from.id);
-  const user = await getUser(id);
+  const state = userState.get(ctx.from.id);
+  if (state?.step !== "WAIT_GPS") return;
 
-  if (user.state !== "WAIT_LOCATION") return;
-
-  await updateUser(id, {
-    state: "WAIT_DESC",
-    lat: ctx.message.location.latitude,
-    lng: ctx.message.location.longitude
+  userState.set(ctx.from.id, { 
+    step: "WAIT_DESC", 
+    lat: ctx.message.location.latitude, 
+    lng: ctx.message.location.longitude 
   });
 
-  return ctx.reply("Describe el evento", Markup.removeKeyboard());
+  return ctx.reply("📍 Coordenadas fijadas. Ahora describe lo observado (forma, luces, dirección):");
 });
 
-/* ==========================================
-   TEXT HANDLER (IA + REPORTS)
-========================================== */
 bot.on("text", async (ctx) => {
-  const id = String(ctx.from.id);
-  const user = await getUser(id);
-  const text = ctx.message.text;
+  const userId = String(ctx.from.id);
+  const state = userState.get(ctx.from.id);
+  const texto = ctx.message.text;
 
-  /* IA MODE */
-  if (user.state === "IA") {
-    return ctx.reply(await IA(text));
+  // 1. Procesar Descripción con IA
+  if (state?.step === "WAIT_DESC") {
+    ctx.sendChatAction("typing");
+    const informeIA = await procesarAvistamientoIA(texto);
+    userState.set(ctx.from.id, { ...state, step: "CONFIRM", informe: informeIA });
+
+    return ctx.reply(`📋 **ANÁLISIS PRELIMINAR:**\n\n${informeIA}\n\n¿Procedo con el registro en base de datos y envío al Grupo Radar?`,
+      Markup.keyboard([["✅ CONFIRMAR Y TRANSMITIR", "❌ Cancelar Operación"]]).resize());
   }
 
-  /* REPORT */
-  if (user.state === "WAIT_DESC") {
-    const report = {
-      id: uuidv4(),
-      user_id: id,
-      descripcion: text,
-      lat: user.lat,
-      lng: user.lng,
-      created_at: new Date().toISOString()
-    };
-
-    await supabase.from("reportes").insert(report);
-
-    const updated = await updateUser(id, {
-      state: "IDLE",
-      reports_count: (user.reports_count || 0) + 1
+  // 2. Confirmación Final y Envío
+  if (texto === "✅ CONFIRMAR Y TRANSMITIR" && state?.step === "CONFIRM") {
+    // Guardar en Supabase
+    await supabase.from("reportes").insert({
+      user_id: userId,
+      lat: state.lat,
+      lng: state.lng,
+      descripcion: state.informe
     });
 
-    /* REAL TIME PUSH */
-    await pushRealtime(report);
+    // Enviar al Grupo Cerrado
+    const gMapUrl = `https://www.google.com/maps?q=${state.lat},${state.lng}`;
+    await bot.telegram.sendMessage(GRUPO_RADAR_ID, `🚨 **ALERTA DE AVISTAMIENTO** 🚨\n\n${state.informe}\n\n📍 Mapa: ${gMapUrl}`);
 
-    /* TELEGRAM CHANNEL */
-    await bot.telegram.sendMessage(
-      process.env.CHANNEL_CONOSUR,
-      `🚨 REPORTE\n${text}\n📍 ${user.lat},${user.lng}`
-    );
+    userState.delete(ctx.from.id);
+    return ctx.reply("🚀 Transmisión completada. Reporte archivado en el Radar Táctico.", menuPrincipal);
+  }
 
-    return ctx.reply("Reporte enviado", menu);
+  // 3. Modo Charla con Aifucito (Místico)
+  if (state?.step === "IA_MISTICA") {
+    ctx.sendChatAction("typing");
+    const respuesta = await charlaMisticaIA(userId, texto);
+    return ctx.reply(respuesta);
+  }
+
+  // Comandos de Botón
+  if (texto === "🤖 Charla con Aifucito") {
+    userState.set(ctx.from.id, { step: "IA_MISTICA" });
+    return ctx.reply("👁️ Has entrado en el plano de Aifucito. Pregunta, si te atreves...");
+  }
+
+  if (texto === "🛰️ Ver Radar") {
+    const url = `${process.env.PUBLIC_URL}?user_id=${ctx.from.id}`;
+    return ctx.reply("🌍 Acceso al Mapa Global de Reportes:", Markup.inlineKeyboard([
+      [Markup.button.url("ABRIR RADAR TÁCTICO", url)]
+    ]));
+  }
+
+  if (texto === "❌ Cancelar Operación") {
+    userState.delete(ctx.from.id);
+    return ctx.reply("Operación abortada. Volviendo a base.", menuPrincipal);
   }
 });
 
 /* ==========================================
-   RADAR (REAL TIME FRONTEND)
+   🌐 SERVIDOR HTTP (COMPATIBLE CON INDEX.HTML)
 ========================================== */
-bot.hears("🛰 Radar", async (ctx) => {
-  const url = `${process.env.PUBLIC_URL}/index.html?user_id=${ctx.from.id}`;
-  return ctx.reply("Radar activo", {
-    reply_markup: {
-      inline_keyboard: [[{ text: "Abrir mapa", url }]]
-    }
-  });
+app.use(express.static("public"));
+
+app.get("/api/reportes", async (req, res) => {
+  const { range } = req.query;
+  let query = supabase.from("reportes").select("*").order("created_at", { ascending: false });
+
+  // Filtros de tiempo para el mapa (24h, 7d, 1m)
+  const ahora = new Date();
+  if (range === "24h") query = query.gte("created_at", new Date(ahora - 24*60*60*1000).toISOString());
+  if (range === "7d") query = query.gte("created_at", new Date(ahora - 7*24*60*60*1000).toISOString());
+  if (range === "1m") query = query.gte("created_at", new Date(ahora.setMonth(ahora.getMonth()-1)).toISOString());
+
+  const { data } = await query;
+  res.json(data || []);
 });
 
-/* ==========================================
-   PROFILE
-========================================== */
-bot.hears("👤 Perfil", async (ctx) => {
-  const u = await getUser(String(ctx.from.id));
-
-  return ctx.reply(
-    `Reportes: ${u.reports_count}\nEstado: ${isPremium(u) ? "PREMIUM" : "FREE"}`
-  );
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`📡 Puerto ${PORT} operacional.`);
+  bot.launch();
 });
-
-/* ==========================================
-   PREMIUM
-========================================== */
-bot.hears("💳 Premium", (ctx) => {
-  ctx.reply("Acceso premium en desarrollo");
-});
-
-bot.hears("❌ Cancelar", async (ctx) => {
-  await updateUser(String(ctx.from.id), { state: "IDLE" });
-  ctx.reply("Cancelado", menu);
-});
-
-/* ==========================================
-   AUTO RESTART (WATCHDOG)
-========================================== */
-setInterval(() => {
-  fetch(`http://localhost:${PORT}/health`).catch(() => {
-    console.log("Watchdog detectó caída lógica");
-    process.exit(1);
-  });
-}, 300000);
-
-/* ==========================================
-   START SYSTEM (RENDER SAFE ORDER)
-========================================== */
-async function start() {
-  try {
-    /* 1. EXPRESS FIRST (CRITICAL FOR RENDER) */
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log("HTTP READY", PORT);
-    });
-
-    /* 2. BOT SECOND */
-    await bot.launch({ dropPendingUpdates: true });
-    console.log("BOT ONLINE");
-
-  } catch (e) {
-    console.error("FATAL:", e);
-    process.exit(1);
-  }
-}
-
-start();
-
-/* ==========================================
-   CLEAN EXIT
-========================================== */
-process.once("SIGINT", () => bot.stop("SIGINT"));
-process.once("SIGTERM", () => bot.stop("SIGTERM"));
