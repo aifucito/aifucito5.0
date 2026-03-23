@@ -1,72 +1,47 @@
 import "dotenv/config";
 import { Telegraf, session, Markup } from "telegraf";
 import { createClient } from "@supabase/supabase-js";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { v4 as uuidv4 } from "uuid";
 import axios from "axios";
 import express from "express";
-import path from "path";
-import { fileURLToPath } from "url";
-import cors from "cors";
 
-/* ==========================================
-   🔐 VALIDACIÓN DE ENTORNO
-========================================== */
-const REQUIRED_ENV = ["BOT_TOKEN", "SUPABASE_URL", "SUPABASE_KEY", "GEMINI_API_KEY"];
-REQUIRED_ENV.forEach(k => {
-  if (!process.env[k]) {
-    console.error(`❌ Falta variable: ${k}`);
-    process.exit(1);
-  }
-});
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+/* ================= CONFIG ================= */
+const OWNER_ID = "7662736311";
+const PAYPAL_LINK = "https://www.paypal.com/paypalme/electros/3";
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const aiModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-/* ==========================================
-   🌐 SERVIDOR WEB
-========================================== */
+/* ================= WEB ================= */
 const app = express();
-app.use(cors());
-app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
+app.get("/", (_, res) => res.send("AIFU ONLINE"));
+app.get("/health", (_, res) => res.send("OK"));
 
-app.get("/", (req, res) => res.send("AIFU BOT ONLINE"));
-app.get("/health", (req, res) => res.status(200).send("OK"));
-
-app.get("/api/reportes", async (req, res) => {
-  try {
-    const { data } = await supabase.from("reportes").select("*");
-    res.json(data || []);
-  } catch {
-    res.status(500).json([]);
-  }
-});
-
-/* ==========================================
-   🧠 SESIONES
-========================================== */
+/* ================= MEMORIA ================= */
 const memory = new Map();
-const lastUse = new Map();
 
 async function getProfile(id) {
-  if (memory.size > 1000) {
-    const keys = Array.from(memory.keys()).slice(0, 200);
-    keys.forEach(k => memory.delete(k));
-  }
-
   if (memory.has(id)) return memory.get(id);
 
   let { data } = await supabase.from("sessions").select("*").eq("user_id", id).maybeSingle();
 
   if (!data) {
-    data = { user_id: id, state: "IDLE", xp: 0, ai_count: 0 };
+    data = {
+      user_id: id,
+      state: "IDLE",
+      xp: 0,
+      ai_count: 0,
+      role: "free",
+      premium_until: null
+    };
     await supabase.from("sessions").upsert(data);
+  }
+
+  // expiración automática
+  if (data.premium_until && new Date(data.premium_until) < new Date()) {
+    data.role = "free";
+    data.premium_until = null;
+    await supabase.from("sessions").update(data).eq("user_id", id);
   }
 
   memory.set(id, data);
@@ -80,77 +55,170 @@ async function updateSession(id, payload) {
   return supabase.from("sessions").update(payload).eq("user_id", id);
 }
 
-/* ==========================================
-   📡 DIFUSIÓN
-========================================== */
-function getTargetChannels(pais) {
-  const targets = [];
-  const key = (pais || "GLOBAL").toUpperCase();
-
-  if (process.env[`CHANNEL_${key}`]) targets.push(process.env[`CHANNEL_${key}`]);
-  if (process.env.CHANNEL_GLOBAL) targets.push(process.env.CHANNEL_GLOBAL);
-
-  return [...new Set(targets)];
+/* ================= FECHA PREMIUM ================= */
+function calcularPremium() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth() + 2, 0).toISOString();
 }
 
-/* ==========================================
-   🚀 BOT
-========================================== */
-const menu = Markup.keyboard([
-  ["📍 Iniciar Reporte", "👤 Mi Perfil"],
-  ["🤖 IA"]
-]).resize();
+/* ================= IA ================= */
+async function IA(texto, modo, saludoInicial) {
+  try {
+    let personalidad = `
+Sos Aifucito. Estilo uruguayo natural, amable, tranquilo, con humor leve y un toque conspiranoico.
+No afirmes todo ni niegues todo. Generá duda inteligente.
+No uses modismos argentinos.
+Solo saludá al inicio de la conversación.
+Si algo es impactante, reaccioná con sorpresa moderada.
+Respuestas claras, cortas y con chispa.
+`;
 
+    if (modo === "limitado") {
+      texto += " (responde muy breve)";
+    }
+
+    const prompt = (saludoInicial ? "Saludá brevemente al inicio.\n" : "") + personalidad + "\nUsuario: " + texto;
+
+    const res = await axios.post(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent",
+      {
+        contents: [{ parts: [{ text: prompt }] }]
+      },
+      {
+        headers: { "X-goog-api-key": process.env.GEMINI_API_KEY }
+      }
+    );
+
+    return res.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+  } catch {
+    return "Hay interferencia... probá en un momento.";
+  }
+}
+
+/* ================= CANALES ================= */
+function getChannels(user) {
+  if (["premium", "vip", "admin"].includes(user.role)) {
+    return [
+      process.env.CHANNEL_GLOBAL,
+      process.env.CHANNEL_CONOSUR
+    ].filter(Boolean);
+  }
+  return [process.env.CHANNEL_GLOBAL].filter(Boolean);
+}
+
+/* ================= MENU ================= */
+const menu = (user) => {
+  const base = [
+    ["📍 Reportar", "🤖 IA"],
+    ["👤 Perfil", "💳 Colaborar"]
+  ];
+
+  if (user.user_id === OWNER_ID) {
+    base.push(["⚙️ ADMIN"]);
+  }
+
+  return Markup.keyboard(base).resize();
+};
+
+/* ================= BOT ================= */
 bot.use(session());
 
 bot.start(async (ctx) => {
-  await getProfile(String(ctx.from.id));
-  ctx.reply("🛸 AIFU BOT ONLINE", menu);
+  const user = await getProfile(String(ctx.from.id));
+  ctx.reply("🛸 Sistema AIFU activo.", menu(user));
 });
 
-/* ==========================================
-   🧪 DEBUG CHAT ID (IMPORTANTE PARA VOS)
-========================================== */
-bot.on("message", (ctx, next) => {
-  console.log("📡 CHAT ID:", ctx.chat.id, "| Tipo:", ctx.chat.type);
-  return next();
+/* ================= PAGOS ================= */
+bot.hears("💳 Colaborar", (ctx) => {
+  ctx.reply("Elegí método:", {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "💳 PayPal", url: PAYPAL_LINK }],
+        [{ text: "💬 Otros métodos", callback_data: "otro_pago" }]
+      ]
+    }
+  });
 });
 
-/* ==========================================
-   📍 REPORTE
-========================================== */
-bot.hears("📍 Iniciar Reporte", async (ctx) => {
+bot.action("otro_pago", async (ctx) => {
+  await updateSession(String(ctx.from.id), { state: "PAGO_MSG" });
+  ctx.reply("Escribí cómo querés pagar:");
+});
+
+/* ================= ADMIN ================= */
+bot.hears("⚙️ ADMIN", async (ctx) => {
+  if (String(ctx.from.id) !== OWNER_ID) return;
+
+  ctx.reply("Panel", Markup.keyboard([
+    ["➕ Premium", "⭐ Especial"],
+    ["👮 Admin", "🔙"]
+  ]).resize());
+});
+
+/* ================= REPORTES ================= */
+bot.hears("📍 Reportar", async (ctx) => {
   await updateSession(String(ctx.from.id), { state: "WAIT_LOC" });
 
-  ctx.reply("Enviá tu ubicación:",
-    Markup.keyboard([[Markup.button.locationRequest("📍 GPS")]]).resize()
+  ctx.reply("Enviá ubicación",
+    Markup.keyboard([[Markup.button.locationRequest("📍 GPS")]])
   );
 });
 
 bot.on("location", async (ctx) => {
-  const id = String(ctx.from.id);
-  const user = await getProfile(id);
+  await updateSession(String(ctx.from.id), {
+    state: "WAIT_DESC",
+    lat: ctx.message.location.latitude,
+    lng: ctx.message.location.longitude
+  });
 
-  if (user.state !== "WAIT_LOC") return;
-
-  const { latitude: lat, longitude: lng } = ctx.message.location;
-
-  await updateSession(id, { state: "WAIT_DESC", lat, lng });
-
-  ctx.reply("Describí lo que viste:");
+  ctx.reply("Describe lo que viste:");
 });
 
+/* ================= BLOQUEO MEDIA ================= */
+bot.on(["photo", "video"], (ctx) => {
+  ctx.reply("🚫 Solo texto permitido.");
+});
+
+/* ================= TEXTO ================= */
 bot.on("text", async (ctx) => {
   const id = String(ctx.from.id);
   const text = ctx.message.text;
-
-  const now = Date.now();
-  if (now - (lastUse.get(id) || 0) < 2000) return;
-  lastUse.set(id, now);
-
   const user = await getProfile(id);
 
+  /* MENSAJE DE PAGO */
+  if (user.state === "PAGO_MSG") {
+    await bot.telegram.sendMessage(
+      OWNER_ID,
+      `💰 Solicitud de pago\nUsuario: ${id}\nMensaje: ${text}`
+    );
+    await updateSession(id, { state: "IDLE" });
+    return ctx.reply("Solicitud enviada.");
+  }
+
+  /* IA */
+  if (user.state === "IA") {
+    let modo = "normal";
+    if (user.role === "free" && (user.ai_count || 0) > 5) {
+      modo = "limitado";
+    }
+
+    const saludoInicial = (user.ai_count || 0) === 0;
+
+    const res = await IA(text, modo, saludoInicial);
+
+    await updateSession(id, { ai_count: (user.ai_count || 0) + 1 });
+
+    return ctx.reply(res);
+  }
+
+  /* REPORTE */
   if (user.state === "WAIT_DESC") {
+
+    const nombre = ["vip", "admin"].includes(user.role)
+      ? `${ctx.from.first_name} ⭐`
+      : ctx.from.first_name;
+
     await supabase.from("reportes").insert({
       id: uuidv4(),
       user_id: id,
@@ -159,60 +227,35 @@ bot.on("text", async (ctx) => {
       descripcion: text
     });
 
-    const channels = getTargetChannels("GLOBAL");
+    const channels = getChannels(user);
 
     channels.forEach(ch => {
-      console.log("📡 Enviando a:", ch);
-      bot.telegram.sendMessage(ch, `🚨 REPORTE:\n${text}`).catch(console.error);
+      bot.telegram.sendMessage(
+        ch,
+        `🚨 Reporte\n👤 ${nombre}\n📝 ${text}`
+      ).catch(()=>{});
     });
 
     await updateSession(id, { state: "IDLE" });
 
-    ctx.reply("Reporte enviado", menu);
-  }
-
-  if (user.state === "IA") {
-    try {
-      const result = await aiModel.generateContent(text);
-      const reply = result?.response?.text() || "Sin respuesta";
-      ctx.reply("🛸 " + reply);
-    } catch {
-      ctx.reply("⚠️ Error IA");
-    }
+    return ctx.reply("Reporte enviado", menu(user));
   }
 });
 
+/* ================= IA ================= */
 bot.hears("🤖 IA", async (ctx) => {
-  await updateSession(String(ctx.from.id), { state: "IA" });
-  ctx.reply("Modo IA activado. Escribí tu consulta.");
+  await updateSession(String(ctx.from.id), { state: "IA", ai_count: 0 });
+  ctx.reply("Aifucito activo.");
 });
 
-bot.hears("👤 Mi Perfil", async (ctx) => {
+bot.hears("👤 Perfil", async (ctx) => {
   const user = await getProfile(String(ctx.from.id));
-  ctx.reply(`XP: ${user.xp || 0}`);
+  ctx.reply(`Rol: ${user.role}`);
 });
 
-/* ==========================================
-   🚀 START
-========================================== */
+/* ================= START ================= */
 const PORT = process.env.PORT || 10000;
 
 app.listen(PORT, '0.0.0.0', async () => {
-  console.log("🌐 Server ON");
-
-  try {
-    await bot.launch({ dropPendingUpdates: true });
-    console.log("🤖 Bot ON");
-  } catch (err) {
-    console.error("❌ Error launch:", err.message);
-  }
+  await bot.launch();
 });
-
-/* ==========================================
-   🛡️ ANTI CRASH
-========================================== */
-process.on("unhandledRejection", err => console.error("❌ Promise:", err.message));
-process.on("uncaughtException", err => console.error("❌ Exception:", err.message));
-
-process.once("SIGINT", () => bot.stop("SIGINT"));
-process.once("SIGTERM", () => bot.stop("SIGTERM"));
