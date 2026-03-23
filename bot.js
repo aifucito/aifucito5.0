@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { Telegraf, session, Markup } from "telegraf";
+import { Telegraf, Markup } from "telegraf";
 import { createClient } from "@supabase/supabase-js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { v4 as uuidv4 } from "uuid";
@@ -10,20 +10,21 @@ import { fileURLToPath } from "url";
 import cors from "cors";
 
 /* ==========================================
-    💎 1. CONFIGURACIÓN Y VARIABLES TÁCTICAS
+    ⚙️ 1. CONFIGURACIÓN Y TIMEOUTS
 ========================================== */
-const ADMIN_IDS = ["7662736311"]; 
+const ADMIN_IDS = ["7662736311"];
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+axios.defaults.timeout = 4000; // 🛡️ Evita cuelgues si las APIs externas fallan
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
-// Configuración de IA (Basada en tu CURL exitoso)
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const aiModel = genAI.getGenerativeModel({ 
+const aiModel = genAI.getGenerativeModel({
   model: "gemini-1.5-flash",
-  generationConfig: { temperature: 0.7, maxOutputTokens: 500 }
+  generationConfig: { temperature: 0.7, maxOutputTokens: 400 }
 });
 
 const CHANNELS = {
@@ -31,65 +32,75 @@ const CHANNELS = {
   AR: process.env.CHANNEL_AR,
   CL: process.env.CHANNEL_CL,
   GLOBAL: process.env.CHANNEL_GLOBAL,
-  CONOSUR: process.env.CHANNEL_CONOSUR 
+  CONOSUR: process.env.CHANNEL_CONOSUR
 };
 
-const RANKS = [
-  { xp: 0, name: "🚽 Fajinador de Retretes Espaciales" },
-  { xp: 50, name: "🔭 Observador de Satélites Starlink" },
-  { xp: 150, name: "💂 Guardaespalda de Alf" },
-  { xp: 400, name: "🏡 Vigilante del Patio de Cridovni" },
-  { xp: 800, name: "🕶️ Te Siguen los Hombres de Negro" },
-  { xp: 2000, name: "🛸 Comandante Intergaláctico" }
-];
+/* ==========================================
+    🔁 2. REINTENTO AUTOMÁTICO (PERSISTENCIA)
+========================================== */
+async function safeInsert(data) {
+  for (let i = 0; i < 2; i++) {
+    const { error } = await supabase.from("reportes").insert(data);
+    if (!error) return true;
+    console.warn(`⚠️ Reintento de guardado ${i+1}/2...`);
+    await new Promise(r => setTimeout(r, 600));
+  }
+  return false;
+}
 
 /* ==========================================
-    🧠 2. MOTOR DE SESIÓN (PROTECCIÓN ANTI-NULL)
+    🧠 3. MOTOR DE SESIÓN (PROTECCIÓN DE RAM)
 ========================================== */
 const memory = new Map();
 
-const getProfile = async (id) => {
+async function getProfile(id) {
+  if (memory.size > 1000) memory.clear(); // 🛡️ Limpieza de caché para Plan Starter
+  
   if (memory.has(id)) return memory.get(id);
-
   try {
-    let { data, error } = await supabase.from("sessions").select("*").eq("user_id", id).maybeSingle();
+    const { data, error } = await supabase.from("sessions").select("*").eq("user_id", id).maybeSingle();
+    if (error) throw error;
     
-    if (!data || error) {
+    if (!data) {
       const fresh = { user_id: id, state: "IDLE", xp: 0, ai_count: 0, is_premium: false };
       const { data: newUser } = await supabase.from("sessions").upsert(fresh).select().single();
       memory.set(id, newUser);
       return newUser;
     }
-    
     memory.set(id, data);
     return data;
   } catch (e) {
-    console.error("Error en getProfile:", e);
-    return { user_id: id, state: "IDLE", xp: 0, ai_count: 0 };
+    console.error("❌ Error Perfil DB:", e.message);
+    return { user_id: id, state: "IDLE", xp: 0 };
   }
-};
+}
 
-const updateSession = async (id, payload) => {
+async function updateSession(id, payload) {
   const current = await getProfile(id);
-  const updated = { ...current, ...payload, updated_at: new Date() };
+  const updated = { ...current, ...payload };
   memory.set(id, updated);
   return supabase.from("sessions").update(payload).eq("user_id", id);
-};
-
-const isAdmin = (id) => ADMIN_IDS.includes(String(id));
+}
 
 /* ==========================================
-    🚀 3. LÓGICA DEL BOT DE TELEGRAM
+    🎛️ 4. INTERFAZ Y MENÚS
 ========================================== */
 const menu = Markup.keyboard([
   ["📍 Iniciar Reporte", "🛰️ Ver Radar"],
-  ["👤 Mi Perfil", "🤖 Hablar con Aifucito"],
-  ["🤝 Hacerse Colaborador", "⬅️ Menú"]
+  ["👤 Mi Perfil", "🤖 Aifucito"],
+  ["⬅️ Menú"]
 ]).resize();
+
+/* ==========================================
+    🚀 5. NÚCLEO DEL BOT (OPERACIONES)
+========================================== */
+bot.catch((err, ctx) => {
+  console.error(`🔥 Error global en ${ctx.updateType}:`, err);
+});
 
 bot.start(async (ctx) => {
   await getProfile(String(ctx.from.id));
-  ctx.reply("🌌 **RADAR AIFU V12.8**\nBienvenido, Agente. Vigilancia activa.", menu);
+  ctx.reply("🛸 RADAR AIFU V13.5 ONLINE\nSistemas blindados para vigilancia prolongada.", menu);
 });
 
 bot.hears("⬅️ Menú", async (ctx) => {
@@ -98,15 +109,15 @@ bot.hears("⬅️ Menú", async (ctx) => {
 });
 
 bot.hears("👤 Mi Perfil", async (ctx) => {
-  const user = await getProfile(String(ctx.from.id));
-  const rank = [...RANKS].reverse().find(r => user.xp >= r.xp)?.name || RANKS[0].name;
-  ctx.reply(`🎖️ **FICHA DE AGENTE**\n👤 ID: ${user.user_id}\n📊 XP: ${user.xp}\n🏆 Rango: ${rank}\n💎 Premium: ${user.is_premium ? "SÍ" : "NO"}`);
+  const u = await getProfile(String(ctx.from.id));
+  ctx.reply(`🎖️ FICHA DE AGENTE\n👤 ID: ${u.user_id}\n📊 XP: ${u.xp || 0}`);
 });
 
 bot.hears("📍 Iniciar Reporte", async (ctx) => {
   await updateSession(String(ctx.from.id), { state: "WAITING_LOCATION" });
-  ctx.reply("📡 Compartí tu ubicación actual para el radar, tú.", 
-    Markup.keyboard([[Markup.button.locationRequest("📍 Enviar Ubicación")], ["⬅️ Menú"]]).oneTime().resize());
+  ctx.reply("📡 PROTOCOLO GPS: Compartí tu ubicación actual:",
+    Markup.keyboard([[Markup.button.locationRequest("📍 Enviar ubicación")], ["⬅️ Menú"]]).resize()
+  );
 });
 
 bot.on("location", async (ctx) => {
@@ -115,87 +126,84 @@ bot.on("location", async (ctx) => {
   if (user.state !== "WAITING_LOCATION") return;
 
   const { latitude: lat, longitude: lng } = ctx.message.location;
-  let pais = "GLOBAL", ciudad = "Zona Rural";
-  
+  let ciudad = "Zona Rural", pais = "GLOBAL";
+
   try {
-    const geo = await axios.get(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, { timeout: 3000 });
-    pais = geo.data?.address?.country_code?.toUpperCase() || "GLOBAL";
+    const geo = await axios.get(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`);
     ciudad = geo.data?.address?.city || geo.data?.address?.town || "Zona GPS";
-  } catch (e) { console.warn("Geo Fallback"); }
+    pais = geo.data?.address?.country_code?.toUpperCase() || "GLOBAL";
+  } catch (e) { console.warn("⚠️ Geo Fallback activo."); }
 
   await updateSession(id, { state: "WAITING_DESC", lat, lng, ciudad, pais });
-  ctx.reply(`📍 Localizado en ${ciudad} (${pais}).\n\n¿Qué viste tú? Describilo brevemente:`, Markup.removeKeyboard());
+  ctx.reply(`📍 Localizado: ${ciudad} (${pais})\n\n¿Qué viste tú? Describilo brevemente:`, Markup.removeKeyboard());
 });
 
 bot.on("text", async (ctx) => {
+  if (!ctx.message || !ctx.message.text) return; // 🛡️ Blindaje contra nulos
+
   const id = String(ctx.from.id);
   const text = ctx.message.text;
-
-  // Evitar procesar texto si se presionó un botón de comando principal
-  const botonesMenu = ["📍 Iniciar Reporte", "🛰️ Ver Radar", "👤 Mi Perfil", "🤖 Hablar con Aifucito", "🤝 Hacerse Colaborador", "⬅️ Menú"];
+  
+  const botonesMenu = ["📍 Iniciar Reporte", "🛰️ Ver Radar", "👤 Mi Perfil", "🤖 Aifucito", "⬅️ Menú"];
   if (botonesMenu.includes(text)) return;
 
   const user = await getProfile(id);
   if (!user) return;
 
-  // --- Lógica de Reporte (Sincronización con Mapa) ---
+  /* --- LÓGICA DE REPORTE --- */
   if (user.state === "WAITING_DESC") {
     try {
-      const reportId = uuidv4();
-      await supabase.from("reportes").insert({
-        id: reportId, user_id: id, lat: user.lat, lng: user.lng, ciudad: user.ciudad, pais: user.pais, descripcion: text, created_at: new Date().toISOString()
+      const ok = await safeInsert({
+        id: uuidv4(), user_id: id, lat: user.lat, lng: user.lng, ciudad: user.ciudad, pais: user.pais, descripcion: text
       });
-      
-      const alerta = `🚨 **NUEVO REPORTE**\n📍 ${user.ciudad} (${user.pais})\n👤 Agente: ${ctx.from.first_name}\n📝 ${text}`;
-      
-      // Envío a canales regionales
-      const canalRegional = CHANNELS[user.pais] || CHANNELS.GLOBAL;
-      if (canalRegional) bot.telegram.sendMessage(canalRegional, alerta).catch(() => {});
-      if (CHANNELS.CONOSUR) bot.telegram.sendMessage(CHANNELS.CONOSUR, alerta).catch(() => {});
+
+      if (!ok) throw new Error("Insert falló después de reintentos");
+
+      const msg = `🚨 **NUEVO REPORTE**\n📍 ${user.ciudad} (${user.pais})\n👤 Agente: ${ctx.from.first_name}\n📝 ${text}`;
+      const canal = CHANNELS[user.pais] || CHANNELS.GLOBAL;
+
+      if (canal) bot.telegram.sendMessage(canal, msg).catch(e => console.warn("❌ Canal:", e.message));
+      if (CHANNELS.CONOSUR) bot.telegram.sendMessage(CHANNELS.CONOSUR, msg).catch(e => console.warn("❌ Conosur:", e.message));
 
       await updateSession(id, { state: "IDLE", xp: (user.xp || 0) + 25 });
-      return ctx.reply("✅ **Recibido.** Reporte sincronizado en el mapa neón. +25 XP", menu);
-    } catch (err) {
-      return ctx.reply("⚠️ Error al guardar en la base de datos.");
+      return ctx.reply("✅ Reporte enviado al Radar. +25 XP", menu);
+
+    } catch (e) {
+      console.error("❌ Error Guardado:", e.message);
+      return ctx.reply("⚠️ Error crítico al sincronizar. Reintentá luego.");
     }
   }
 
-  // --- Lógica de IA (gemini-flash-latest) ---
-  if (user.state === "IA_CHAT") {
-    if (!user.is_premium && (user.ai_count || 0) >= 3) {
-      return ctx.reply("🚫 Límite de IA alcanzado (3/3). Hacete colaborador para consultas ilimitadas, tú.");
-    }
+  /* --- LÓGICA DE IA (AIFUCITO) --- */
+  if (user.state === "IA") {
+    if (text.length < 2) return; // 🛡️ Evita procesar ruido o mensajes de 1 solo caracter
+
     try {
       await ctx.sendChatAction("typing");
-      const prompt = `Eres Aifucito, experto en ufología de Uruguay. Responde breve y con modismos locales. Usuario ${ctx.from.first_name} pregunta: ${text}`;
+      const prompt = `Eres Aifucito, un experto en ufología de Uruguay. Responde de forma breve, con un toque de misterio y usando modismos uruguayos/rioplatenses. Pregunta del agente: ${text}`;
       const result = await aiModel.generateContent(prompt);
       const response = await result.response;
-      
-      await updateSession(id, { ai_count: (user.ai_count || 0) + 1 });
-      return ctx.reply(`🛸 **Aifucito:** ${response.text()}`);
+      return ctx.reply(`🛸 AIFUCITO: ${response.text()}`);
     } catch (e) { 
-      return ctx.reply("⚠️ Interferencia en la señal IA. Reintentá."); 
+      console.error("❌ Error IA:", e.message);
+      return ctx.reply("⚠️ Interferencia en la IA. Reintentá."); 
     }
   }
 });
 
-bot.hears("🤖 Hablar con Aifucito", async (ctx) => {
-  await updateSession(String(ctx.from.id), { state: "IA_CHAT" });
-  ctx.reply("🛸 **Aifucito Online:** Escuchando frecuencias... ¿Qué quieres contarme tú hoy?", Markup.keyboard([["⬅️ Menú"]]).resize());
+bot.hears("🤖 Aifucito", async (ctx) => {
+  await updateSession(String(ctx.from.id), { state: "IA" });
+  ctx.reply("🛸 MODO IA ACTIVADO.\nAifucito escuchando... ¿Qué quieres saber tú hoy?", Markup.keyboard([["⬅️ Menú"]]).resize());
 });
 
 bot.hears("🛰️ Ver Radar", (ctx) => {
-  ctx.reply("🌍 **ABRIR RADAR TÁCTICO:**", Markup.inlineKeyboard([
-    [Markup.button.url("🗺️ Ver Mapa Live", `https://aifucito5-0.onrender.com?user_id=${ctx.from.id}`)]
-  ]));
-});
-
-bot.hears("🤝 Hacerse Colaborador", (ctx) => {
-  ctx.reply("🤝 **Apoyá el Proyecto:**\nDesbloqueá historial completo e IA ilimitada.\n[Mercado Pago / Prex](https://tu-link.com)");
+  ctx.reply("🌍 **MAPA TÁCTICO AIFU:**",
+    Markup.inlineKeyboard([[Markup.button.url("🗺️ ABRIR RADAR LIVE", "https://aifucito5-0.onrender.com")]])
+  );
 });
 
 /* ==========================================
-    📊 4. API Y WEB (PARA EL MAPA)
+    🌐 6. API + SERVIDOR EXPRESS
 ========================================== */
 const app = express();
 app.use(cors());
@@ -203,44 +211,33 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/api/reportes", async (req, res) => {
-  const range = req.query.range || "24h";
-  const days = { "24h": 1, "7d": 7, "1m": 30, "1y": 365 }[range] || 1;
-  const fromDate = new Date(Date.now() - days * 86400000).toISOString();
-
-  const { data } = await supabase.from("reportes")
-    .select("*")
-    .gte("created_at", fromDate)
-    .order("created_at", { ascending: false });
-  res.json(data || []);
-});
-
-/* ==========================================
-    🛡️ 5. MANDO COMANDANTE (ADMIN)
-========================================== */
-bot.command("broadcast", async (ctx) => {
-  if (!isAdmin(ctx.from.id)) return;
-  const msg = ctx.message.text.replace("/broadcast ", "");
-  const { data } = await supabase.from("sessions").select("user_id");
-  ctx.reply(`🚀 Transmitiendo a ${data.length} agentes...`);
-  for (const u of data) {
-    await new Promise(r => setTimeout(r, 250));
-    bot.telegram.sendMessage(u.user_id, `📢 **AVISO DEL COMANDO:**\n\n${msg}`).catch(() => {});
+  try {
+    const { data, error } = await supabase.from("reportes").select("id, lat, lng, descripcion, ciudad, pais, created_at").order("created_at", { ascending: false }).limit(100);
+    if (error) throw error;
+    res.json(data || []);
+  } catch (e) {
+    res.status(500).json({ error: "Falla de radar" });
   }
 });
 
 /* ==========================================
-    🛡️ 6. ESTABILIDAD FINAL Y ARRANQUE
+    🚀 7. IGNICIÓN (RENDER OPTIMIZED)
 ========================================== */
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`📡 NODO AIFU V12.8 ONLINE EN PUERTO ${PORT}`);
-  
+  console.log(`📡 Nodo AIFU Online en puerto ${PORT}`);
   setTimeout(() => {
     bot.launch()
-      .then(() => console.log("🛸 BOT DESPLEGADO"))
-      .catch(err => console.error("Error en launch:", err));
+      .then(() => console.log("🛸 Bot Desplegado"))
+      .catch(console.error);
   }, 1000);
 });
+
+/* ==========================================
+    🛡️ 8. BLINDAJE ANTI-CRASH GLOBAL
+========================================== */
+process.on("unhandledRejection", (err) => { console.error("❌ Fallo Promesa:", err); });
+process.on("uncaughtException", (err) => { console.error("❌ Error Crítico:", err); });
 
 process.once("SIGINT", () => bot.stop("SIGINT"));
 process.once("SIGTERM", () => bot.stop("SIGTERM"));
