@@ -9,50 +9,43 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 const app = express();
 const PORT = process.env.PORT || 10000;
-const GRUPO_RADAR_ID = process.env.GRUPO_RADAR_ID; // ID del grupo Radar Cono Sur
+const CHANNEL_ID = "-1003759731798"; // Canal Radar Cono Sur
 
 bot.use(session());
 const userState = new Map();
 
 /* ==========================================
-   🧠 NÚCLEO DE INTELIGENCIA ARTIFICIAL
+   🧠 NÚCLEO DE INTELIGENCIA ARTIFICIAL (GEMINI FLASH)
 ========================================== */
 
-// 1. Analizador Táctico (Ruta corregida según Google AI Studio)
 async function procesarAvistamientoIA(descripcion) {
   try {
     const urlIA = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`;
     const body = {
-      contents: [{ parts: [{ text: `Actúa como el sistema central de AIFU. Analiza: "${descripcion}". Clasifica en: [FENÓMENO LUMÍNICO], [NAVE], [ENTIDAD] o [NO IDENTIFICADO]. Redacta un informe técnico breve con emojis para un radar táctico.` }] }]
+      contents: [{ parts: [{ text: `Actúa como el sistema central de AIFU. Analiza el reporte: "${descripcion}". Clasifícalo en: [FENÓMENO LUMÍNICO], [NAVE], [ENTIDAD] o [NO IDENTIFICADO]. Redacta un informe técnico breve con emojis para el canal Radar Cono Sur.` }] }]
     };
     const r = await axios.post(urlIA, body);
     return r.data?.candidates?.[0]?.content?.parts?.[0]?.text || descripcion;
   } catch (error) {
-    console.error("Error IA Reporte:", error.message);
-    return `[REPORTE DIRECTO]: ${descripcion}`; // Salvavidas para no trancar el bot
+    console.error("❌ ERROR IA:", error.message);
+    return `[REPORTE DIRECTO]: ${descripcion}`;
   }
 }
 
-// 2. Aifucito (Charla Mística con Memoria)
 async function charlaMisticaIA(userId, texto) {
   try {
     const urlIA = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`;
-    const { data: recuerdos } = await supabase.from("memoria_ia").select("rol, contenido").eq("user_id", userId).limit(5);
-    const contexto = recuerdos?.map(r => `${r.rol}: ${r.contenido}`).join("\n") || "";
-
-    const prompt = `Eres Aifucito. Tu tono es MÍSTICO y PROFUNDO. Responde a: ${texto}. Contexto previo: ${contexto}`;
+    const prompt = `Eres Aifucito. Tu tono es MÍSTICO y PROFUNDO. Responde de forma enigmática a: ${texto}`;
     const r = await axios.post(urlIA, { contents: [{ parts: [{ text: prompt }] }] });
     const respuesta = r.data?.candidates?.[0]?.content?.parts?.[0]?.text || "...el cosmos calla.";
-
+    
     await supabase.from("memoria_ia").insert([{ user_id: userId, rol: "user", contenido: texto }, { user_id: userId, rol: "model", contenido: respuesta }]);
     return respuesta;
-  } catch (error) {
-    return "Las estrellas están fuera de alineación. Intenta luego.";
-  }
+  } catch (error) { return "Interferencia en el plano astral."; }
 }
 
 /* ==========================================
-   🕹️ INTERFAZ Y FLUJO TELEGRAM
+   🕹️ INTERFAZ Y FLUJO TÁCTICO
 ========================================== */
 
 const menuPrincipal = Markup.keyboard([
@@ -60,7 +53,7 @@ const menuPrincipal = Markup.keyboard([
   ["🤖 Charla con Aifucito", "❌ Cancelar Operación"]
 ]).resize();
 
-bot.start((ctx) => ctx.reply("🛸 SISTEMA AIFU ONLINE.\nEsperando órdenes, Comandante.", menuPrincipal));
+bot.start((ctx) => ctx.reply("🛸 SISTEMA AIFU ONLINE.\nRadar Cono Sur listo para monitoreo.", menuPrincipal));
 
 bot.hears("📍 Nuevo Reporte", (ctx) => {
   userState.set(ctx.from.id, { step: "ESPERANDO_GPS" });
@@ -72,7 +65,7 @@ bot.on("location", async (ctx) => {
   const state = userState.get(ctx.from.id);
   if (state?.step !== "ESPERANDO_GPS") return;
   userState.set(ctx.from.id, { step: "ESPERANDO_DESC", lat: ctx.message.location.latitude, lng: ctx.message.location.longitude });
-  return ctx.reply("📍 Coordenadas fijadas. Describe brevemente lo observado:");
+  return ctx.reply("📍 Coordenadas fijadas. Describe lo observado:");
 });
 
 bot.on("text", async (ctx) => {
@@ -80,36 +73,34 @@ bot.on("text", async (ctx) => {
   const state = userState.get(ctx.from.id);
   const texto = ctx.message.text;
 
-  // --- PASO 1: PROCESAR CON IA ---
   if (state?.step === "ESPERANDO_DESC") {
-    ctx.reply("🛰️ Aifucito está analizando la señal...");
+    ctx.reply("🛰️ Aifucito procesando señal...");
     const informeIA = await procesarAvistamientoIA(texto);
     userState.set(ctx.from.id, { ...state, step: "CONFIRMAR", informe: informeIA });
-    return ctx.reply(`📋 **INFORME PREPARADO:**\n\n${informeIA}\n\n¿Confirmas el envío a la Red AIFU?`,
+    return ctx.reply(`📋 **INFORME PREPARADO:**\n\n${informeIA}\n\n¿Confirmas transmisión al Canal Radar Cono Sur?`,
       Markup.keyboard([["✅ CONFIRMAR Y TRANSMITIR", "❌ Cancelar Operación"]]).resize());
   }
 
-  // --- PASO 2: GUARDAR Y ENVIAR (EL DESTRANQUE) ---
   if (texto === "✅ CONFIRMAR Y TRANSMITIR" && state?.step === "CONFIRMAR") {
     try {
-      // Guardar en Supabase
+      // 1. Guardar en Supabase
       const { error } = await supabase.from("reportes").insert({
         user_id: userId, lat: state.lat, lng: state.lng, descripcion: state.informe
       });
       if (error) throw error;
 
-      // Enviar al Grupo Radar Cono Sur
+      // 2. Transmitir al Canal Radar Cono Sur
       const mapaLink = `https://www.google.com/maps?q=${state.lat},${state.lng}`;
-      await bot.telegram.sendMessage(GRUPO_RADAR_ID, `🚨 **NUEVA DETECCIÓN AIFU** 🚨\n\n${state.informe}\n\n📍 Mapa: ${mapaLink}`);
+      await bot.telegram.sendMessage(CHANNEL_ID, `🚨 **ALERTA: RADAR CONO SUR** 🚨\n\n${state.informe}\n\n📍 Mapa: ${mapaLink}`);
 
       userState.delete(ctx.from.id);
-      return ctx.reply("🚀 TRANSMISIÓN EXITOSA. Reporte visible en el Radar y el Grupo.", menuPrincipal);
+      return ctx.reply("🚀 TRANSMISIÓN EXITOSA. Los datos ya están en el radar y en el canal.", menuPrincipal);
     } catch (err) {
-      return ctx.reply("❌ Error al guardar en base de datos. Intenta de nuevo.");
+      console.error(err);
+      return ctx.reply("❌ Error al archivar reporte. Verifica conexión con base de datos.");
     }
   }
 
-  // --- MODO CHARLA ---
   if (state?.step === "IA_MISTICA") {
     const r = await charlaMisticaIA(userId, texto);
     return ctx.reply(r);
@@ -117,33 +108,29 @@ bot.on("text", async (ctx) => {
 
   if (texto === "🤖 Charla con Aifucito") {
     userState.set(ctx.from.id, { step: "IA_MISTICA" });
-    return ctx.reply("👁️ Has entrado en el plano de Aifucito. Pregunta...");
+    return ctx.reply("👁️ Sintonizando frecuencias de Aifucito... pregunta.");
   }
 
   if (texto === "🛰️ Ver Radar") {
-    return ctx.reply(`🌍 Radar Táctico: ${process.env.PUBLIC_URL}`);
+    return ctx.reply(`🌍 Accede al Radar Táctico aquí: ${process.env.PUBLIC_URL}`);
   }
 
   if (texto === "❌ Cancelar Operación") {
     userState.delete(ctx.from.id);
-    return ctx.reply("Operación abortada.", menuPrincipal);
+    return ctx.reply("Operación abortada. Regresando a base.", menuPrincipal);
   }
 });
 
 /* ==========================================
-   🌐 SERVIDOR HTTP PARA EL MAPA
+   🌐 SERVIDOR HTTP (DIBUJA EL MAPA)
 ========================================== */
 app.use(express.static("public"));
 app.get("/api/reportes", async (req, res) => {
-  const { range } = req.query;
-  let query = supabase.from("reportes").select("*").order("created_at", { ascending: false });
-  const ahora = new Date();
-  if (range === "24h") query = query.gte("created_at", new Date(ahora - 86400000).toISOString());
-  const { data } = await query;
+  const { data } = await supabase.from("reportes").select("*").order("created_at", { ascending: false });
   res.json(data || []);
 });
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`✅ AIFU V12 Online en puerto ${PORT}`);
+  console.log(`✅ AIFU V12.1 Operativo en puerto ${PORT}`);
   bot.launch();
 });
