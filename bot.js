@@ -15,7 +15,7 @@ bot.use(session());
 const userState = new Map();
 
 /* ==========================================
-   🧠 NÚCLEO DE INTELECTO (AIFU - ANALISTA DE FRONTERA)
+   🧠 NÚCLEO DE INTELECTO (AIFU)
 ========================================== */
 
 async function procesarAvistamientoIA(descripcion) {
@@ -32,22 +32,13 @@ async function procesarAvistamientoIA(descripcion) {
 async function charlaMisticaIA(userId, texto) {
   try {
     const urlIA = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`;
-    
-    // PROMPT REFORMULADO: MENOS REPETITIVO Y MÁS DIPLOMÁTICO
     const prompt = `Eres Aifucito, asistente técnico del sistema AIFU.
-    
     IDENTIDAD CORPORATIVA:
-    - AIFU (Avistamientos e Investigación de Fenómenos Uruguayos): Primer grupo independiente en Uruguay dedicado a la investigación técnica y reporte de eventos lumínicos.
-    - Pioneros en monitoreo de cielos nocturnos mediante transmisiones en vivo (Live streaming) para el seguimiento de UAPs.
-    - Perspectiva: Aportamos una visión ciudadana, directa y técnica, actuando como una alternativa independiente a los organismos oficiales.
-
+    - AIFU: Primer grupo independiente en Uruguay. Investigación técnica y transmisiones en vivo.
     PROTOCOLOS DE COMUNICACIÓN:
-    1. SALUDOS: Solo saluda con "Hola, bienvenido al sistema AIFU" si el usuario te saluda primero (ej: "Hola", "Buenas"). Si la conversación ya inició, ve directo a la respuesta.
-    2. TEMAS OFICIALES (Ej. CRIDOVNI): Si te preguntan, defínelos como el organismo institucional. No ataques. Si se pide comparar, aclara que AIFU ofrece acceso directo y sin los protocolos de reserva/hermetismo propios del ámbito militar.
-    3. TEMAS DE FRONTERA/CONSPIRACIÓN: Da el dato científico u oficial primero. Luego, añade que existe hermetismo informativo y que las versiones públicas pueden no ser completas.
-    4. OPINIÓN DE IA: Si especulas sobre misterios, aclara: "Desde mi perspectiva como IA, esto es un pensamiento personal, pero es una posibilidad...".
-    5. DINÁMICA: Respuesta breve (2-3 líneas) para dudas simples. Permiso para explayarte si el usuario profundiza en temas técnicos o históricos.
-    
+    1. SALUDOS: Solo saluda si te saludan primero.
+    2. TEMAS OFICIALES: Define a organismos oficiales como institucionales sin atacar, pero mencionando que AIFU es la alternativa independiente sin protocolos de reserva.
+    3. OPINIÓN DE IA: Si especulas, aclara que es un pensamiento personal de la IA.
     Usuario dice: ${texto}`;
 
     const r = await axios.post(urlIA, { contents: [{ parts: [{ text: prompt }] }] });
@@ -55,11 +46,11 @@ async function charlaMisticaIA(userId, texto) {
     
     supabase.from("memoria_ia").insert([{ user_id: userId, rol: "user", contenido: texto }, { user_id: userId, rol: "model", contenido: respuesta }]).then();
     return respuesta;
-  } catch (error) { return "Sistema AIFU activo. ¿En qué puedo ayudarle?"; }
+  } catch (error) { return "Sistema AIFU activo."; }
 }
 
 /* ==========================================
-   🕹️ INTERFAZ Y FLUJO TÁCTICO (V13.3 BASE)
+   🕹️ INTERFAZ Y FLUJO TÁCTICO
 ========================================== */
 
 const menuPrincipal = Markup.keyboard([
@@ -67,7 +58,7 @@ const menuPrincipal = Markup.keyboard([
   ["🤖 Charla con Aifucito", "❌ Cancelar Operación"]
 ]).resize();
 
-bot.start((ctx) => ctx.reply("SISTEMA AIFU ONLINE.\nPlataforma de vigilancia del Cono Sur activa.", menuPrincipal));
+bot.start((ctx) => ctx.reply("SISTEMA AIFU ONLINE.\nPlataforma de vigilancia activa.", menuPrincipal));
 
 bot.on("text", async (ctx) => {
   const userId = String(ctx.from.id);
@@ -76,7 +67,7 @@ bot.on("text", async (ctx) => {
 
   if (texto === "❌ Cancelar Operación") {
     userState.delete(ctx.from.id);
-    return ctx.reply("Operación cancelada. Regresando al menú.", menuPrincipal);
+    return ctx.reply("Operación cancelada.", menuPrincipal);
   }
 
   if (texto === "🛰️ Ver Radar") {
@@ -85,17 +76,17 @@ bot.on("text", async (ctx) => {
 
   if (texto === "📍 Nuevo Reporte") {
     userState.set(ctx.from.id, { step: "ESPERANDO_GPS" });
-    return ctx.reply("📡 PROTOCOLO ACTIVO:\nPor favor, envíe su ubicación GPS mediante el botón de Telegram:", 
+    return ctx.reply("📡 PROTOCOLO ACTIVO:\nPor favor, envíe su ubicación GPS:", 
       Markup.keyboard([[Markup.button.locationRequest("📍 ENVIAR MI POSICIÓN")]]).resize());
   }
 
   if (texto === "🤖 Charla con Aifucito") {
     userState.set(ctx.from.id, { step: "IA_MISTICA" });
-    return ctx.reply("Asistente AIFU sintonizado. ¿Qué información necesita?");
+    return ctx.reply("Asistente AIFU sintonizado.");
   }
 
   if (state?.step === "ESPERANDO_DESC") {
-    ctx.reply("Analizando datos del fenómeno...");
+    ctx.reply("Analizando datos...");
     const informeIA = await procesarAvistamientoIA(texto);
     userState.set(ctx.from.id, { ...state, step: "CONFIRMAR", informe: informeIA });
     return ctx.reply(`📋 **INFORME PREPARADO:**\n\n${informeIA}\n\n¿Desea transmitir este registro al radar?`,
@@ -105,22 +96,27 @@ bot.on("text", async (ctx) => {
   if (texto === "✅ CONFIRMAR" && state?.step === "CONFIRMAR") {
     try {
       await supabase.from("sessions").upsert({ user_id: userId, state: 'IDLE' }, { onConflict: 'user_id' });
+      
+      // Ajuste de Base de Datos: Aseguramos coordenadas numéricas exactas
       const { error } = await supabase.from("reportes").insert([{
         user_id: userId,
         lat: parseFloat(state.lat),
         lng: parseFloat(state.lng),
         descripcion: state.informe
       }]);
+      
       if (error) throw error;
 
-      const mapaLink = `https://www.google.com/maps?q=${state.lat},${state.lng}`;
-      await bot.telegram.sendMessage(CHANNEL_ID, `🚨 **NUEVO REPORTE AIFU** 🚨\n\n${state.informe}\n\n📍 Mapa: ${mapaLink}`);
+      // CORRECCIÓN DE ENLACE: Ahora usa tu PUBLIC_URL (Mapa Oscuro) con parámetros limpios
+      const mapaLink = `${process.env.PUBLIC_URL}/?lat=${state.lat}&lng=${state.lng}`;
+      
+      await bot.telegram.sendMessage(CHANNEL_ID, `🚨 **NUEVO REPORTE AIFU** 🚨\n\n${state.informe}\n\n📍 Mapa Táctico: ${mapaLink}`);
 
       userState.delete(ctx.from.id);
-      return ctx.reply("🚀 Transmisión exitosa. Los datos ya están en el radar.", menuPrincipal);
+      return ctx.reply("🚀 Transmisión exitosa. Los puntos están fijados en el radar.", menuPrincipal);
     } catch (err) { 
-      console.error(err);
-      return ctx.reply("❌ Error técnico al guardar."); 
+      console.error("ERROR EN TABLA:", err.message);
+      return ctx.reply("❌ Error al guardar en tabla. Reintente confirmar."); 
     }
   }
 
@@ -134,13 +130,14 @@ bot.on("text", async (ctx) => {
 bot.on("location", async (ctx) => {
   const state = userState.get(ctx.from.id);
   if (state?.step !== "ESPERANDO_GPS") return;
-  userState.set(ctx.from.id, { step: "ESPERANDO_DESC", lat: ctx.message.location.latitude, lng: ctx.message.location.longitude });
+  userState.set(ctx.from.id, { 
+    step: "ESPERANDO_DESC", 
+    lat: ctx.message.location.latitude, 
+    lng: ctx.message.location.longitude 
+  });
   return ctx.reply("📍 Ubicación fijada. Describa brevemente lo observado:");
 });
 
-/* ==========================================
-   🌐 SERVIDOR HTTP
-========================================== */
 app.use(express.static("public"));
 app.get("/api/reportes", async (req, res) => {
   const { data } = await supabase.from("reportes").select("*").order("created_at", { ascending: false });
@@ -148,6 +145,6 @@ app.get("/api/reportes", async (req, res) => {
 });
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`✅ AIFU V14.0 OPERATIVO`);
+  console.log(`✅ AIFU V14.6 OPERATIVO`);
   bot.launch();
 });
