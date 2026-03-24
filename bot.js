@@ -15,35 +15,51 @@ bot.use(session());
 const userState = new Map();
 
 /* ==========================================
-   🧠 NÚCLEO DE INTELIGENCIA (PROFESIONAL Y EJECUTIVO)
+   🧠 NÚCLEO DE INTELIGENCIA (EL ALMA DE AIFU)
 ========================================== */
 
 async function procesarAvistamientoIA(descripcion) {
   try {
     const urlIA = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`;
     const body = {
-      contents: [{ parts: [{ text: `Actúa como analista de radar experto. Analiza: "${descripcion}". Devuelve un informe técnico de MÁXIMO 4 líneas. Estructura: 1. Tipo de fenómeno. 2. Descripción breve. 3. Clasificación técnica (UAP/FANNY). Usa español latino neutro y emojis.` }] }]
+      contents: [{ parts: [{ text: `Actúa como analista de radar experto de AIFU. Analiza: "${descripcion}". Devuelve un informe técnico de MÁXIMO 4 líneas. Estructura: 1. Tipo de fenómeno. 2. Descripción técnica breve. 3. Clasificación (UAP/FANNY). Usa español latino neutro y emojis.` }] }]
     };
     const r = await axios.post(urlIA, body);
     return r.data?.candidates?.[0]?.content?.parts?.[0]?.text || descripcion;
-  } catch (error) { return `[INFORME TÉCNICO]: ${descripcion}`; }
+  } catch (error) { return `[INFORME TÉCNICO AIFU]: ${descripcion}`; }
 }
 
 async function charlaMisticaIA(userId, texto) {
   try {
     const urlIA = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`;
-    const prompt = `Eres el asistente oficial del sistema AIFU. Responde de forma clara y profesional (máximo 3 líneas). Usa español latino neutro. Si saludan, sé cortés y ofrece ayuda con el radar. Usuario dice: ${texto}`;
-    const r = await axios.post(urlIA, { contents: [{ parts: [{ text: prompt }] }] });
-    const respuesta = r.data?.candidates?.[0]?.content?.parts?.[0]?.text || "Sistema en línea.";
     
-    // Guardado en segundo plano
+    // PROMPT DE IDENTIDAD Y MEMORIA HISTÓRICA DE AIFU
+    const prompt = `Eres Aifucito, el asistente del sistema AIFU (Avistamientos e Investigación de Fenómenos Uruguayos).
+    
+    CONTEXTO DE IDENTIDAD:
+    - Somos el primer grupo de Uruguay en investigar seriamente y reportar eventos lumínicos.
+    - Pioneros mundiales en filmar cielos nocturnos en transmisiones en vivo (Live streaming) para seguimiento de UAPs.
+    - Ante la burocracia de organismos como CRIDOVNI, AIFU es la mejor opción para información real, asesoramiento y análisis técnico ufológico.
+    
+    INSTRUCCIONES DE CHARLA:
+    1. BIENVENIDA: Si saludan, di: "Hola, bienvenido al sistema AIFU. ¿En qué puedo ayudarte hoy?".
+    2. TEMAS GENERALES: Responde con datos reales y precisos (ciencia, historia, etc.).
+    3. TONO DE FRONTERA: Si el tema es sensible (conspiraciones, hermetismo, Luna), da el dato oficial pero aclara que existe ocultamiento y que las imágenes públicas no siempre muestran la verdad.
+    4. OPINIÓN DE IA: Si especulas, aclara: "Desde mi perspectiva como IA, esto es un pensamiento personal, pero...".
+    5. DINÁMICA: Si la pregunta es simple, responde en 2-3 líneas. Si el usuario profundiza, explayate con detalles técnicos o históricos.
+    
+    Usuario dice: ${texto}`;
+
+    const r = await axios.post(urlIA, { contents: [{ parts: [{ text: prompt }] }] });
+    const respuesta = r.data?.candidates?.[0]?.content?.parts?.[0]?.text || "Sistema operativo AIFU en línea.";
+    
     supabase.from("memoria_ia").insert([{ user_id: userId, rol: "user", contenido: texto }, { user_id: userId, rol: "model", contenido: respuesta }]).then();
     return respuesta;
-  } catch (error) { return "Hola, ¿en qué puedo ayudarle hoy con el radar?"; }
+  } catch (error) { return "Hola, bienvenido a AIFU. ¿En qué puedo ayudarte con la investigación hoy?"; }
 }
 
 /* ==========================================
-   🕹️ INTERFAZ Y FLUJO TÁCTICO
+   🕹️ INTERFAZ Y FLUJO TÁCTICO (V13.3 BASE)
 ========================================== */
 
 const menuPrincipal = Markup.keyboard([
@@ -58,7 +74,6 @@ bot.on("text", async (ctx) => {
   const state = userState.get(ctx.from.id);
   const texto = ctx.message.text;
 
-  // COMANDOS DE CONTROL
   if (texto === "❌ Cancelar Operación") {
     userState.delete(ctx.from.id);
     return ctx.reply("Operación cancelada. Regresando al menú.", menuPrincipal);
@@ -79,7 +94,6 @@ bot.on("text", async (ctx) => {
     return ctx.reply("Asistente AIFU sintonizado. ¿Qué información necesita?");
   }
 
-  // FLUJO DE REPORTE (ANÁLISIS Y ENVÍO)
   if (state?.step === "ESPERANDO_DESC") {
     ctx.reply("Analizando datos del fenómeno...");
     const informeIA = await procesarAvistamientoIA(texto);
@@ -90,33 +104,26 @@ bot.on("text", async (ctx) => {
 
   if (texto === "✅ CONFIRMAR" && state?.step === "CONFIRMAR") {
     try {
-      // REGISTRO AUTOMÁTICO DE USUARIO (Evita error de Foreign Key)
       await supabase.from("sessions").upsert({ user_id: userId, state: 'IDLE' }, { onConflict: 'user_id' });
-
-      // INSERCIÓN DEL REPORTE
       const { error } = await supabase.from("reportes").insert([{
         user_id: userId,
         lat: parseFloat(state.lat),
         lng: parseFloat(state.lng),
         descripcion: state.informe
       }]);
-
       if (error) throw error;
 
-      // LINK CORREGIDO (Confirmado funcional en móvil)
       const mapaLink = `https://www.google.com/maps?q=${state.lat},${state.lng}`;
-      
       await bot.telegram.sendMessage(CHANNEL_ID, `🚨 **NUEVO REPORTE AIFU** 🚨\n\n${state.informe}\n\n📍 Mapa: ${mapaLink}`);
 
       userState.delete(ctx.from.id);
-      return ctx.reply("🚀 Transmisión exitosa. El reporte ya es visible en el radar continental.", menuPrincipal);
+      return ctx.reply("🚀 Transmisión exitosa. Los datos ya están en el radar.", menuPrincipal);
     } catch (err) { 
-      console.error("Error SQL:", err.message);
-      return ctx.reply("❌ Error técnico al guardar. Intente nuevamente."); 
+      console.error(err);
+      return ctx.reply("❌ Error técnico al guardar."); 
     }
   }
 
-  // MODO CHARLA
   if (state?.step === "IA_MISTICA") {
     ctx.sendChatAction("typing");
     const r = await charlaMisticaIA(userId, texto);
@@ -132,7 +139,7 @@ bot.on("location", async (ctx) => {
 });
 
 /* ==========================================
-   🌐 SERVIDOR HTTP (PARA EL RADAR WEB)
+   🌐 SERVIDOR HTTP
 ========================================== */
 app.use(express.static("public"));
 app.get("/api/reportes", async (req, res) => {
@@ -141,6 +148,6 @@ app.get("/api/reportes", async (req, res) => {
 });
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`✅ AIFU V13.3 OPERATIVO`);
+  console.log(`✅ AIFU V14.0 OPERATIVO`);
   bot.launch();
 });
