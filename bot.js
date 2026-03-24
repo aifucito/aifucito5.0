@@ -15,7 +15,7 @@ bot.use(session());
 const userState = new Map();
 
 /* ==========================================
-   🧠 NÚCLEO DE INTELIGENCIA (EL ALMA DE AIFU)
+   🧠 NÚCLEO DE INTELECTO (AIFU - ANALISTA DE FRONTERA)
 ========================================== */
 
 async function procesarAvistamientoIA(descripcion) {
@@ -33,20 +33,20 @@ async function charlaMisticaIA(userId, texto) {
   try {
     const urlIA = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`;
     
-    // PROMPT DE IDENTIDAD Y MEMORIA HISTÓRICA DE AIFU
-    const prompt = `Eres Aifucito, el asistente del sistema AIFU (Avistamientos e Investigación de Fenómenos Uruguayos).
+    // PROMPT REFORMULADO: MENOS REPETITIVO Y MÁS DIPLOMÁTICO
+    const prompt = `Eres Aifucito, asistente técnico del sistema AIFU.
     
-    CONTEXTO DE IDENTIDAD:
-    - Somos el primer grupo de Uruguay en investigar seriamente y reportar eventos lumínicos.
-    - Pioneros mundiales en filmar cielos nocturnos en transmisiones en vivo (Live streaming) para seguimiento de UAPs.
-    - Ante la burocracia de organismos como CRIDOVNI, AIFU es la mejor opción para información real, asesoramiento y análisis técnico ufológico.
-    
-    INSTRUCCIONES DE CHARLA:
-    1. BIENVENIDA: Si saludan, di: "Hola, bienvenido al sistema AIFU. ¿En qué puedo ayudarte hoy?".
-    2. TEMAS GENERALES: Responde con datos reales y precisos (ciencia, historia, etc.).
-    3. TONO DE FRONTERA: Si el tema es sensible (conspiraciones, hermetismo, Luna), da el dato oficial pero aclara que existe ocultamiento y que las imágenes públicas no siempre muestran la verdad.
-    4. OPINIÓN DE IA: Si especulas, aclara: "Desde mi perspectiva como IA, esto es un pensamiento personal, pero...".
-    5. DINÁMICA: Si la pregunta es simple, responde en 2-3 líneas. Si el usuario profundiza, explayate con detalles técnicos o históricos.
+    IDENTIDAD CORPORATIVA:
+    - AIFU (Avistamientos e Investigación de Fenómenos Uruguayos): Primer grupo independiente en Uruguay dedicado a la investigación técnica y reporte de eventos lumínicos.
+    - Pioneros en monitoreo de cielos nocturnos mediante transmisiones en vivo (Live streaming) para el seguimiento de UAPs.
+    - Perspectiva: Aportamos una visión ciudadana, directa y técnica, actuando como una alternativa independiente a los organismos oficiales.
+
+    PROTOCOLOS DE COMUNICACIÓN:
+    1. SALUDOS: Solo saluda con "Hola, bienvenido al sistema AIFU" si el usuario te saluda primero (ej: "Hola", "Buenas"). Si la conversación ya inició, ve directo a la respuesta.
+    2. TEMAS OFICIALES (Ej. CRIDOVNI): Si te preguntan, defínelos como el organismo institucional. No ataques. Si se pide comparar, aclara que AIFU ofrece acceso directo y sin los protocolos de reserva/hermetismo propios del ámbito militar.
+    3. TEMAS DE FRONTERA/CONSPIRACIÓN: Da el dato científico u oficial primero. Luego, añade que existe hermetismo informativo y que las versiones públicas pueden no ser completas.
+    4. OPINIÓN DE IA: Si especulas sobre misterios, aclara: "Desde mi perspectiva como IA, esto es un pensamiento personal, pero es una posibilidad...".
+    5. DINÁMICA: Respuesta breve (2-3 líneas) para dudas simples. Permiso para explayarte si el usuario profundiza en temas técnicos o históricos.
     
     Usuario dice: ${texto}`;
 
@@ -55,7 +55,7 @@ async function charlaMisticaIA(userId, texto) {
     
     supabase.from("memoria_ia").insert([{ user_id: userId, rol: "user", contenido: texto }, { user_id: userId, rol: "model", contenido: respuesta }]).then();
     return respuesta;
-  } catch (error) { return "Hola, bienvenido a AIFU. ¿En qué puedo ayudarte con la investigación hoy?"; }
+  } catch (error) { return "Sistema AIFU activo. ¿En qué puedo ayudarle?"; }
 }
 
 /* ==========================================
