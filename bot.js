@@ -138,27 +138,38 @@ bot.on("location", async (ctx) => {
 });
 
 /* ==========================================
-   🌍 API RADAR (ARREGLADA)
+   🌍 API RADAR FINAL (24h / 7d / 30d / histórico)
 ========================================== */
 
 app.use(express.static("public"));
 
 app.get("/api/reportes", async (req, res) => {
   try {
-    const hace24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-
-    const { data, error } = await supabase
+    let query = supabase
       .from("reportes")
       .select("*")
-      .gte("created_at", hace24h)
-      .order("created_at", { ascending: false })
-      .limit(200);
+      .order("created_at", { ascending: false });
+
+    // 🔴 HISTÓRICO COMPLETO
+    if (req.query.modo === "historico") {
+      query = query.limit(1000);
+    } 
+    // 🟡 POR RANGO DE TIEMPO
+    else {
+      const horas = parseInt(req.query.horas) || 24;
+
+      const desde = new Date(Date.now() - horas * 60 * 60 * 1000).toISOString();
+
+      query = query
+        .gte("created_at", desde)
+        .limit(500);
+    }
+
+    const { data, error } = await query;
 
     if (error) throw error;
 
-    // evitar cache
     res.set("Cache-Control", "no-store");
-
     res.json(data || []);
 
   } catch (err) {
