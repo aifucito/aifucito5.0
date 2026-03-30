@@ -15,42 +15,42 @@ bot.use(session());
 const userState = new Map();
 
 /* ==========================================
-   🧠 NÚCLEO DE INTELECTO (AIFU)
+   🧠 IA AIFU
 ========================================== */
 
 async function procesarAvistamientoIA(descripcion) {
   try {
     const urlIA = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`;
     const body = {
-      contents: [{ parts: [{ text: `Actúa como analista de radar experto de AIFU. Analiza: "${descripcion}". Devuelve un informe técnico de MÁXIMO 4 líneas. Estructura: 1. Tipo de fenómeno. 2. Descripción técnica breve. 3. Clasificación (UAP/FANNY). Usa español latino neutro y emojis.` }] }]
+      contents: [{ parts: [{ text: `Actúa como analista de radar experto de AIFU. Analiza: "${descripcion}". Devuelve un informe técnico de MÁXIMO 4 líneas.` }] }]
     };
     const r = await axios.post(urlIA, body);
     return r.data?.candidates?.[0]?.content?.parts?.[0]?.text || descripcion;
-  } catch (error) { return `[INFORME TÉCNICO AIFU]: ${descripcion}`; }
+  } catch {
+    return `[INFORME AIFU]: ${descripcion}`;
+  }
 }
 
 async function charlaMisticaIA(userId, texto) {
   try {
     const urlIA = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`;
-    const prompt = `Eres Aifucito, asistente técnico del sistema AIFU.
-    IDENTIDAD CORPORATIVA:
-    - AIFU: Primer grupo independiente en Uruguay. Investigación técnica y transmisiones en vivo.
-    PROTOCOLOS DE COMUNICACIÓN:
-    1. SALUDOS: Solo saluda si te saludan primero.
-    2. TEMAS OFICIALES: Define a organismos oficiales como institucionales sin atacar, pero mencionando que AIFU es la alternativa independiente sin protocolos de reserva.
-    3. OPINIÓN DE IA: Si especulas, aclara que es un pensamiento personal de la IA.
-    Usuario dice: ${texto}`;
-
+    const prompt = `Eres Aifucito, asistente técnico del sistema AIFU. Usuario: ${texto}`;
     const r = await axios.post(urlIA, { contents: [{ parts: [{ text: prompt }] }] });
-    const respuesta = r.data?.candidates?.[0]?.content?.parts?.[0]?.text || "Sistema operativo AIFU en línea.";
-    
-    supabase.from("memoria_ia").insert([{ user_id: userId, rol: "user", contenido: texto }, { user_id: userId, rol: "model", contenido: respuesta }]).then();
+    const respuesta = r.data?.candidates?.[0]?.content?.parts?.[0]?.text || "Sistema activo.";
+
+    supabase.from("memoria_ia").insert([
+      { user_id: userId, rol: "user", contenido: texto },
+      { user_id: userId, rol: "model", contenido: respuesta }
+    ]).then();
+
     return respuesta;
-  } catch (error) { return "Sistema AIFU activo."; }
+  } catch {
+    return "Sistema activo.";
+  }
 }
 
 /* ==========================================
-   🕹️ INTERFAZ Y FLUJO TÁCTICO
+   🕹️ INTERFAZ
 ========================================== */
 
 const menuPrincipal = Markup.keyboard([
@@ -58,7 +58,7 @@ const menuPrincipal = Markup.keyboard([
   ["🤖 Charla con Aifucito", "❌ Cancelar Operación"]
 ]).resize();
 
-bot.start((ctx) => ctx.reply("SISTEMA AIFU ONLINE.\nPlataforma de vigilancia activa.", menuPrincipal));
+bot.start((ctx) => ctx.reply("SISTEMA AIFU ONLINE.", menuPrincipal));
 
 bot.on("text", async (ctx) => {
   const userId = String(ctx.from.id);
@@ -71,52 +71,49 @@ bot.on("text", async (ctx) => {
   }
 
   if (texto === "🛰️ Ver Radar") {
-    return ctx.reply(`🌍 RADAR TÁCTICO EN VIVO:\n${process.env.PUBLIC_URL}`, menuPrincipal);
+    return ctx.reply(`🌍 RADAR EN VIVO:\n${process.env.PUBLIC_URL}`, menuPrincipal);
   }
 
   if (texto === "📍 Nuevo Reporte") {
     userState.set(ctx.from.id, { step: "ESPERANDO_GPS" });
-    return ctx.reply("📡 PROTOCOLO ACTIVO:\nPor favor, envíe su ubicación GPS:", 
+    return ctx.reply("Envíe su ubicación:",
       Markup.keyboard([[Markup.button.locationRequest("📍 ENVIAR MI POSICIÓN")]]).resize());
   }
 
   if (texto === "🤖 Charla con Aifucito") {
     userState.set(ctx.from.id, { step: "IA_MISTICA" });
-    return ctx.reply("Asistente AIFU sintonizado.");
+    return ctx.reply("Aifucito activo.");
   }
 
   if (state?.step === "ESPERANDO_DESC") {
-    ctx.reply("Analizando datos...");
+    ctx.reply("Analizando...");
     const informeIA = await procesarAvistamientoIA(texto);
     userState.set(ctx.from.id, { ...state, step: "CONFIRMAR", informe: informeIA });
-    return ctx.reply(`📋 **INFORME PREPARADO:**\n\n${informeIA}\n\n¿Desea transmitir este registro al radar?`,
+
+    return ctx.reply(`📋 INFORME:\n${informeIA}\n\n¿Confirmar envío?`,
       Markup.keyboard([["✅ CONFIRMAR", "❌ Cancelar Operación"]]).resize());
   }
 
   if (texto === "✅ CONFIRMAR" && state?.step === "CONFIRMAR") {
     try {
-      await supabase.from("sessions").upsert({ user_id: userId, state: 'IDLE' }, { onConflict: 'user_id' });
-      
-      // Ajuste de Base de Datos: Aseguramos coordenadas numéricas exactas
-      const { error } = await supabase.from("reportes").insert([{
+      await supabase.from("reportes").insert([{
         user_id: userId,
         lat: parseFloat(state.lat),
         lng: parseFloat(state.lng),
         descripcion: state.informe
       }]);
-      
-      if (error) throw error;
 
-      // CORRECCIÓN DE ENLACE: Ahora usa tu PUBLIC_URL (Mapa Oscuro) con parámetros limpios
       const mapaLink = `${process.env.PUBLIC_URL}/?lat=${state.lat}&lng=${state.lng}`;
-      
-      await bot.telegram.sendMessage(CHANNEL_ID, `🚨 **NUEVO REPORTE AIFU** 🚨\n\n${state.informe}\n\n📍 Mapa Táctico: ${mapaLink}`);
+
+      await bot.telegram.sendMessage(CHANNEL_ID,
+        `🚨 NUEVO REPORTE AIFU\n\n${state.informe}\n\n📍 ${mapaLink}`);
 
       userState.delete(ctx.from.id);
-      return ctx.reply("🚀 Transmisión exitosa. Los puntos están fijados en el radar.", menuPrincipal);
-    } catch (err) { 
-      console.error("ERROR EN TABLA:", err.message);
-      return ctx.reply("❌ Error al guardar en tabla. Reintente confirmar."); 
+      return ctx.reply("Reporte enviado correctamente.", menuPrincipal);
+
+    } catch (err) {
+      console.error(err);
+      return ctx.reply("Error al guardar reporte.");
     }
   }
 
@@ -130,21 +127,51 @@ bot.on("text", async (ctx) => {
 bot.on("location", async (ctx) => {
   const state = userState.get(ctx.from.id);
   if (state?.step !== "ESPERANDO_GPS") return;
-  userState.set(ctx.from.id, { 
-    step: "ESPERANDO_DESC", 
-    lat: ctx.message.location.latitude, 
-    lng: ctx.message.location.longitude 
+
+  userState.set(ctx.from.id, {
+    step: "ESPERANDO_DESC",
+    lat: ctx.message.location.latitude,
+    lng: ctx.message.location.longitude
   });
-  return ctx.reply("📍 Ubicación fijada. Describa brevemente lo observado:");
+
+  return ctx.reply("Ubicación recibida. Describe el evento:");
 });
+
+/* ==========================================
+   🌍 API RADAR (ARREGLADA)
+========================================== */
 
 app.use(express.static("public"));
+
 app.get("/api/reportes", async (req, res) => {
-  const { data } = await supabase.from("reportes").select("*").order("created_at", { ascending: false });
-  res.json(data || []);
+  try {
+    const hace24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+    const { data, error } = await supabase
+      .from("reportes")
+      .select("*")
+      .gte("created_at", hace24h)
+      .order("created_at", { ascending: false })
+      .limit(200);
+
+    if (error) throw error;
+
+    // evitar cache
+    res.set("Cache-Control", "no-store");
+
+    res.json(data || []);
+
+  } catch (err) {
+    console.error("Error API:", err.message);
+    res.status(500).json({ error: "Error obteniendo reportes" });
+  }
 });
 
+/* ==========================================
+   🚀 SERVIDOR
+========================================== */
+
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`✅ AIFU V14.6 OPERATIVO`);
+  console.log(`✅ AIFU RADAR ACTIVO`);
   bot.launch();
 });
